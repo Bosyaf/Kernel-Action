@@ -1,0 +1,215 @@
+name: caglar++ Total Ultimate V2 (Ölüm Makinesi)
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 
+    env:
+      KBUILD_BUILD_USER: "caglar"
+      KBUILD_BUILD_HOST: "caglar++"
+
+    steps:
+      - name: Alanı Hazırla
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+
+      - name: 1. Gerekli Paketleri Kur ve Greenforce Clang 23 İndir
+        run: |
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
+          
+          CLANG_LINK="https://github.com/greenforce-project/greenforce_clang/releases/download/20260210/gf-clang-23.0.0-20260210.tar.gz"
+          curl -L -o clang.tar.gz "$CLANG_LINK"
+          mkdir -p $GITHUB_WORKSPACE/clang
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+
+      - name: 2. Kaynakları Çek
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+
+      - name: 3. SADECE VortexSU Kurulumu
+        run: |
+          cd common
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+
+      - name: 4. Wi-Fi Patch
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+
+      - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
+        run: |
+          cd common
+          echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          echo "Kingfinik98 Özel 6.1 Fix Yaması Uygulanıyor..."
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
+
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+          rm -f .ns_inject_tmp
+          
+          echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+
+      - name: 6. Full Kernel Config (CG+ Mermileri)
+        run: |
+          cd common
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # HZ Ayarı (Ustanın emri: 250 HZ)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+
+          # FULL PREEMPT (Eksiksiz Akıcılık)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+
+          # --- V2 ÖZEL: TOUCH BOOST & ADRENO IDLER MERMİLERİ ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TOUCHBOOST
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_ADRENO_IDLER
+
+          # Optimizasyon Mermileri
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # SCHEDULER & CLUSTER (Tam Takım)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
+          
+          # BBR, CAKE VE FQ_CODEL (Ağ Kodları Eksiksiz)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          
+          # SUSFS Config Mermileri
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
+          # --- XIAOMI BOOT KORUMASI VE HAFIFLETILMIS DEBUG (USTANIN KODLARI) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_HW_TAGS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHEDSTATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCKDEP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_LIST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
+          
+          # --- ACIK KALMASI GEREKEN HAYATI BEYIN KABLOLARI ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
+
+          # İSİM DAMGASI
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          
+          sed -i 's/check_defconfig//' build.config.gki || true
+
+      - name: 7. Kernel Derleme (O2 + BOLT Devrede)
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          
+          # BOLT ve PGO'yu tetikleyen derleme komutu (-O2 Uyarlandı)
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" \
+            LD=ld.lld \
+            HOSTLD=ld.lld \
+            LLVM_BOLT=1 \
+            KCFLAGS="-O2" \
+            Image
+          
+          echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+
+      - name: 8. AnyKernel3 (Temiz Paketleme)
+        run: |
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../CG+-Total-Ultimate.zip" ./*
+
+      - name: 9. Release Yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Total Ultimate"
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
