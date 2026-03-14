@@ -144,7 +144,21 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # =========================================================
-          # --- 17 ADET KESİN KAPALI OLACAK PRANGALAR ---
+          # --- UZMANIN TAVSİYESİ: HAYATİ İLETİŞİM VE MODÜL KABLOLARI (KESİN AÇIK) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EARLY_PRINTK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
+
+          # --- ADIM ADIM KAPATMA: AĞIR PRANGALAR SÖKÜLÜYOR (KESİN KAPALI) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
@@ -162,15 +176,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
-
-          # --- 6 ADET KESİN AÇIK KALACAK HAYATİ KABLOLAR ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
           # =========================================================
+
           # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           
@@ -214,3 +221,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
