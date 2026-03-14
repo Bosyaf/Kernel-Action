@@ -158,21 +158,23 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
 
-          # --- ADIM ADIM KAPATMA: AĞIR PRANGALAR SÖKÜLÜYOR (KESİN KAPALI) ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_HW_TAGS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
+          # --- ADIM 1: SÜRÜCÜYE BAĞLI TEHLİKELİ HAFIZA KİLİTLERİ (ŞİMDİLİK KESİN AÇIK) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_HW_TAGS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
+
+          # --- ADIM 1: SÜRÜCÜYÜ BOZMAYAN AĞIR PRANGALAR (KESİN KAPALI) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCKDEP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
