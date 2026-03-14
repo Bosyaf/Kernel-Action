@@ -143,33 +143,34 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          # --- XIAOMI BOOT KORUMASI VE HAFIFLETILMIS DEBUG (USTANIN KODLARI) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN
+          # =========================================================
+          # --- 17 ADET KESİN KAPALI OLACAK PRANGALAR ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_HW_TAGS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_VMALLOC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_HW_TAGS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHEDSTATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCKDEP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_LIST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
-          
-          # --- ACIK KALMASI GEREKEN HAYATI BEYIN KABLOLARI ---
+
+          # --- 6 ADET KESİN AÇIK KALACAK HAYATİ KABLOLAR ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
-
+          # =========================================================
           # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           
