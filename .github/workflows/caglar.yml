@@ -22,17 +22,21 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 1. Gerekli Paketleri Kur ve Google Clang r584948 İndir
+      - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          # Resmi Google Android Clang (r584948) indiriliyor
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r584948.tar.gz"
           mkdir -p $GITHUB_WORKSPACE/clang
-          curl -L "$CLANG_URL" | tar -xz -C $GITHUB_WORKSPACE/clang
+          
+          # Resmi Google Android Clang indiriliyor (-fLSs eklendi ki 404 HTML hatasını zip sanmasın)
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r584948.tar.gz"
+          echo "Clang indiriliyor: $CLANG_URL"
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404). Sürüm main dalında yok!"; exit 1; }
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
       - name: 2. Kaynakları Çek
         run: |
@@ -147,6 +151,43 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
+          # =========================================================
+          # --- UZMANIN TAVSİYESİ: HAYATİ İLETİŞİM VE MODÜL KABLOLARI (KESİN AÇIK) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EARLY_PRINTK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
+
+          # --- ADIM 1: SÜRÜCÜYE BAĞLI TEHLİKELİ HAFIZA KİLİTLERİ (ŞİMDİLİK KESİN AÇIK) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_HW_TAGS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
+
+          # --- ADIM 1: SÜRÜCÜYÜ BOZMAYAN AĞIR PRANGALAR (KESİN KAPALI) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCKDEP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
+          # =========================================================
+
           # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           
