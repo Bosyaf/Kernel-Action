@@ -22,17 +22,17 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 1. Gerekli Paketleri Kur ve Greenforce Clang 23 İndir
+      - name: 1. Gerekli Paketleri Kur ve Google Clang r584948 İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          CLANG_LINK="https://github.com/greenforce-project/greenforce_clang/releases/download/20260210/gf-clang-23.0.0-20260210.tar.gz"
-          curl -L -o clang.tar.gz "$CLANG_LINK"
+          # Resmi Google Android Clang (r584948) indiriliyor
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r584948.tar.gz"
           mkdir -p $GITHUB_WORKSPACE/clang
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+          curl -L "$CLANG_URL" | tar -xz -C $GITHUB_WORKSPACE/clang
 
       - name: 2. Kaynakları Çek
         run: |
@@ -92,13 +92,14 @@ jobs:
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # HZ Ayarı (Ustanın emri: 250 HZ)
+          # --- 500 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_500
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
 
-          # FULL PREEMPT (Eksiksiz Akıcılık)
+          # --- FULL PREEMPT (Eksiksiz Akıcılık) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
@@ -107,24 +108,28 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
-          # --- V2 ÖZEL: TOUCH BOOST & ADRENO IDLER MERMİLERİ ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TOUCHBOOST
+          # --- WALT & ADRENO (ISIL KONTROL VE PERFORMANS) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_ADRENO_IDLER
 
-          # Optimizasyon Mermileri
+          # --- COMPILER OPTİMİZASYONLARI (ZORLANMIŞ PGO) ---
+          # PGO'yu cihazdan veri almadan (default profil ile) çalışmaya zorluyoruz.
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # SCHEDULER & CLUSTER (Tam Takım)
+          # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # BBR, CAKE VE FQ_CODEL (Ağ Kodları Eksiksiz)
+          # --- AĞ KODLARI (0 Ping) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
@@ -133,7 +138,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           
-          # SUSFS Config Mermileri
+          # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -143,71 +148,41 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          # =========================================================
-          # --- BOOT İÇİN ZORUNLU SEMBOLLER VE SIFIR YÜK KONFİGÜRASYONU ---
-          # Burada sembolleri sürücüler için açık bırakıp, yükü (runtime check) kapatıyoruz.
-
-          # 1. KASAN SEMBOLLERİ (Zorunlu): HW_TAGS en hafifidir, sembolleri sağlar.
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_HW_TAGS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
-
-          # 2. BELLEK VE SLUB: Semboller açık ama denetimler kesin kapalı.
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_POISONING
-
-          # 3. KİLİT VE ZAMANLAYICI KATİLLERİ (KESİN KAPALI): Isı ve takılmanın ana kaynağı.
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCKDEP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_VM
-
-          # 4. TEMEL LOGLAR VE GKI ZORUNLULUKLARI
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
-          # =========================================================
-
+          # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme
+      - name: 7. Kernel Derleme (O3, Loop Unroll, MLGO, BOLT, ThinLTO)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          
+          # KCFLAGS İÇİNDEKİ MERMİLER:
+          # -O3: Maksimum hız, kod boyutunu umursamaz.
+          # -funroll-loops: Döngü açma, PUBG hesaplamalarında mikro gecikmeyi öldürür.
+          # -mllvm -enable-ml-inliner=release: MLGO'yu (Makine Öğrenmesi İnlining) varsayılan modelle tetikler.
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
+            HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O2" \
+            KCFLAGS="-O3 -funroll-loops -fno-stack-protector -mllvm -enable-ml-inliner=release" \
             Image
+          
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Susturucu Yaması)
+      - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
-          # KRİTİK: KASAN sembollerini kernelde tutup, çalışma anında (runtime) susturur.
-          # Bu komut cihazın hem açılmasını hem de mermi gibi hızlı olmasını sağlar.
-          sed -i '/patch_cmdline/a patch_cmdline "kasan" "kasan=off"' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Total-Ultimate.zip" ./*
