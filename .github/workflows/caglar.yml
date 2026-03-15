@@ -156,7 +156,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O3, Loop Unroll, MLGO, BOLT, ThinLTO)
+      - name: 7. Kernel Derleme (O3, Loop Unroll, BOLT, ThinLTO)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -165,17 +165,14 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
           # KCFLAGS İÇİNDEKİ MERMİLER:
-          # -O3: Maksimum hız
-          # -funroll-loops: Döngü açma (Loop Unrolling)
-          # -mllvm -enable-ml-inliner=release: MLGO'yu tetikler
-          
+          # Hatalı MLGO çıkarıldı, saf hız için O3 ve Loop Unroll devrede
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -fno-stack-protector -mllvm -enable-ml-inliner=release" \
+            KCFLAGS="-O3 -funroll-loops -fno-stack-protector" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
