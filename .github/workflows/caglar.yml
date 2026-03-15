@@ -114,8 +114,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_ADRENO_IDLER
 
-          # --- COMPILER OPTİMİZASYONLARI (ZORLANMIŞ PGO) ---
-          # PGO'yu cihazdan veri almadan (default profil ile) çalışmaya zorluyoruz.
+          # --- COMPILER OPTİMİZASYONLARI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
@@ -162,9 +161,9 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
           # KCFLAGS İÇİNDEKİ MERMİLER:
-          # -O3: Maksimum hız, kod boyutunu umursamaz.
-          # -funroll-loops: Döngü açma, PUBG hesaplamalarında mikro gecikmeyi öldürür.
-          # -mllvm -enable-ml-inliner=release: MLGO'yu (Makine Öğrenmesi İnlining) varsayılan modelle tetikler.
+          # -O3: Maksimum hız
+          # -funroll-loops: Döngü açma (Loop Unrolling)
+          # -mllvm -enable-ml-inliner=release: MLGO'yu tetikler
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
