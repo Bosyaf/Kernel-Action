@@ -96,11 +96,10 @@ jobs:
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # --- 500 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
+          # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_500
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
 
           # --- FULL PREEMPT (Eksiksiz Akıcılık) ---
@@ -112,11 +111,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
-          # --- WALT & ADRENO (ISIL KONTROL VE PERFORMANS) ---
+          # --- WALT & PERFORMANS YÖNETİMİ ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_ADRENO_IDLER
+          
+          # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
           # --- COMPILER OPTİMİZASYONLARI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
@@ -165,7 +167,9 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
           # KCFLAGS İÇİNDEKİ MERMİLER:
-          # Hatalı MLGO çıkarıldı, saf hız için O3 ve Loop Unroll devrede
+          # -O3: Maksimum hız
+          # -funroll-loops: Döngü açma (Loop Unrolling)
+          # (Hata veren MLGO kaldırıldı, saf C optimizasyonu ile devam ediliyor)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
