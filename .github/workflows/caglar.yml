@@ -144,73 +144,70 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # =========================================================
-          # --- UZMANIN TAVSİYESİ: HAYATİ İLETİŞİM VE MODÜL KABLOLARI (KESİN AÇIK) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EARLY_PRINTK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BUG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
+          # --- BOOT İÇİN ZORUNLU SEMBOLLER VE SIFIR YÜK KONFİGÜRASYONU ---
+          # Burada sembolleri sürücüler için açık bırakıp, yükü (runtime check) kapatıyoruz.
 
-          # --- ADIM 1: SÜRÜCÜYE BAĞLI TEHLİKELİ HAFIZA KİLİTLERİ (ŞİMDİLİK KESİN AÇIK) ---
+          # 1. KASAN SEMBOLLERİ (Zorunlu): HW_TAGS en hafifidir, sembolleri sağlar.
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_HW_TAGS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KASAN_VMALLOC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
-
-          # --- ADIM 1: SÜRÜCÜYÜ BOZMAYAN AĞIR PRANGALAR (KESİN KAPALI) ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_GENERIC
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_SW_TAGS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KFENCE
+
+          # 2. BELLEK VE SLUB: Semboller açık ama denetimler kesin kapalı.
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_POISONING
+
+          # 3. KİLİT VE ZAMANLAYICI KATİLLERİ (KESİN KAPALI): Isı ve takılmanın ana kaynağı.
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCKDEP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_VM
+
+          # 4. TEMEL LOGLAR VE GKI ZORUNLULUKLARI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PRINTK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKTRACE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
           # =========================================================
 
-          # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
-          
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O2 + BOLT Devrede)
+      - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
-          
-          # BOLT ve PGO'yu tetikleyen derleme komutu (-O2 Uyarlandı)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
-            HOSTLD=ld.lld \
             LLVM_BOLT=1 \
             KCFLAGS="-O2" \
             Image
-          
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: 8. AnyKernel3 (Susturucu Yaması)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
+          # KRİTİK: KASAN sembollerini kernelde tutup, çalışma anında (runtime) susturur.
+          # Bu komut cihazın hem açılmasını hem de mermi gibi hızlı olmasını sağlar.
+          sed -i '/patch_cmdline/a patch_cmdline "kasan" "kasan=off"' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Total-Ultimate.zip" ./*
