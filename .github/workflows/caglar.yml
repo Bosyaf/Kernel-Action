@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4.2 (Anti-Labirent)
+name: caglar++ Total Ultimate V5 (GKI Modül Standardı)
 
 permissions:
   contents: write
@@ -31,10 +31,10 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA!"; exit 1; }
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek ve AKILLI RADAR ile Montaj Yap
+      - name: 2. Kaynakları Çek ve Techpack Yuvasını Hazırla
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
@@ -44,7 +44,6 @@ jobs:
           wget -qO houji.tar.gz "https://2020.filemail.com/api/file/get?filekey=QU7kEG93Mxggr3KeRnAsLD5Jf0MiY7XSaT8O6jWMKNyoT45xj5dIqDN1_ATDfvbNIyrTxhPSYQpvJ4tf4o2ea_e8mb_3Bew4DZQ"
           tar -xzf houji.tar.gz -C vendor_houji
           
-          echo ">>> Sürücüler Techpack Yuvasına Diziliyor (Radar Aktif)..."
           mkdir -p common/techpack
           
           QCOM_DIR=$(find vendor_houji -type d -path "*/qcom/opensource" | head -n 1)
@@ -57,33 +56,18 @@ jobs:
             cp -r "$NXP_DIR" common/techpack/nxp
           fi
           
-          # ---------------------------------------------------------
-          # USTA İŞİ YAMA: AUDIO SÜRÜCÜSÜNDEKİ SONSUZ DÖNGÜYÜ (./././) KIRMA
-          # ---------------------------------------------------------
-          echo ">>> Audio ve Görüntü Sürücüleri İçin Kör Düğüm Yaması Uygulanıyor..."
-          if [ -d "common/techpack/audio" ]; then
-            find common/techpack/audio -type f -name "Makefile" -exec sed -i 's/$(PWD)/$(srctree)\/techpack\/audio/g' {} +
-            find common/techpack/audio -type f -name "Makefile" -exec sed -i 's/$(M)/$(srctree)\/techpack\/audio/g' {} +
-            # Bazı sürümler obj-m kullanır, onları obj-y'ye (Built-in) zorluyoruz
-            find common/techpack/audio -type f -name "Makefile" -exec sed -i 's/obj-m/obj-y/g' {} +
-          fi
-          
-          if [ -d "common/techpack/display" ]; then
-            find common/techpack/display -type f -name "Makefile" -exec sed -i 's/obj-m/obj-y/g' {} +
-          fi
-          # ---------------------------------------------------------
-          
           cd common
           sed -i '/source "drivers\/Kconfig"/a source "techpack\/Kconfig"' Kconfig
           sed -i '/^core-y[[:space:]]*:=/a core-y += techpack/' Makefile
           
+          # USTA İŞİ DEĞİŞİKLİK: Sürücüleri 'obj-y' yerine 'obj-m' (Modül) olarak bırakıyoruz!
           echo 'menu "Caglar++ Houji Ölüm Makinesi Sürücüleri"' > techpack/Kconfig
           > techpack/Makefile
-          
           for dir in techpack/*; do
             if [ -d "$dir" ]; then
               dirname=$(basename "$dir")
-              echo "obj-y += $dirname/" >> techpack/Makefile
+              # Modül olarak derlenmesi için kanca
+              echo "obj-\$(CONFIG_QCOM_TECHPACK) += $dirname/" >> techpack/Makefile
               if [ -f "$dir/Kconfig" ]; then
                 echo "source \"techpack/$dirname/Kconfig\"" >> techpack/Kconfig
               fi
@@ -112,73 +96,36 @@ jobs:
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
           extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
           #endif
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
           rm -f .ns_inject_tmp
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 5. Full Kernel Config (Built-in Aktivasyon)
+      - name: 5. Full Kernel Config (Modül Şalterleri)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
+          # --- MODÜL AKTİVASYONU (m olarak işaretliyoruz) ---
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_TECHPACK
           for conf in $(grep -E "^[[:space:]]*config[[:space:]]+" techpack/ -R -h | awk '{print $2}'); do
-            ./scripts/config --file $CONFIG_FILE --enable "CONFIG_$conf"
+            ./scripts/config --file $CONFIG_FILE --module "CONFIG_$conf" || true
           done
           
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_CAKE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6. Kernel Derleme (O3, Terzi İşi, BOLT, ThinLTO Turbo)
+      - name: 6. Kernel & Modül Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -186,32 +133,38 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
+          # 1. Ana Motoru (Image) Derle
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" \
-            LD=ld.lld \
-            HOSTLD=ld.lld \
-            LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all)" \
+            CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD=ld.lld LLVM_BOLT=1 \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition" \
             Image
+            
+          # 2. İnatçı Sürücüleri (Audio, Display) Modül Olarak Derle
+          echo ">>> MODÜLLER DERLENİYOR..."
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD=ld.lld \
+            modules
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 7. AnyKernel3 (Temiz Paketleme)
+      - name: 7. AnyKernel3 (Modüllü Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate.zip" ./*
+          
+          # Sürücüleri (.ko) zip içine taşı
+          mkdir -p ./modules/vendor/lib/modules/
+          find ../common/out/ -name "*.ko" -exec cp {} ./modules/vendor/lib/modules/ \;
+          
+          zip -r "../CG+-Total-Ultimate-V5.zip" ./*
 
-      - name: 8. Release Yükle
+      - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V4.2"
+          name: "CG+ Total Ultimate V5 (DLKM)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
