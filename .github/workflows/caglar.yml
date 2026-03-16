@@ -192,7 +192,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
           
-      - name: 7. Kernel Derleme (Full LTO + Hata Körleştirici + RAM Freni)
+      - name: 7. Kernel Derleme (Full LTO + Hata Körleştirici)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -201,7 +201,7 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
           # KCFLAGS içine BBRv3 hatasını atlatmak için -Wno-constant-logical-operand eklendi
-          # LDFLAGS_vmlinux ile de Full LTO RAM patlaması önlendi
+          # LDFLAGS_vmlinux söküldü (Pahole ve ld.lld hatalarını önlemek için)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -209,7 +209,6 @@ jobs:
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
             KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -Wno-constant-logical-operand" \
-            LDFLAGS_vmlinux="-Wl,--no-keep-memory -Wl,--threads=1" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
