@@ -21,17 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-
-      - name: 0. Swap RAM Takviyesi (Full LTO İçin Şart)
-        run: |
-          echo ">>> Full LTO derlemesi için GitHub sunucusuna 24GB Sanal RAM (Swap) ekleniyor..."
-          sudo swapoff -a
-          sudo rm -f /swapfile
-          sudo fallocate -l 24G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
+          swap-size-mb: 16384
 
       - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
         run: |
@@ -114,7 +104,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TOUCHBOOST 
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
