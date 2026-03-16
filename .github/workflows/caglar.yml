@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V6 (Wi-Fi Fixed)
+name: caglar++ Total Ultimate V6 (Full LTO + Wi-Fi Fixed)
 
 permissions:
   contents: write
@@ -21,6 +21,17 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
+
+      - name: 0. Swap RAM Takviyesi (Full LTO İçin Şart)
+        run: |
+          echo ">>> Full LTO derlemesi için GitHub sunucusuna 24GB Sanal RAM (Swap) ekleniyor..."
+          sudo swapoff -a
+          sudo rm -f /swapfile
+          sudo fallocate -l 24G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
         run: |
@@ -108,7 +119,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          
+          # ---> USTA EMRİ: FULL LTO AKTİVASYONU <---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -121,7 +137,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_CAKE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
@@ -205,7 +220,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V6 (OOT Modül Standardı)"
+          name: "CG+ Total Ultimate V6 (Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
