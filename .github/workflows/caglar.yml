@@ -177,6 +177,7 @@ jobs:
             
           # 3. Aşama: Lolipuru Modüllerini (Ekran, Ses, Wi-Fi) Derle (OOT)
           echo ">>> HOUJI MODÜLLERİ (OOT) DERLENİYOR..."
+          # dtbs komutu kaldırıldı, modüller dtb'leri kendi içinde derleyecek
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -185,7 +186,7 @@ jobs:
             LLVM_BOLT=1 \
             KCFLAGS="-O2" \
             M=$GITHUB_WORKSPACE/devicetrees \
-            modules dtbs
+            modules
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
