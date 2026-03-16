@@ -28,7 +28,7 @@ jobs:
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio pahole wget
           
           mkdir -p $GITHUB_WORKSPACE/clang
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
@@ -46,8 +46,12 @@ jobs:
           
           echo ">>> SÜRÜCÜLER MOTORUN İÇİNE (TECHPACK) TAŞINIYOR..."
           mkdir -p common/techpack
-          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/qcom/opensource/* common/techpack/
-          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/nxp common/techpack/nxp
+          
+          QCOM_PATH=$(find vendor_houji -type d -name "opensource" | head -n 1)
+          NXP_PATH=$(find vendor_houji -type d -name "nxp" | head -n 1)
+          
+          if [ -n "$QCOM_PATH" ]; then cp -r "$QCOM_PATH"/* common/techpack/; fi
+          if [ -n "$NXP_PATH" ]; then cp -r "$NXP_PATH" common/techpack/nxp; fi
           
           cd common
           # Çekirdeğe Techpack yolunu öğret
@@ -74,12 +78,20 @@ jobs:
           find techpack -name "Makefile" -exec sed -i 's/$(PWD)/$(srctree)\/techpack/g' {} +
           find techpack -name "Makefile" -exec sed -i 's/$(M)/$(srctree)\/techpack/g' {} +
 
-      - name: 3. Wi-Fi Patch (Ustanın Verdiği Kod)
+      - name: 3. Wi-Fi Patch & BBRv3 Patch (Mermiler)
         run: |
           cd common
+          # Ustanın Orijinal Wi-Fi Yaması
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
+          fi
+          
+          # BBRv3 Yaması
+          echo ">>> BBRv3 Yaması İndiriliyor..."
+          curl -fLSs "https://raw.githubusercontent.com/ahmed-alnassif/GKI-Duchamp/main/kernel-patches/bbrv3/bbrv3.patch" > bbrv3.patch || true
+          if [ -s bbrv3.patch ] && grep -q "diff" bbrv3.patch; then
+            patch -p1 --forward --fuzz=3 < bbrv3.patch || true
           fi
 
       - name: 4. SADECE VortexSU Kurulumu
@@ -115,7 +127,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (Full LTO & RAM Kurtaran Ayarlar)
+      - name: 6. Full Kernel Config (BTF Korumalı + Performans Mermileri)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -142,9 +154,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           
-          # ---> FULL LTO İÇİN GEREKSİZ DEBUG KAPATMA <---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
+          # UYARI: CONFIG_DEBUG_INFO_BTF ve DWARF kapatma satırları iptal edildi! Android bpfloader'ı koruyoruz.
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
@@ -170,6 +180,29 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
+          # =========================================================
+          # ---> ÇALINAN PERFORMANS ŞALTERLERİ <---
+          # =========================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_MEMORY_TRACKING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_DEADLINE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_COMPRESSION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_TRACE
+          
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           sed -i 's/check_defconfig//' build.config.gki || true
 
