@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4 (Ölüm Makinesi)
+name: caglar++ Total Ultimate V4.1 (Akıllı Radar)
 
 permissions:
   contents: write
@@ -38,7 +38,7 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek ve HOUJI Klasörlerini Motora Kaynak Yap
+      - name: 2. Kaynakları Çek ve AKILLI RADAR ile Montaj Yap
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
@@ -48,14 +48,26 @@ jobs:
           wget -qO houji.tar.gz "https://2020.filemail.com/api/file/get?filekey=QU7kEG93Mxggr3KeRnAsLD5Jf0MiY7XSaT8O6jWMKNyoT45xj5dIqDN1_ATDfvbNIyrTxhPSYQpvJ4tf4o2ea_e8mb_3Bew4DZQ"
           tar -xzf houji.tar.gz -C vendor_houji
           
-          echo ">>> Sürücüler Techpack Yuvasına Diziliyor..."
+          echo ">>> Sürücüler Techpack Yuvasına Diziliyor (Radar Aktif)..."
           mkdir -p common/techpack
           
-          # Ustanın tam rotası: kernel_xiaomi_sm8650-modules-main içinden alıyoruz!
-          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/qcom/opensource/* common/techpack/
+          # RADAR 1: qcom/opensource nerede olursa olsun bul ve içini techpack'e kopyala
+          QCOM_DIR=$(find vendor_houji -type d -path "*/qcom/opensource" | head -n 1)
+          if [ -n "$QCOM_DIR" ]; then
+            echo "Bulundu -> $QCOM_DIR"
+            cp -r "$QCOM_DIR"/* common/techpack/
+          else
+            echo "HATA: qcom/opensource klasörü pakette bulunamadı!"
+          fi
           
-          # NXP'yi de ustanın verdiği ana klasörün içinden yuvaya ekliyoruz
-          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/nxp common/techpack/nxp
+          # RADAR 2: nxp klasörü nerede olursa olsun bul ve techpack/nxp yap
+          NXP_DIR=$(find vendor_houji -type d -name "nxp" | head -n 1)
+          if [ -n "$NXP_DIR" ]; then
+            echo "Bulundu -> $NXP_DIR"
+            cp -r "$NXP_DIR" common/techpack/nxp
+          else
+            echo "UYARI: nxp klasörü bulunamadı, pas geçiliyor."
+          fi
           
           echo ">>> KCONFIG VE MAKEFILE KANCALARI ZORLA ATILIYOR..."
           cd common
@@ -81,7 +93,7 @@ jobs:
           done
           echo 'endmenu' >> techpack/Kconfig
           
-          echo ">>> Kaynak İşlemi Başarılı! NXP ve QCOM'un tüm klasörleri motora lehimlendi."
+          echo ">>> Kaynak İşlemi Başarılı! Radar tüm parçaları motora lehimledi."
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
@@ -129,7 +141,6 @@ jobs:
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
           # --- DİNAMİK SÜRÜCÜ ŞALTERİ (ÖLÜM MAKİNESİ ZEKASI) ---
-          # techpack içindeki tüm Kconfig dosyalarını tarar, içindeki tüm "config XXX" isimlerini bulup şalterini kaldırır.
           echo ">>> Yüklenen Tüm Sürücüler Dinamik Olarak Tespit Edilip Aktif Ediliyor..."
           for conf in $(grep -E "^[[:space:]]*config[[:space:]]+" techpack/ -R -h | awk '{print $2}'); do
             ./scripts/config --file $CONFIG_FILE --enable "CONFIG_$conf"
@@ -151,7 +162,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
           # --- WALT & PERFORMANS YÖNETİMİ ---
-          
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           
