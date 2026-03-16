@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Ölüm Makinesi)
+name: caglar++ Total Ultimate V2 (Houji GKI Edition)
 
 permissions:
   contents: write
@@ -22,26 +22,29 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
+      - name: 1. Gerekli Paketleri Kur ve Orijinal Google Toolchain İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
+          echo ">>> Zehir Orijinal Google AOSP Clang (r584948) Çekiliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang
-          
-          # Ustanın bulduğu çalışan gizli depo linki (Patlak olan main linki değiştirildi)
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
-          echo "Clang indiriliyor: $CLANG_URL"
-          
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+          cd $GITHUB_WORKSPACE/clang
+          # Ustanın emri: Google'ın resmi deposundan zehir toolchain indiriliyor
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz
+          tar -xzf clang-r584948.tar.gz
+          rm clang-r584948.tar.gz
+          cd $GITHUB_WORKSPACE
 
-      - name: 2. Kaynakları Çek
+      - name: 2. Kaynakları Çek (LTS Motoru + Lolipuru Kaportası)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          
+          # HOUJI CİĞERİ: Lolipuru Device Tree OOT olarak çekiliyor
+          git clone https://github.com/lolipuru/kernel_xiaomi_sm8650-devicetrees.git -b lineage-22.2 --depth=1 devicetrees
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
@@ -91,18 +94,18 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (CG+ Mermileri)
+      - name: 6. Full Kernel Config (CG+ Mermileri + OOT Hazırlığı)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
+          # HZ Ayarı (Ustanın emri: 250 HZ)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
 
-          # --- FULL PREEMPT (Eksiksiz Akıcılık) ---
+          # FULL PREEMPT (Eksiksiz Akıcılık)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
@@ -111,30 +114,24 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
-          # --- WALT & PERFORMANS YÖNETİMİ ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          
-          # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
+          # --- V2 ÖZEL: TOUCH BOOST & ADRENO IDLER MERMİLERİ ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TOUCHBOOST
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_ADRENO_IDLER
 
-          # --- COMPILER OPTİMİZASYONLARI ---
+          # Optimizasyon Mermileri
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
+          # SCHEDULER & CLUSTER (Tam Takım)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # --- AĞ KODLARI (0 Ping) ---
+          # BBR, CAKE VE FQ_CODEL (Ağ Kodları Eksiksiz)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
@@ -143,7 +140,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           
-          # --- SUSFS Config Mermileri ---
+          # SUSFS Config Mermileri (Aktif Edildi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -158,46 +155,69 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O3, Terzi İşi, BOLT, ThinLTO Turbo)
+      - name: 7. Kernel & Kaporta (OOT) Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           
+          # 1. Aşama: GKI Defconfig'i Hazırla
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # KCFLAGS İÇİNDEKİ YENİ MERMİLER:
-          # -O3 ve Loop Unroll: Maksimum Hız
-          # -march=armv9-a+crypto: İşlemciye Özel Terzi İşi (Snapdragon 8 Gen 3)
-          # -fno-semantic-interposition: Fonksiyonlar arası gecikmeyi silme
-          # -flto-jobs: ThinLTO derlemesini tüm çekirdeklere paylaştırma
-          
+          # 2. Aşama: Ana Motoru Derle (Image)
+          echo ">>> ANA MOTOR DERLENIYOR..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all)" \
+            KCFLAGS="-O2" \
             Image
+            
+          # 3. Aşama: Lolipuru Modüllerini (Ekran, Ses, Wi-Fi) Derle (OOT)
+          echo ">>> HOUJI MODÜLLERİ (OOT) DERLENİYOR..."
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" \
+            LD=ld.lld \
+            HOSTLD=ld.lld \
+            LLVM_BOLT=1 \
+            KCFLAGS="-O2" \
+            M=$GITHUB_WORKSPACE/devicetrees \
+            modules dtbs
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: 8. AnyKernel3 (Eksiksiz Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
+          # Ana Motoru (Image) AK3'e taşı
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate.zip" ./*
+          
+          # Modüller için klasör oluştur ve taşı (Ekran, Ses, Wi-Fi)
+          mkdir -p ./modules/vendor/lib/modules/
+          find $GITHUB_WORKSPACE/devicetrees -name "*.ko" -exec cp {} ./modules/vendor/lib/modules/ \;
+          
+          # Cihaz Ruhsatı (DTB/DTBO) için klasör oluştur ve taşı
+          mkdir -p ./dtb
+          find $GITHUB_WORKSPACE/devicetrees -name "*.dtb" -exec cp {} ./dtb/ \;
+          find $GITHUB_WORKSPACE/devicetrees -name "houji-sm8650-overlay.dtbo" -exec cp {} ./dtb/ \;
+          
+          # dtbo.img'yi AK3 kök dizinine garantilemek için kopyala
+          find $GITHUB_WORKSPACE/devicetrees -name "houji-sm8650-overlay.dtbo" -exec cp {} ./dtbo.img \; || true
+
+          zip -r "../CG+-Total-Ultimate-Houji.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V3"
+          name: "CG+ Total Ultimate (Houji Edition)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
