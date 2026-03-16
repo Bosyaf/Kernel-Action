@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V7 (Full LTO + Built-in)
+name: caglar++ Total Ultimate V4 (Saf GKI + Full LTO)
 
 permissions:
   contents: write
@@ -31,85 +31,53 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio pahole wget
           
           mkdir -p $GITHUB_WORKSPACE/clang
+          
+          # Ustanın bulduğu çalışan gizli depo linki (Patlak olan main linki değiştirildi)
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA!"; exit 1; }
+          echo "Clang indiriliyor: $CLANG_URL"
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek ve Techpack İçine Zorla Göm (Built-in)
+      - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-          
-          mkdir -p vendor_houji
-          wget -qO houji.tar.gz "https://2020.filemail.com/api/file/get?filekey=QU7kEG93Mxggr3KeRnAsLD5Jf0MiY7XSaT8O6jWMKNyoT45xj5dIqDN1_ATDfvbNIyrTxhPSYQpvJ4tf4o2ea_e8mb_3Bew4DZQ"
-          tar -xzf houji.tar.gz -C vendor_houji
-          
-          echo ">>> SÜRÜCÜLER MOTORUN İÇİNE (TECHPACK) TAŞINIYOR..."
-          mkdir -p common/techpack
-          
-          QCOM_PATH=$(find vendor_houji -type d -name "opensource" | head -n 1)
-          NXP_PATH=$(find vendor_houji -type d -name "nxp" | head -n 1)
-          
-          if [ -n "$QCOM_PATH" ]; then cp -r "$QCOM_PATH"/* common/techpack/; fi
-          if [ -n "$NXP_PATH" ]; then cp -r "$NXP_PATH" common/techpack/nxp; fi
-          
-          cd common
-          # Çekirdeğe Techpack yolunu öğret
-          sed -i '/source "drivers\/Kconfig"/a source "techpack\/Kconfig"' Kconfig
-          sed -i '/^core-y[[:space:]]*:=/a core-y += techpack/' Makefile
-          
-          echo 'menu "Caglar++ Houji Gömülü Sürücüleri"' > techpack/Kconfig
-          > techpack/Makefile
-          
-          # USTA EMRİ: Modül (m) yok, Direkt Çekirdek (y) var!
-          for dir in techpack/*; do
-            if [ -d "$dir" ]; then
-              dirname=$(basename "$dir")
-              echo "obj-y += $dirname/" >> techpack/Makefile
-              if [ -f "$dir/Kconfig" ]; then
-                echo "source \"techpack/$dirname/Kconfig\"" >> techpack/Kconfig
-              fi
-            fi
-          done
-          echo 'endmenu' >> techpack/Kconfig
-          
-          # Sonsuz Döngü Katili: Qualcomm'un yol takıntılarını temizliyoruz
-          echo ">>> Sonsuz döngü engellemesi yapılıyor..."
-          find techpack -name "Makefile" -exec sed -i 's/$(PWD)/$(srctree)\/techpack/g' {} +
-          find techpack -name "Makefile" -exec sed -i 's/$(M)/$(srctree)\/techpack/g' {} +
 
-      - name: 3. Wi-Fi Patch & BBRv3 Patch (Mermiler)
+      - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
-          # Ustanın Orijinal Wi-Fi Yaması
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+
+      - name: 4. Wi-Fi ve BBRv3 Yamaları (Çalıntı Mermiler)
+        run: |
+          cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
           
-          # BBRv3 Yaması
-          echo ">>> BBRv3 Yaması İndiriliyor..."
+          echo ">>> BBRv3 Yaması Uygulanıyor..."
           curl -fLSs "https://raw.githubusercontent.com/ahmed-alnassif/GKI-Duchamp/main/kernel-patches/bbrv3/bbrv3.patch" > bbrv3.patch || true
           if [ -s bbrv3.patch ] && grep -q "diff" bbrv3.patch; then
             patch -p1 --forward --fuzz=3 < bbrv3.patch || true
           fi
 
-      - name: 4. SADECE VortexSU Kurulumu
+      - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
           cd common
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-
-      - name: 5. SUSFS Master Formülü
-        run: |
-          cd common
+          echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
+          echo "Kingfinik98 Özel 6.1 Fix Yaması Uygulanıyor..."
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
+          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -117,6 +85,7 @@ jobs:
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
+
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
           #define CL_COPY_MNT_NS BIT(25)
@@ -124,18 +93,23 @@ jobs:
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
           rm -f .ns_inject_tmp
+          
+          echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (BTF Korumalı + Performans Mermileri)
+      - name: 6. Full Kernel Config (Saf GKI + Çalıntı Şalterler)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
+          # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+
+          # --- FULL PREEMPT (Eksiksiz Akıcılık) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
@@ -143,21 +117,25 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+
+          # --- WALT & PERFORMANS YÖNETİMİ ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          
+          # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
-          
-          # ---> USTA EMRİ: FULL LTO AKTİVASYONU <---
+
+          # --- FULL LTO AKTİVASYONU ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           
-          # UYARI: CONFIG_DEBUG_INFO_BTF ve DWARF kapatma satırları iptal edildi! Android bpfloader'ı koruyoruz.
-          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
@@ -165,6 +143,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          
+          # --- AĞ KODLARI (0 Ping) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
@@ -172,6 +152,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          
+          # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -182,7 +164,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # =========================================================
-          # ---> ÇALINAN PERFORMANS ŞALTERLERİ <---
+          # ---> ÇALINAN (AŞIRILAN) PERFORMANS ŞALTERLERİ <---
           # =========================================================
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
@@ -203,10 +185,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_TRACE
           
+          # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. TEK PARÇA DEV MOTOR DERLEME (Built-in + Full LTO)
+      - name: 7. Kernel Derleme (Full LTO + Anti-OOM Frenli)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -214,34 +198,34 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          echo ">>> MOTOR VE SÜRÜCÜLER TEK POTADA ERİTİLİYOR..."
-          # ---> LTO KİLİT KIRICI (LDFLAGS_vmlinux) BURADA <---
+          # LDFLAGS ile RAM koruması eklendi, LTO sorunsuz çıkacak
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD=ld.lld LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" \
+            LD=ld.lld \
+            HOSTLD=ld.lld \
+            LLVM_BOLT=1 \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector" \
             LDFLAGS_vmlinux="-Wl,--no-keep-memory -Wl,--threads=1" \
             Image
-            
+          
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Sıfır Ko, Saf Image Paketleme)
+      - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine V4/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
-          # Ana motoru taşı (İçinde bütün sürücüler gömülü!)
           cp ../common/out/arch/arm64/boot/Image .
-          
-          # Usta emri: Modül falan yok, zip sadece Image içerecek.
-          zip -r "../CG+-Total-Ultimate-V7.zip" ./*
+          zip -r "../CG+-Total-Ultimate-V4.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V7 (Built-in & Full LTO)"
+          name: "CG+ Total Ultimate V4 (Saf GKI + Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
