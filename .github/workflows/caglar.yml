@@ -32,23 +32,23 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # Ustanın bulduğu çalışan gizli depo linki (Patlak olan main linki değiştirildi)
+          # Ustanın bulduğu çalışan gizli depo linki
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
           echo "Clang indiriliyor: $CLANG_URL"
           
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
-
+          
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-
+          
       - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-
+          
       - name: 4. Wi-Fi ve BBRv3 Yamaları (Çalıntı Mermiler)
         run: |
           cd common
@@ -62,7 +62,7 @@ jobs:
           if [ -s bbrv3.patch ] && grep -q "diff" bbrv3.patch; then
             patch -p1 --forward --fuzz=3 < bbrv3.patch || true
           fi
-
+          
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
           cd common
@@ -85,7 +85,6 @@ jobs:
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
-
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
           #define CL_COPY_MNT_NS BIT(25)
@@ -97,7 +96,7 @@ jobs:
           echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-
+          
       - name: 6. Full Kernel Config (Saf GKI + Çalıntı Şalterler)
         run: |
           cd common
@@ -108,7 +107,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-
+          
           # --- FULL PREEMPT (Eksiksiz Akıcılık) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
@@ -117,16 +116,18 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
-
+          
           # --- WALT & PERFORMANS YÖNETİMİ ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           
-          # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
+          # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) - Eksikler Eklendi ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_EXPERT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
-
+          
           # --- FULL LTO AKTİVASYONU ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
@@ -144,7 +145,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # --- AĞ KODLARI (0 Ping) ---
+          # --- AĞ KODLARI (0 Ping) + DEFAULT BBRv3 ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
@@ -164,13 +165,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # =========================================================
-          # ---> ÇALINAN (AŞIRILAN) PERFORMANS ŞALTERLERİ <---
+          # ---> ÇALINAN PERFORMANS ŞALTERLERİ + DEFAULT LZ4 <---
           # =========================================================
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_MEMORY_TRACKING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
@@ -189,8 +191,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           
           sed -i 's/check_defconfig//' build.config.gki || true
-
-      - name: 7. Kernel Derleme (Full LTO + Anti-OOM Frenli)
+          
+      - name: 7. Kernel Derleme (Full LTO + Hata Körleştirici + RAM Freni)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -198,19 +200,20 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # LDFLAGS ile RAM koruması eklendi, LTO sorunsuz çıkacak
+          # KCFLAGS içine BBRv3 hatasını atlatmak için -Wno-constant-logical-operand eklendi
+          # LDFLAGS_vmlinux ile de Full LTO RAM patlaması önlendi
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector" \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -Wno-constant-logical-operand" \
             LDFLAGS_vmlinux="-Wl,--no-keep-memory -Wl,--threads=1" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
+          
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
@@ -220,7 +223,7 @@ jobs:
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Total-Ultimate-V4.zip" ./*
-
+          
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
