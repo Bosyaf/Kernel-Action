@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4 (Saf GKI + Full LTO)
+name: caglar++ Total Ultimate V4 (Saf GKI + Thin LTO)
 
 permissions:
   contents: write
@@ -128,10 +128,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
           
-          # --- FULL LTO AKTİVASYONU ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          # --- THIN LTO AKTİVASYONU ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
@@ -192,7 +192,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
           
-      - name: 7. Kernel Derleme (Full LTO + Hata Körleştirici)
+      - name: 7. Kernel Derleme (Thin LTO + Hata Körleştirici)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -201,7 +201,6 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
           # KCFLAGS içine BBRv3 hatasını atlatmak için -Wno-constant-logical-operand eklendi
-          # LDFLAGS_vmlinux söküldü (Pahole ve ld.lld hatalarını önlemek için)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -216,18 +215,18 @@ jobs:
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine V4/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine V4 ThinLTO/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate-V4.zip" ./*
+          zip -r "../CG+-Total-Ultimate-V4-ThinLTO.zip" ./*
           
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V4 (Saf GKI + Full LTO)"
+          name: "CG+ Total Ultimate V4 (Saf GKI + Thin LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
