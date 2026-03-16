@@ -51,11 +51,11 @@ jobs:
           echo ">>> Sürücüler Techpack Yuvasına Diziliyor..."
           mkdir -p common/techpack
           
-          # Ustanın tam rotası: qcom/opensource içindeki HER ŞEYİ al
-          cp -r vendor_houji/qcom/opensource/* common/techpack/ || true
+          # Ustanın tam rotası: kernel_xiaomi_sm8650-modules-main içinden alıyoruz!
+          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/qcom/opensource/* common/techpack/
           
-          # NXP'yi de ana yuvaya ekle
-          cp -r vendor_houji/nxp common/techpack/nxp || true
+          # NXP'yi de ustanın verdiği ana klasörün içinden yuvaya ekliyoruz
+          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/nxp common/techpack/nxp
           
           echo ">>> KCONFIG VE MAKEFILE KANCALARI ZORLA ATILIYOR..."
           cd common
@@ -151,7 +151,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
           # --- WALT & PERFORMANS YÖNETİMİ ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
+          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           
