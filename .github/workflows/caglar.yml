@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V6 (GKI Fabrika Standardı)
+name: caglar++ Total Ultimate V6 (Wi-Fi Fixed)
 
 permissions:
   contents: write
@@ -46,12 +46,20 @@ jobs:
           
           echo ">>> Kconfig ve Makefile Kaynak (Sed) İşlemleri İptal Edildi! Sürücüler Orijinal Yerinde Bırakıldı."
 
-      - name: 3. SADECE VortexSU Kurulumu
+      - name: 3. Wi-Fi Patch (Ustanın Verdiği Kod)
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+
+      - name: 4. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. SUSFS Master Formülü
+      - name: 5. SUSFS Master Formülü
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
@@ -79,7 +87,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 5. Full Kernel Config (Sadece Ana Motor Mermileri)
+      - name: 6. Full Kernel Config (Sadece Ana Motor Mermileri)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -95,7 +103,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
@@ -129,7 +137,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6. Ana Motor (Image) Derleme
+      - name: 7. Ana Motor (Image) Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -146,7 +154,7 @@ jobs:
           # Derlenen motorun header'larını modüller için hazırlıyoruz
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC="clang" modules_prepare
 
-      - name: 7. Houji Sürücülerini Dışarıdan (OOT) Modül Olarak Derleme
+      - name: 8. Houji Sürücülerini Dışarıdan (OOT) Modül Olarak Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -177,7 +185,7 @@ jobs:
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Modüllü Paketleme)
+      - name: 9. AnyKernel3 (Modüllü Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
@@ -193,7 +201,7 @@ jobs:
           
           zip -r "../CG+-Total-Ultimate-V6.zip" ./*
 
-      - name: 9. Release Yükle
+      - name: 10. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
