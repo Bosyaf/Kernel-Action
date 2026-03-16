@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V6 (Full LTO + Wi-Fi Fixed)
+name: caglar++ Total Ultimate V7 (Full LTO + Built-in)
 
 permissions:
   contents: write
@@ -35,17 +35,44 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek (Houji Olduğu Gibi Kalacak)
+      - name: 2. Kaynakları Çek ve Techpack İçine Zorla Göm (Built-in)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           
-          echo ">>> Ustanın Houji Vendor Paketi İndiriliyor..."
           mkdir -p vendor_houji
           wget -qO houji.tar.gz "https://2020.filemail.com/api/file/get?filekey=QU7kEG93Mxggr3KeRnAsLD5Jf0MiY7XSaT8O6jWMKNyoT45xj5dIqDN1_ATDfvbNIyrTxhPSYQpvJ4tf4o2ea_e8mb_3Bew4DZQ"
           tar -xzf houji.tar.gz -C vendor_houji
           
-          echo ">>> Kconfig ve Makefile Kaynak (Sed) İşlemleri İptal Edildi! Sürücüler Orijinal Yerinde Bırakıldı."
+          echo ">>> SÜRÜCÜLER MOTORUN İÇİNE (TECHPACK) TAŞINIYOR..."
+          mkdir -p common/techpack
+          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/qcom/opensource/* common/techpack/
+          cp -r vendor_houji/kernel_xiaomi_sm8650-modules-main/nxp common/techpack/nxp
+          
+          cd common
+          # Çekirdeğe Techpack yolunu öğret
+          sed -i '/source "drivers\/Kconfig"/a source "techpack\/Kconfig"' Kconfig
+          sed -i '/^core-y[[:space:]]*:=/a core-y += techpack/' Makefile
+          
+          echo 'menu "Caglar++ Houji Gömülü Sürücüleri"' > techpack/Kconfig
+          > techpack/Makefile
+          
+          # USTA EMRİ: Modül (m) yok, Direkt Çekirdek (y) var!
+          for dir in techpack/*; do
+            if [ -d "$dir" ]; then
+              dirname=$(basename "$dir")
+              echo "obj-y += $dirname/" >> techpack/Makefile
+              if [ -f "$dir/Kconfig" ]; then
+                echo "source \"techpack/$dirname/Kconfig\"" >> techpack/Kconfig
+              fi
+            fi
+          done
+          echo 'endmenu' >> techpack/Kconfig
+          
+          # Sonsuz Döngü Katili: Qualcomm'un yol takıntılarını temizliyoruz
+          echo ">>> Sonsuz döngü engellemesi yapılıyor..."
+          find techpack -name "Makefile" -exec sed -i 's/$(PWD)/$(srctree)\/techpack/g' {} +
+          find techpack -name "Makefile" -exec sed -i 's/$(M)/$(srctree)\/techpack/g' {} +
 
       - name: 3. Wi-Fi Patch (Ustanın Verdiği Kod)
         run: |
@@ -88,7 +115,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (Sadece Ana Motor Mermileri)
+      - name: 6. Full Kernel Config (Full LTO & RAM Kurtaran Ayarlar)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -114,6 +141,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          
+          # ---> FULL LTO İÇİN GEREKSİZ DEBUG KAPATMA <---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
@@ -142,7 +173,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Ana Motor (Image) Derleme
+      - name: 7. TEK PARÇA DEV MOTOR DERLEME (Built-in + Full LTO)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -150,67 +181,34 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          echo ">>> 1. AŞAMA: ANA MOTOR DERLENİYOR..."
+          echo ">>> MOTOR VE SÜRÜCÜLER TEK POTADA ERİTİLİYOR..."
+          # ---> LTO KİLİT KIRICI (LDFLAGS_vmlinux) BURADA <---
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD=ld.lld LLVM_BOLT=1 \
             KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition" \
+            LDFLAGS_vmlinux="-Wl,--no-keep-memory -Wl,--threads=1" \
             Image
             
-          # Derlenen motorun header'larını modüller için hazırlıyoruz
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC="clang" modules_prepare
-
-      - name: 8. Houji Sürücülerini Dışarıdan (OOT) Modül Olarak Derleme
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          echo ">>> 2. AŞAMA: HOUJI SÜRÜCÜLERİ MODÜL OLARAK DERLENİYOR (OOT)..."
-          
-          # qcom/opensource içindeki tüm klasörleri bul ve derle
-          for dir in $GITHUB_WORKSPACE/vendor_houji/kernel_xiaomi_sm8650-modules-main/qcom/opensource/*; do
-            if [ -f "$dir/Makefile" ]; then
-              echo "---------------------------------------------------"
-              echo ">>> DERLENİYOR: $(basename $dir)"
-              echo "---------------------------------------------------"
-              make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-                CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD=ld.lld \
-                M=$dir modules || echo ">>> UYARI: $(basename $dir) modülü atlandı!"
-            fi
-          done
-          
-          # NXP Klasörü için özel derleme
-          NXP_DIR="$GITHUB_WORKSPACE/vendor_houji/kernel_xiaomi_sm8650-modules-main/nxp"
-          if [ -f "$NXP_DIR/Makefile" ]; then
-              echo "---------------------------------------------------"
-              echo ">>> DERLENİYOR: nxp"
-              echo "---------------------------------------------------"
-              make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-                CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD=ld.lld \
-                M=$NXP_DIR modules || echo ">>> UYARI: nxp modülü atlandı!"
-          fi
-          
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 9. AnyKernel3 (Modüllü Paketleme)
+      - name: 8. AnyKernel3 (Sıfır Ko, Saf Image Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
-          # Ana motoru taşı
+          # Ana motoru taşı (İçinde bütün sürücüler gömülü!)
           cp ../common/out/arch/arm64/boot/Image .
           
-          # Yeni derlenen TÜM .ko (modül) dosyalarını bul ve zip'in içine taşı
-          mkdir -p ./modules/vendor/lib/modules/
-          find $GITHUB_WORKSPACE/vendor_houji -name "*.ko" -exec cp {} ./modules/vendor/lib/modules/ \;
-          
-          zip -r "../CG+-Total-Ultimate-V6.zip" ./*
+          # Usta emri: Modül falan yok, zip sadece Image içerecek.
+          zip -r "../CG+-Total-Ultimate-V7.zip" ./*
 
-      - name: 10. Release Yükle
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V6 (Full LTO)"
+          name: "CG+ Total Ultimate V7 (Built-in & Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
