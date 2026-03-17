@@ -48,7 +48,7 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi Patch ve BBRv3 / CAKE Balyoz Operasyonu
+      - name: 4. Wi-Fi Patch ve BBRv3 Balyoz Operasyonu
         run: |
           cd common
           
@@ -58,19 +58,17 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           
-          echo ">>> BBRv3 ve CAKE Üzerine Yazılıyor (Balyoz Operasyonu)..."
+          echo ">>> BBRv3 Üzerine Yazılıyor (Balyoz Operasyonu)..."
           
-          # BBRv3 Balyozu
+          # BBRv3 Balyozu (CAKE'e dokunmuyoruz, içinde var zaten)
           cd net/ipv4
           rm -f tcp_bbr.c
           curl -fLSs "https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c" -o tcp_bbr.c
+          cd ../..
           
-          # CAKE Balyozu, Adres Hatası ve Cobalt Çözümü!
-          cd ../sched
-          rm -f sch_cake.c
-          curl -fLSs "https://raw.githubusercontent.com/dtaht/sch_cake/master/sch_cake.c" -o sch_cake.c
-          curl -fLSs "https://raw.githubusercontent.com/dtaht/sch_cake/master/cobalt_compat.h" -o cobalt_compat.h
-          sed -i 's/#include "pkt_sched.h"/#include <net\/pkt_sched.h>/g' sch_cake.c
+          echo ">>> CAKE'i Sistem Varsayılanı Olarak Zorlama (Hardcode)..."
+          # Sadece defconfig ayarı yetmez, kernelin çekirdek dosyasına "default CAKE'tir" diye zorluyoruz!
+          sed -i 's/return "fq_codel";/return "cake";/g' net/sched/sch_generic.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
