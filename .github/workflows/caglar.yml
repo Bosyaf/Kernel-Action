@@ -31,7 +31,7 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # Ustanın bulduğu çalışan gizli depo linki (Patlak olan main linki değiştirildi)
+          # Ustanın bulduğu çalışan gizli depo linki
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
           echo "Clang indiriliyor: $CLANG_URL"
           
@@ -52,7 +52,7 @@ jobs:
         run: |
           cd common
           
-          # Wi-Fi yaması (Aynen kalıyor)
+          # Wi-Fi yaması
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
@@ -60,15 +60,16 @@ jobs:
           
           echo ">>> BBRv3 ve CAKE Üzerine Yazılıyor (Balyoz Operasyonu)..."
           
-          # Orijinal BBR'yi sil, v3'ün tam dosyasını çek ve koy (v3 branch)
+          # BBRv3 Balyozu
           cd net/ipv4
           rm -f tcp_bbr.c
           curl -fLSs "https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c" -o tcp_bbr.c
           
-          # CAKE'in en güncel kodunu indirip üstüne yaz
+          # CAKE Balyozu ve Adres Hatası (pkt_sched.h) Çözümü!
           cd ../sched
           rm -f sch_cake.c
           curl -fLSs "https://raw.githubusercontent.com/dtaht/sch_cake/master/sch_cake.c" -o sch_cake.c
+          sed -i 's/#include "pkt_sched.h"/#include <net\/pkt_sched.h>/g' sch_cake.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
@@ -184,13 +185,6 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # KCFLAGS İÇİNDEKİ YENİ MERMİLER:
-          # -O3 ve Loop Unroll: Maksimum Hız
-          # -march=armv9-a+crypto: İşlemciye Özel Terzi İşi (Snapdragon 8 Gen 3)
-          # -fno-semantic-interposition: Fonksiyonlar arası gecikmeyi silme
-          # -flto-jobs: ThinLTO derlemesini tüm çekirdeklere paylaştırma
-          # -Wno-constant-logical-operand: BBRv3 uyarısını kör etme (ŞART)
-          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -202,12 +196,67 @@ jobs:
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: 8. AnyKernel3 (Temiz Paketleme ve LUNAR Zulası)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
+          # --- LUNAR'DAN ARAKLANAN ZEHİRLİ AYARLARI HAZIRLA ---
+          cat << 'EOF' > cg_lunar_service.sh
+          #!/system/bin/sh
+          # CG+ Ultimate V3 - Zehirli Lunar Ayarları
+          while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done
+          
+          mkdir -p /dev/mount_masks
+          mask_val() {
+              find "$2" -type f | while read -r file; do
+                  file="$(realpath "$file")"
+                  umount "$file" >/dev/null 2>&1
+                  chown root:root "$file"
+                  chmod 0644 "$file"
+                  echo "$1" >"$file"
+                  chmod 0444 "$file"
+                  
+                  TIME="$(date "+%s%N")"
+                  echo "$1" >"/dev/mount_masks/mount_mask_$TIME"
+                  mount --bind "/dev/mount_masks/mount_mask_$TIME" "$file"
+                  restorecon -R -F "$file" >/dev/null 2>&1
+              done
+          }
+
+          # Xiaomi Servis Katliamı
+          killall -9 mi_thermald
+          for svc in mimd-service mimd-service2_0 miuibooster; do
+              stop $svc
+          done
+          mask_val "0" /sys/module/migt/parameters/enable_pkg_monitor
+          mask_val "0" /proc/sys/migt/enable_pkg_monitor
+          mask_val "0" /sys/module/metis/parameters/cluaff_control
+
+          # İzole Çekirdek Düzeni (Cpuset)
+          LITTLE_LIST="$(cat /sys/devices/system/cpu/cpu0/topology/cluster_cpus_list)"
+          ALL_LIST="$(cat /sys/devices/system/cpu/present)"
+
+          mask_val "0-1" /dev/cpuset/background/cpus
+          mask_val "0-1,5-6" /dev/cpuset/system-background/cpus
+          mask_val "$ALL_LIST" /dev/cpuset/foreground/cpus
+          mask_val "$ALL_LIST" /dev/cpuset/top-app/cpus
+
+          # IRQ Afinitesi
+          mask_val "$LITTLE_LIST" /proc/irq/default_smp_affinity
+
+          # Ağ Maskesi (BBR ve CAKE'i Garantile)
+          mask_val "bbr" /proc/sys/net/ipv4/tcp_congestion_control
+          mask_val "cake" /proc/sys/net/core/default_qdisc
+          EOF
+          
+          # AnyKernel3 flaşlanırken scripti otomatik KSU servisine atacak mermi!
+          echo 'ui_print ">>> Zehirli Lunar Ayarları Sisteme Enjekte Ediliyor...";' >> anykernel.sh
+          echo 'mkdir -p /data/adb/service.d;' >> anykernel.sh
+          echo 'cp $home/cg_lunar_service.sh /data/adb/service.d/cg_lunar_service.sh;' >> anykernel.sh
+          echo 'chmod 0755 /data/adb/service.d/cg_lunar_service.sh;' >> anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Total-Ultimate.zip" ./*
