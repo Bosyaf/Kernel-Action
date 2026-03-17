@@ -22,6 +22,9 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
+      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+        uses: actions/checkout@v4
+
       - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
         run: |
           sudo apt update -qq
@@ -48,7 +51,7 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi Patch ve BBRv3 Balyoz Operasyonu
+      - name: 4. Wi-Fi Patch ve BBRv3 Mikroskop Operasyonu
         run: |
           cd common
           
@@ -58,13 +61,10 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           
-          echo ">>> BBRv3 Üzerine Yazılıyor (Balyoz Operasyonu)..."
+          echo ">>> BBRv3 Yaması Uygulanıyor (Mikroskop Operasyonu)..."
           
-          # BBRv3 Balyozu (CAKE'e dokunmuyoruz, içinde var zaten)
-          cd net/ipv4
-          rm -f tcp_bbr.c
-          curl -fLSs "https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c" -o tcp_bbr.c
-          cd ../..
+          # Senin zula klasöründeki o 20 yamalık BBRv3 mermisini kernele ilmek ilmek işliyoruz!
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
           
           echo ">>> CAKE'i Sistem Varsayılanı Olarak Zorlama (Hardcode)..."
           # Sadece defconfig ayarı yetmez, kernelin çekirdek dosyasına "default CAKE'tir" diye zorluyoruz!
