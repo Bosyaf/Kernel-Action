@@ -48,19 +48,27 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi ve BBRv3 Patch
+      - name: 4. Wi-Fi Patch ve BBRv3 / CAKE Balyoz Operasyonu
         run: |
           cd common
+          
+          # Wi-Fi yaması (Aynen kalıyor)
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
           
-          echo ">>> BBRv3 Yaması Uygulanıyor..."
-          curl -fLSs "https://raw.githubusercontent.com/ahmed-alnassif/GKI-Duchamp/main/kernel-patches/bbrv3/bbrv3.patch" > bbrv3.patch || true
-          if [ -s bbrv3.patch ] && grep -q "diff" bbrv3.patch; then
-            patch -p1 --forward --fuzz=3 < bbrv3.patch || true
-          fi
+          echo ">>> BBRv3 ve CAKE Üzerine Yazılıyor (Balyoz Operasyonu)..."
+          
+          # Orijinal BBR'yi sil, v3'ün tam dosyasını çek ve koy (v3 branch)
+          cd net/ipv4
+          rm -f tcp_bbr.c
+          curl -fLSs "https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c" -o tcp_bbr.c
+          
+          # CAKE'in en güncel kodunu indirip üstüne yaz
+          cd ../sched
+          rm -f sch_cake.c
+          curl -fLSs "https://raw.githubusercontent.com/dtaht/sch_cake/master/sch_cake.c" -o sch_cake.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
@@ -148,6 +156,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          
+          # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
+          sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
           
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
