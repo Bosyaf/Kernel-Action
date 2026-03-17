@@ -235,18 +235,6 @@ jobs:
           mask_val "0" /proc/sys/migt/enable_pkg_monitor
           mask_val "0" /sys/module/metis/parameters/cluaff_control
 
-          # İzole Çekirdek Düzeni (Cpuset)
-          LITTLE_LIST="$(cat /sys/devices/system/cpu/cpu0/topology/cluster_cpus_list)"
-          ALL_LIST="$(cat /sys/devices/system/cpu/present)"
-
-          mask_val "0-1" /dev/cpuset/background/cpus
-          mask_val "0-1,5-6" /dev/cpuset/system-background/cpus
-          mask_val "$ALL_LIST" /dev/cpuset/foreground/cpus
-          mask_val "$ALL_LIST" /dev/cpuset/top-app/cpus
-
-          # IRQ Afinitesi
-          mask_val "$LITTLE_LIST" /proc/irq/default_smp_affinity
-
           # Ağ Maskesi (BBR ve CAKE'i Garantile)
           mask_val "bbr" /proc/sys/net/ipv4/tcp_congestion_control
           mask_val "cake" /proc/sys/net/core/default_qdisc
