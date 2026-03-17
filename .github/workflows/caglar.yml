@@ -65,10 +65,11 @@ jobs:
           rm -f tcp_bbr.c
           curl -fLSs "https://raw.githubusercontent.com/google/bbr/v3/net/ipv4/tcp_bbr.c" -o tcp_bbr.c
           
-          # CAKE Balyozu ve Adres Hatası (pkt_sched.h) Çözümü!
+          # CAKE Balyozu, Adres Hatası ve Cobalt Çözümü!
           cd ../sched
           rm -f sch_cake.c
           curl -fLSs "https://raw.githubusercontent.com/dtaht/sch_cake/master/sch_cake.c" -o sch_cake.c
+          curl -fLSs "https://raw.githubusercontent.com/dtaht/sch_cake/master/cobalt_compat.h" -o cobalt_compat.h
           sed -i 's/#include "pkt_sched.h"/#include <net\/pkt_sched.h>/g' sch_cake.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
