@@ -70,6 +70,19 @@ jobs:
           # Sadece defconfig ayarı yetmez, kernelin çekirdek dosyasına "default CAKE'tir" diye zorluyoruz!
           sed -i 's/return "fq_codel";/return "cake";/g' net/sched/sch_generic.c
 
+      - name: 4.5 WALT Motorunu Sisteme Enjekte Et (Özel Operasyon)
+        run: |
+          echo ">>> WALT Zulası GKI 6.1'in İçine Kopyalanıyor..."
+          # Senin GitHub'daki 'kernel/sched/walt' klasörünü alıp, derleme yapılan common içine atıyoruz
+          cp -R $GITHUB_WORKSPACE/kernel/sched/walt common/kernel/sched/
+          
+          echo ">>> Makefile ve Kconfig Tesisatı Çekiliyor..."
+          # Derleyiciye WALT klasörünü tanıtıyoruz
+          echo 'obj-$(CONFIG_SCHED_WALT) += walt/' >> common/kernel/sched/Makefile
+          
+          # Sistem ayarlarına WALT menüsünü ekliyoruz
+          echo 'source "kernel/sched/walt/Kconfig"' >> common/kernel/Kconfig
+
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
           cd common
@@ -109,6 +122,14 @@ jobs:
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+
+          # --- WALT & PERFORMANS YÖNETİMİ (MOTOR ŞALTERLERİ) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CORE_CTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT_INPUT_BOOST
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           
           # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -124,11 +145,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
-
-          # --- WALT & PERFORMANS YÖNETİMİ ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           
           # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
