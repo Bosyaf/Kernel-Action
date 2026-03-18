@@ -98,7 +98,8 @@ jobs:
 
           # --- DİKİŞ KANAMALARINA CERRAHİ MÜDAHALE (FİX) ---
           echo ">>> Kılcal damar kanamaları (SLEEP_PROFILING & dmabuf_info) onarılıyor..."
-          sed -i '1i #include <linux/profile.h>' kernel/sched/stats.c || true
+          # Çözüm: GKI 6.1'de silinen SLEEP_PROFILING tanımını dosyanın en üstüne sahte olarak (2) tanımlıyoruz.
+          sed -i '1i #define SLEEP_PROFILING 2' kernel/sched/stats.c || true
           sed -i '/dmabuf_info/d' init/init_task.c || true
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
