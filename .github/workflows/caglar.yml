@@ -63,11 +63,7 @@ jobs:
           
           echo ">>> BBRv3 Yaması Uygulanıyor (Mikroskop Operasyonu)..."
           
-          # Senin zula klasöründeki o 20 yamalık BBRv3 mermisini kernele ilmek ilmek işliyoruz!
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-          
-          echo ">>> CAKE'i Sistem Varsayılanı Olarak Zorlama (Hardcode)..."
-          # Sadece defconfig ayarı yetmez, kernelin çekirdek dosyasına "default CAKE'tir" diye zorluyoruz!
           sed -i 's/return "fq_codel";/return "cake";/g' net/sched/sch_generic.c
 
       # --------- 🧬 WALT BEYİN NAKLİ OPERASYONU ---------
@@ -93,14 +89,23 @@ jobs:
           echo ">>> Nakil Başarılı! Tesisat Bağlanıyor..."
           cd common
           
-          # Makefile bağlantısı zaten zulanın içinden geliyor ama Kconfig'i manuel bağlıyoruz
+          # Kconfig bağlantısı
           grep -q "walt/Kconfig" kernel/Kconfig || echo 'source "kernel/sched/walt/Kconfig"' >> kernel/Kconfig
 
           # --- DİKİŞ KANAMALARINA CERRAHİ MÜDAHALE (FİX) ---
-          echo ">>> Kılcal damar kanamaları (SLEEP_PROFILING & dmabuf_info) onarılıyor..."
-          # Çözüm: GKI 6.1'de silinen SLEEP_PROFILING tanımını dosyanın en üstüne sahte olarak (2) tanımlıyoruz.
+          echo ">>> Kılcal damar kanamaları onarılıyor..."
+          
+          # Uyku profili
           sed -i '1i #define SLEEP_PROFILING 2' kernel/sched/stats.c || true
+          
+          # fs/proc/base.c için dmabuf_info kimlik kartına geri ekleniyor
+          sed -i '1i struct task_dma_buf_info;' include/linux/sched.h || true
+          sed -i '/pid_t.*pid;/a \ \tstruct task_dma_buf_info *dmabuf_info;' include/linux/sched.h || true
           sed -i '/dmabuf_info/d' init/init_task.c || true
+
+          # cpuset.c (task_can_attach 2 parametre düzeltmesi ve deadline.h eksikliği)
+          sed -i '1i #include <linux/sched/deadline.h>' kernel/cgroup/cpuset.c || true
+          sed -i 's/task_can_attach(task)/task_can_attach(task, NULL)/g' kernel/cgroup/cpuset.c || true
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
