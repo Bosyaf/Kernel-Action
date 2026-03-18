@@ -96,6 +96,11 @@ jobs:
           # Makefile bağlantısı zaten zulanın içinden geliyor ama Kconfig'i manuel bağlıyoruz
           grep -q "walt/Kconfig" kernel/Kconfig || echo 'source "kernel/sched/walt/Kconfig"' >> kernel/Kconfig
 
+          # --- DİKİŞ KANAMALARINA CERRAHİ MÜDAHALE (FİX) ---
+          echo ">>> Kılcal damar kanamaları (SLEEP_PROFILING & dmabuf_info) onarılıyor..."
+          sed -i '1i #include <linux/profile.h>' kernel/sched/stats.c || true
+          sed -i '/dmabuf_info/d' init/init_task.c || true
+
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
           cd common
@@ -189,6 +194,9 @@ jobs:
           # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
           sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
+
+          # >>> ANDROID BELLEK TAKİPÇİSİNİ İPTAL ET (DMABUF FIX) <<<
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DMABUF_SYSFS_STATS
           
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
