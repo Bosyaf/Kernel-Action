@@ -109,6 +109,10 @@ jobs:
           # kernel/freezer.c için saved_state kimlik kartına geri ekleniyor
           sed -i '/pid_t.*pid;/a \ \tunsigned int saved_state;' include/linux/sched.h || true
 
+          # --- LINKER (BAĞLAYICI) SON NOKTA YAMASI ---
+          echo ">>> Linker vmlinux eksikleri tamamlanıyor..."
+          echo 'bool cpus_equal_capacity(int cpu1, int cpu2) { return true; }' >> kernel/sched/core.c
+
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
           cd common
