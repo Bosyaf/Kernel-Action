@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V5 (Clang-17 Edition)
+name: caglar++ Total Ultimate V3 (Ölüm Makinesi)
 
 permissions:
   contents: write
@@ -22,34 +22,52 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Kendi Repomuzu Çek (Zula Yamaları İçin)
+      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve Clang-17 İndir
+      - name: 1. Gerekli Paketleri Kur ve Yuki Clang İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
-            rsync unzip dwarves bc cpio wget \
-            clang-17 lld-17 gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget zstd
+          
+          mkdir -p $GITHUB_WORKSPACE/clang
+          
+          # Ustanın bulduğu özel Yuki Clang (+BOLT) linki
+          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
+          echo "Yuki Clang indiriliyor: $CLANG_URL"
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.zst || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Safkan Xiaomi Kaynağını Çek (Houji/Shennong)
+      - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Xiaomi Houji-Shennong Source (Native WALT ve Özel Sürücüler)
-          git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
+          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. BBRv3 Mikroskop Operasyonu
+      - name: 4. Wi-Fi Patch ve BBRv3 Mikroskop Operasyonu
         run: |
           cd common
+          
+          # Wi-Fi yaması
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+          
           echo ">>> BBRv3 Yaması Uygulanıyor (Mikroskop Operasyonu)..."
+          
+          # Senin zula klasöründeki o 20 yamalık BBRv3 mermisini kernele ilmek ilmek işliyoruz!
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+          
+          echo ">>> CAKE'i Sistem Varsayılanı Olarak Zorlama (Hardcode)..."
+          # Sadece defconfig ayarı yetmez, kernelin çekirdek dosyasına "default CAKE'tir" diye zorluyoruz!
           sed -i 's/return "fq_codel";/return "cake";/g' net/sched/sch_generic.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
@@ -87,23 +105,10 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Config Birleştirme ve Ölüm Makinesi Şalterleri
+      - name: 6. Full Kernel Config (CG+ Mermileri)
         run: |
           cd common
-          
-          # >>> DERİN TEMİZLİK (MRPROPER) <<<
-          make ARCH=arm64 mrproper
-          
-          # 1. Google'ın ana iskeletini oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang-17" gki_defconfig
-          
-          # 2. İşlemci (Pineapple) ve Cihaz (Houji) Configlerini Üstüne Ekle (Config Merge)
-          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_GKI.config arch/arm64/configs/vendor/houji_GKI.config
-          
-          # 3. Ayarları resmileştir
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang-17" olddefconfig
-          
-          CONFIG_FILE="out/.config"
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
           # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -120,16 +125,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
-          # --- WALT & PERFORMANS YÖNETİMİ (ZORLA GÖMÜLÜ YAPMA) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CORE_CTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT_INPUT_BOOST
+          # --- WALT & PERFORMANS YÖNETİMİ ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          
-          sed -i 's/CONFIG_SCHED_WALT=m/CONFIG_SCHED_WALT=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_SCHED_CORE_CTL=m/CONFIG_SCHED_CORE_CTL=y/g' $CONFIG_FILE
           
           # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
@@ -140,6 +139,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
+          # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          
           # --- AĞ KODLARI (0 Ping) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
@@ -149,9 +157,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           
+          # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
           sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
-
+          
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -164,35 +173,39 @@ jobs:
           
           # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          
+          sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (Clang 17, O3, BOLT, ThinLTO)
+      - name: 7. Kernel Derleme (O3, Terzi İşi, BOLT, ThinLTO Turbo)
         run: |
           cd common
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           
-          # Orijinal Clang 17 ile tam uyumlu derleme. Gereksiz uyarılar susturuldu.
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang-17" \
-            LD="ld.lld-17" \
-            HOSTLD="ld.lld-17" \
+            CC="clang" \
+            LD=ld.lld \
+            HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand -Wno-format -Wno-uninitialized-const-pointer -Wno-error=format -Wno-error=uninitialized-const-pointer -Wno-error=default-const-init-var-unsafe" \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
           
-          echo "BOOTHASH=CG+-V5-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3 (Temiz Paketleme ve LUNAR Zulası)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine V5/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           # --- LUNAR'DAN ARAKLANAN ZEHİRLİ AYARLARI HAZIRLA ---
           cat << 'EOF' > cg_lunar_service.sh
           #!/system/bin/sh
-          # CG+ Ultimate V5 - Zehirli Lunar Ayarları
+          # CG+ Ultimate V3 - Zehirli Lunar Ayarları
           while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done
           
           mkdir -p /dev/mount_masks
@@ -233,13 +246,13 @@ jobs:
           echo 'chmod 0755 /data/adb/service.d/cg_lunar_service.sh;' >> anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate-V5.zip" ./*
+          zip -r "../CG+-Total-Ultimate.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V5"
+          name: "CG+ Total Ultimate V3"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
