@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Ölüm Makinesi)
+name: caglar++ Total Ultimate V4.1 (Houji + LTS GKI Merge)
 
 permissions:
   contents: write
@@ -22,7 +22,7 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+      - name: 0. Kendi Repomuzu Çek (Zula Yamaları İçin)
         uses: actions/checkout@v4
 
       - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
@@ -41,77 +41,41 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek
+      - name: 2. Safkan Xiaomi Kaynağını Çek (Houji/Shennong)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          # Yeni ana arterimiz: Xiaomi Houji-Shennong Source (Native WALT)
+          git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
+
+      - name: 2.5. LTS / GKI Upstream Merge (Sürümü Güncelleme!)
+        run: |
+          cd common
+          echo ">>> Android 14 GKI 6.1 (LTS) Çekiliyor ve Koda Enjekte Ediliyor..."
+          git config --global user.email "caglar@deathmachine.com"
+          git config --global user.name "Caglar++"
+          
+          # Google'ın en güncel Android 14 6.1 kernelini çekiyoruz
+          git remote add upstream https://android.googlesource.com/kernel/common.git
+          git fetch upstream android14-6.1 --no-tags
+          
+          # Xiaomi kodunun üzerine en güncel sürümü (6.1.x) birleştiriyoruz
+          git merge FETCH_HEAD -m "Merge latest Android 14 GKI 6.1" || {
+            echo ">>> HAFİF ÇAKIŞMA TESPİT EDİLDİ! Otomatik çözülüyor..."
+            git merge --abort
+            git merge FETCH_HEAD -X ours -m "Merge latest Android 14 GKI 6.1 (Auto-Resolved)"
+          }
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi Patch ve BBRv3 Mikroskop Operasyonu
+      - name: 4. BBRv3 Mikroskop Operasyonu
         run: |
           cd common
-          
-          # Wi-Fi yaması
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          
           echo ">>> BBRv3 Yaması Uygulanıyor (Mikroskop Operasyonu)..."
-          
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
           sed -i 's/return "fq_codel";/return "cake";/g' net/sched/sch_generic.c
-
-      # --------- 🧬 WALT BEYİN NAKLİ OPERASYONU ---------
-      - name: 4.5 WALT Beyin Nakli (Sadece Modifiyeli Dosyalar)
-        run: |
-          echo ">>> Zula'daki Modifiyeli Dosyalar Kernele Enjekte Ediliyor..."
-          
-          # 1. WALT Klasörünü komple taşı
-          cp -rf $GITHUB_WORKSPACE/kernel/sched/walt common/kernel/sched/
-          
-          # 2. Sched Beyin Dosyalarını Üzerine Yaz (Overwrite)
-          cp -f $GITHUB_WORKSPACE/kernel/sched/*.c common/kernel/sched/ || true
-          cp -f $GITHUB_WORKSPACE/kernel/sched/*.h common/kernel/sched/ || true
-          cp -f $GITHUB_WORKSPACE/kernel/sched/Makefile common/kernel/sched/ || true
-          
-          # 3. Include (Sözlük) Dosyalarını Üzerine Yaz
-          cp -f $GITHUB_WORKSPACE/include/linux/*.h common/include/linux/ || true
-          cp -f $GITHUB_WORKSPACE/include/trace/events/*.h common/include/trace/events/ || true
-          
-          # 4. Drivers (Şanzıman) Dosyasını Üzerine Yaz
-          cp -f $GITHUB_WORKSPACE/drivers/cpufreq/*.c common/drivers/cpufreq/ || true
-
-          # 5. Cgroup (Gruplama) Dosyalarını Üzerine Yaz (WALT Uyumlu)
-          cp -rf $GITHUB_WORKSPACE/kernel/cgroup/* common/kernel/cgroup/ || true
-          
-          echo ">>> Nakil Başarılı! Tesisat Bağlanıyor..."
-          cd common
-          
-          # Kconfig bağlantısı
-          grep -q "walt/Kconfig" kernel/Kconfig || echo 'source "kernel/sched/walt/Kconfig"' >> kernel/Kconfig
-
-          # --- DİKİŞ KANAMALARINA CERRAHİ MÜDAHALE (FİX) ---
-          echo ">>> Kılcal damar kanamaları onarılıyor..."
-          
-          # Uyku profili
-          sed -i '1i #define SLEEP_PROFILING 2' kernel/sched/stats.c || true
-          
-          # fs/proc/base.c için dmabuf_info kimlik kartına geri ekleniyor
-          sed -i '1i struct task_dma_buf_info;' include/linux/sched.h || true
-          sed -i '/pid_t.*pid;/a \ \tstruct task_dma_buf_info *dmabuf_info;' include/linux/sched.h || true
-          sed -i '/dmabuf_info/d' init/init_task.c || true
-
-          # kernel/freezer.c için saved_state kimlik kartına geri ekleniyor
-          sed -i '/pid_t.*pid;/a \ \tunsigned int saved_state;' include/linux/sched.h || true
-
-          # --- LINKER (BAĞLAYICI) SON NOKTA YAMASI ---
-          echo ">>> Linker vmlinux eksikleri tamamlanıyor..."
-          echo 'bool cpus_equal_capacity(int cpu1, int cpu2) { return true; }' >> kernel/sched/core.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
@@ -148,10 +112,21 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (CG+ Mermileri)
+      - name: 6. Config Birleştirme ve Ölüm Makinesi Şalterleri
         run: |
           cd common
-          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          
+          # 1. Google'ın ana iskeletini oluştur
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          
+          # 2. İşlemci (Pineapple) ve Cihaz (Houji) Configlerini Üstüne Ekle (Config Merge)
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_GKI.config arch/arm64/configs/vendor/houji_GKI.config
+          
+          # 3. Ayarları resmileştir
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
+          
+          CONFIG_FILE="out/.config"
           
           # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -168,13 +143,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
-          # --- WALT & PERFORMANS YÖNETİMİ ---
+          # --- WALT & PERFORMANS YÖNETİMİ (ZORLA GÖMÜLÜ YAPMA) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CORE_CTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT_INPUT_BOOST
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          
+          # WALT modül (m) olarak kalmasın, direkt çekirdeğe gömülsün (y)!
+          sed -i 's/CONFIG_SCHED_WALT=m/CONFIG_SCHED_WALT=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_SCHED_CORE_CTL=m/CONFIG_SCHED_CORE_CTL=y/g' $CONFIG_FILE
           
           # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
@@ -185,15 +164,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
           # --- AĞ KODLARI (0 Ping) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
@@ -203,13 +173,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           
-          # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
+          # Ağı gömülü (y) yap!
           sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
 
-          # >>> ANDROID BELLEK TAKİPÇİSİNİ İPTAL ET (DMABUF FIX) <<<
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DMABUF_SYSFS_STATS
-          
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -222,8 +189,6 @@ jobs:
           
           # İSİM DAMGASI
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
-          
-          sed -i 's/check_defconfig//' build.config.gki || true
 
       - name: 7. Kernel Derleme (O3, Terzi İşi, BOLT, ThinLTO Turbo)
         run: |
@@ -231,8 +196,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
-          
+          # Artık config out/.config içinde hazır, direkt derlemeye geçiyoruz!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -242,19 +206,19 @@ jobs:
             KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
           
-          echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=CG+-V4-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3 (Temiz Paketleme ve LUNAR Zulası)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine V4/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           # --- LUNAR'DAN ARAKLANAN ZEHİRLİ AYARLARI HAZIRLA ---
           cat << 'EOF' > cg_lunar_service.sh
           #!/system/bin/sh
-          # CG+ Ultimate V3 - Zehirli Lunar Ayarları
+          # CG+ Ultimate V4 - Zehirli Lunar Ayarları
           while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done
           
           mkdir -p /dev/mount_masks
@@ -295,13 +259,13 @@ jobs:
           echo 'chmod 0755 /data/adb/service.d/cg_lunar_service.sh;' >> anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate.zip" ./*
+          zip -r "../CG+-Total-Ultimate-V4.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V3"
+          name: "CG+ Total Ultimate V4"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
