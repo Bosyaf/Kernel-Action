@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4.1 (Safkan Houji WALT - MrProper)
+name: caglar++ Total Ultimate V4.2 (WALT Format Fix)
 
 permissions:
   contents: write
@@ -100,7 +100,6 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
           # >>> DERİN TEMİZLİK (MRPROPER) <<<
-          # Ağaçtaki tüm gizli çöpleri temizle!
           make ARCH=arm64 mrproper
           
           # 1. Google'ın ana iskeletini oluştur
@@ -137,7 +136,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           
-          # WALT modül (m) olarak kalmasın, direkt çekirdeğe gömülsün (y)!
           sed -i 's/CONFIG_SCHED_WALT=m/CONFIG_SCHED_WALT=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_SCHED_CORE_CTL=m/CONFIG_SCHED_CORE_CTL=y/g' $CONFIG_FILE
           
@@ -159,7 +157,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           
-          # Ağı gömülü (y) yap!
           sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
           sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
 
@@ -182,7 +179,10 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           
-          # Artık config out/.config içinde hazır, direkt derlemeye geçiyoruz!
+          # >>> WALT CLANG FORMAT HATASI ÇÖZÜMÜ <<<
+          echo ">>> WALT printk_deferred format hatası yamalanıyor..."
+          sed -i 's/printk_deferred("%s=%llu", #arg, arg)/printk_deferred("%s=%llu", #arg, (unsigned long long)(arg))/g' kernel/sched/walt/walt.c
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
