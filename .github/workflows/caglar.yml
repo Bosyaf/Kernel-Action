@@ -65,10 +65,6 @@ jobs:
           
           # Senin zula klasöründeki o 20 yamalık BBRv3 mermisini kernele ilmek ilmek işliyoruz!
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-          
-          echo ">>> CAKE'i Sistem Varsayılanı Olarak Zorlama (Hardcode)..."
-          # Sadece defconfig ayarı yetmez, kernelin çekirdek dosyasına "default CAKE'tir" diye zorluyoruz!
-          sed -i 's/return "fq_codel";/return "cake";/g' net/sched/sch_generic.c
 
       - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
@@ -171,16 +167,20 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          # İSİM DAMGASI
+          # İSİM DAMGASI VE GİT HASH İPTALİ
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O3, Terzi İşi, BOLT, ThinLTO Turbo)
+      - name: 7. Kernel Derleme (O3, Terzi İşi, BOLT, Polly, ThinLTO Turbo)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
+          
+          # Git imzasını kör etmek için boş dosya oluştur
+          touch .scmversion
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
@@ -190,60 +190,17 @@ jobs:
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme ve LUNAR Zulası)
+      - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
-          # --- LUNAR'DAN ARAKLANAN ZEHİRLİ AYARLARI HAZIRLA ---
-          cat << 'EOF' > cg_lunar_service.sh
-          #!/system/bin/sh
-          # CG+ Ultimate V3 - Zehirli Lunar Ayarları
-          while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 1; done
-          
-          mkdir -p /dev/mount_masks
-          mask_val() {
-              find "$2" -type f | while read -r file; do
-                  file="$(realpath "$file")"
-                  umount "$file" >/dev/null 2>&1
-                  chown root:root "$file"
-                  chmod 0644 "$file"
-                  echo "$1" >"$file"
-                  chmod 0444 "$file"
-                  
-                  TIME="$(date "+%s%N")"
-                  echo "$1" >"/dev/mount_masks/mount_mask_$TIME"
-                  mount --bind "/dev/mount_masks/mount_mask_$TIME" "$file"
-                  restorecon -R -F "$file" >/dev/null 2>&1
-              done
-          }
-
-          # Xiaomi Servis Katliamı
-          killall -9 mi_thermald
-          for svc in mimd-service mimd-service2_0 miuibooster; do
-              stop $svc
-          done
-          mask_val "0" /sys/module/migt/parameters/enable_pkg_monitor
-          mask_val "0" /proc/sys/migt/enable_pkg_monitor
-          mask_val "0" /sys/module/metis/parameters/cluaff_control
-
-          # Ağ Maskesi (BBR ve CAKE'i Garantile)
-          mask_val "bbr" /proc/sys/net/ipv4/tcp_congestion_control
-          mask_val "cake" /proc/sys/net/core/default_qdisc
-          EOF
-          
-          # AnyKernel3 flaşlanırken scripti otomatik KSU servisine atacak mermi!
-          echo 'ui_print ">>> Zehirli Lunar Ayarları Sisteme Enjekte Ediliyor...";' >> anykernel.sh
-          echo 'mkdir -p /data/adb/service.d;' >> anykernel.sh
-          echo 'cp $home/cg_lunar_service.sh /data/adb/service.d/cg_lunar_service.sh;' >> anykernel.sh
-          echo 'chmod 0755 /data/adb/service.d/cg_lunar_service.sh;' >> anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Total-Ultimate.zip" ./*
