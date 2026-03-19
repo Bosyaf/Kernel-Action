@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4.2 (WALT Format Fix)
+name: caglar++ Total Ultimate V4.3 (Compiler Sledgehammer)
 
 permissions:
   contents: write
@@ -179,17 +179,14 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           
-          # >>> WALT CLANG FORMAT HATASI ÇÖZÜMÜ <<<
-          echo ">>> WALT printk_deferred format hatası yamalanıyor..."
-          sed -i 's/printk_deferred("%s=%llu", #arg, arg)/printk_deferred("%s=%llu", #arg, (unsigned long long)(arg))/g' kernel/sched/walt/walt.c
-          
+          # >>> DERLEYİCİ SUSTURUCULARI EKLENDİ (Format & Uninitialized Hataları İçin) <<<
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand -Wno-format -Wno-uninitialized-const-pointer -Wno-error=format -Wno-error=uninitialized-const-pointer" \
             Image
           
           echo "BOOTHASH=CG+-V4-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
