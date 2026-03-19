@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4.1 (Houji + LTS GKI Merge)
+name: caglar++ Total Ultimate V4 (Safkan Houji WALT - Orijinal Sürüm)
 
 permissions:
   contents: write
@@ -44,26 +44,8 @@ jobs:
       - name: 2. Safkan Xiaomi Kaynağını Çek (Houji/Shennong)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Yeni ana arterimiz: Xiaomi Houji-Shennong Source (Native WALT)
+          # Xiaomi Houji-Shennong Source (Native WALT ve Özel Sürücüler)
           git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
-
-      - name: 2.5. LTS / GKI Upstream Merge (Sürümü Güncelleme!)
-        run: |
-          cd common
-          echo ">>> Android 14 GKI 6.1 (LTS) Çekiliyor ve Koda Enjekte Ediliyor..."
-          git config --global user.email "caglar@deathmachine.com"
-          git config --global user.name "Caglar++"
-          
-          # Google'ın en güncel Android 14 6.1 kernelini çekiyoruz
-          git remote add upstream https://android.googlesource.com/kernel/common.git
-          git fetch upstream android14-6.1 --no-tags
-          
-          # Xiaomi kodunun üzerine en güncel sürümü (6.1.x) birleştiriyoruz
-          git merge FETCH_HEAD -m "Merge latest Android 14 GKI 6.1" || {
-            echo ">>> HAFİF ÇAKIŞMA TESPİT EDİLDİ! Otomatik çözülüyor..."
-            git merge --abort
-            git merge FETCH_HEAD -X ours -m "Merge latest Android 14 GKI 6.1 (Auto-Resolved)"
-          }
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
