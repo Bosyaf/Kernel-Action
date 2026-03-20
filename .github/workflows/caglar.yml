@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Ölüm Makinesi)
+name: caglar++ Total Ultimate V3 (Full LTO Ölüm Makinesi)
 
 permissions:
   contents: write
@@ -130,8 +130,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
-          # --- COMPILER OPTİMİZASYONLARI ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          # --- FULL LTO (DEVASA TEK PARÇA GÜÇ) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
@@ -173,7 +174,16 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O2, Terzi İşi, BOLT, Polly, ThinLTO Turbo)
+      - name: 6.5. OOM Koruması (16GB Sanal RAM Kalkanı)
+        run: |
+          echo "GitHub'ın hafızası Full LTO'ya yetmeyeceği için 16GB Sanal RAM (Swap) oluşturuluyor..."
+          sudo fallocate -l 16G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: 7. Kernel Derleme (O2, Full LTO, BOLT, Polly)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -184,13 +194,15 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
+          # Full LTO için KBUILD_LDFLAGS eklendi ve KCFLAGS'den flto-jobs kaldırıldı (Şişmeyi önlemek için)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
+            KBUILD_LDFLAGS="-Wl,--no-keep-memory" \
+            KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -Wno-constant-logical-operand" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
