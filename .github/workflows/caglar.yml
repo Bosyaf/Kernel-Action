@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Hafifletilmiş Asya Zırhı)
+name: caglar++ Total Ultimate V3 (SukiSU Ultra + Asya Zırhı)
 
 permissions:
   contents: write
@@ -46,10 +46,11 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. SADECE VortexSU Kurulumu
+      - name: 3. SADECE SukiSU Ultra Kurulumu
         run: |
           cd common
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          echo ">>> SukiSU Ultra Çekiliyor..."
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
       - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
         run: |
@@ -99,7 +100,7 @@ jobs:
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
           rm -f .ns_inject_tmp
           
-          echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
+          echo "CRC Fix Uygulanıyor (6.1 Özel)..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
@@ -166,7 +167,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+          
+          # Sıfır Riskli İşlemci ve RAM Rahatlatıcıları
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MISC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
 
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -179,7 +185,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # İSİM DAMGASI VE GİT HASH İPTALİ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-Suki"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -212,18 +218,18 @@ jobs:
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ SukiSU Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Hafifletilmis-Asya-Zirhi.zip" ./*
+          zip -r "../CG+-SukiSU-Asya-Zirhi.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Hafifletilmiş Asya Zırhı V3"
+          name: "CG+ SukiSU Asya Zırhı V3"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
