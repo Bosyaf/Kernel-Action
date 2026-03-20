@@ -196,14 +196,13 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Full LTO için KBUILD_LDFLAGS eklendi ve KCFLAGS'den flto-jobs kaldırıldı (Şişmeyi önlemek için)
+          # Yabancı dildeki fren komutu silindi. Saf güç ve Swap kalkanı devrede!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KBUILD_LDFLAGS="-Wl,--no-keep-memory" \
             KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -Wno-constant-logical-operand" \
             Image
           
