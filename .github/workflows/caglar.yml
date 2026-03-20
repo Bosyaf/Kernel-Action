@@ -25,21 +25,15 @@ jobs:
       - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve Yuki Clang İndir
+      - name: 1. Gerekli Paketleri Kur ve Neutron Clang Çek
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget zstd
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          mkdir -p $GITHUB_WORKSPACE/clang
-          
-          # Ustanın bulduğu özel Yuki Clang (+BOLT) linki
-          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
-          echo "Yuki Clang indiriliyor: $CLANG_URL"
-          
-          curl -fLSs "$CLANG_URL" -o clang.tar.zst || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
-          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang
+          echo ">>> Neutron Clang Klonlanıyor..."
+          git clone --depth=1 https://github.com/neutron-org/neutron.git $GITHUB_WORKSPACE/clang
 
       - name: 2. Kaynakları Çek
         run: |
