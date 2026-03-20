@@ -32,8 +32,12 @@ jobs:
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          echo ">>> Neutron Clang Klonlanıyor..."
-          git clone --depth=1 https://github.com/neutron-org/neutron.git $GITHUB_WORKSPACE/clang
+          echo ">>> Neutron Clang Antman ile Çekiliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang
+          cd $GITHUB_WORKSPACE/clang
+          curl -LO "https://raw.githubusercontent.com/neutron-org/neutron-build/main/antman"
+          chmod +x antman
+          ./antman -S
 
       - name: 2. Kaynakları Çek
         run: |
