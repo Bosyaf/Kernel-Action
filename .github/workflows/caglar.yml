@@ -174,13 +174,15 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6.5. OOM Koruması (16GB Sanal RAM Kalkanı)
+      - name: 6.5. OOM Koruması (10GB Sanal RAM Kalkanı)
         run: |
-          echo "GitHub'ın hafızası Full LTO'ya yetmeyeceği için 16GB Sanal RAM (Swap) oluşturuluyor..."
-          sudo fallocate -l 16G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          echo "GitHub'ın genişletilmiş alanına 10GB Sanal RAM (Swap) inşa ediliyor..."
+          SWAP_PATH="$GITHUB_WORKSPACE/swapfile"
+          # Eğer fallocate hata verirse dd komutuyla zorla oluşturması için B planı eklendi
+          sudo fallocate -l 10G $SWAP_PATH || sudo dd if=/dev/zero of=$SWAP_PATH bs=1M count=10240
+          sudo chmod 600 $SWAP_PATH
+          sudo mkswap $SWAP_PATH
+          sudo swapon $SWAP_PATH
           free -h
 
       - name: 7. Kernel Derleme (O2, Full LTO, BOLT, Polly)
