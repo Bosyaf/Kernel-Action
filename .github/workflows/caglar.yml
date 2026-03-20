@@ -53,7 +53,7 @@ jobs:
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
 
-      - name: 4. Full Kernel Config (Saf Full LTO & No Debug)
+      - name: 4. Full Kernel Config (Saf Full LTO & BTF Koruması)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -66,15 +66,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           
-          # --- PROFESYONEL DEBUG TEMİZLİĞİ (RAM KURTARICI) ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
+          # --- PROFESYONEL DEBUG TEMİZLİĞİ (BTF HARİÇ) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
 
           # --- DİĞER PERFORMANS AYARLARI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
@@ -92,13 +90,17 @@ jobs:
           sudo swapon $SWAP_PATH
           free -h
 
-      - name: 6. Kernel Derleme (SAF FULL LTO)
+      - name: 6. Kernel Derleme (SAF FULL LTO + olddefconfig)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           touch .scmversion
           
+          # Önce bizim configleri ana dosyaya işliyoruz
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          
+          # KALİTE KONTROL ŞEFİ: Yapılan ayarları doğrula ve eksikleri tamamla
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
           # Polly, PGO, BOLT çıkarıldı. Sadece O2 serinliği ve Full LTO saf gücü kaldı.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
