@@ -25,20 +25,21 @@ jobs:
       - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve Neutron Clang Çek
+      - name: 1. Gerekli Paketleri Kur ve Yuki Clang İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget zstd
           
-          echo ">>> Neutron Clang Antman ile Çekiliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang
-          cd $GITHUB_WORKSPACE/clang
-          # GÜNCEL VE DOĞRU ANTMAN LİNKİ:
-          curl -LO "https://raw.githubusercontent.com/neutron-toolchains/antman/main/antman"
-          chmod +x antman
-          ./antman -S
+          
+          # Ustanın bulduğu özel Yuki Clang (+BOLT) linki
+          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
+          echo "Yuki Clang indiriliyor: $CLANG_URL"
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.zst || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang
 
       - name: 2. Kaynakları Çek
         run: |
@@ -189,7 +190,7 @@ jobs:
             LD=ld.lld \
             HOSTLD=ld.lld \
             LLVM_BOLT=1 \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
+            KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -212,4 +213,5 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           
