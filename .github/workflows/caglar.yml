@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Full LTO Masterclass)
+name: caglar++ Total Ultimate V3 (Saf Full LTO)
 
 permissions:
   contents: write
@@ -42,19 +42,18 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. VortexSU ve Yamalar
+      - name: 3. VortexSU ve Yamalar (BBRv3 ve Ekstralar İPTAL)
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-          # BBRv3 Mikroskop Operasyonu
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-          # SUSFS Entegrasyonu
+          
+          # SUSFS Entegrasyonu Korundu
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
 
-      - name: 4. Full Kernel Config (Full LTO & No Debug)
+      - name: 4. Full Kernel Config (Saf Full LTO & No Debug)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -93,7 +92,7 @@ jobs:
           sudo swapon $SWAP_PATH
           free -h
 
-      - name: 6. Kernel Derleme (O2 + FULL LTO + No Polly)
+      - name: 6. Kernel Derleme (SAF FULL LTO)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -101,8 +100,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # KCFLAGS'den Polly temizlendi.
-          # LDFLAGS'e RAM koruması için tek çekirdekli bağlama (--threads=1) eklendi.
+          # Polly, PGO, BOLT çıkarıldı. Sadece O2 serinliği ve Full LTO saf gücü kaldı.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -118,13 +116,13 @@ jobs:
         run: |
           cd ./AnyKernel3
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-FullLTO-V3.zip" ./*
+          zip -r "../CG+-Saf-FullLTO-V3.zip" ./*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Full LTO Ölüm Makinesi"
+          name: "CG+ Saf Full LTO Makinesi"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
