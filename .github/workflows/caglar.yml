@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (SukiSU Ultra + Asya Zırhı)
+name: caglar++ Total Ultimate V3 (SukiSU + Yuki Clang)
 
 permissions:
   contents: write
@@ -28,13 +28,14 @@ jobs:
       - name: 1. Gerekli Paketleri Kur ve Yuki Clang İndir
         run: |
           sudo apt update -qq
-          # USTANIN NOTU: .tar.zst dosyasını açabilmek için en sona 'zstd' paketi eklendi!
+          # USTANIN NOTU: Yuki Clang'in açılması için 'zstd' paketi eklendi!
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget zstd
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
+          # Yuki Clang V10 Motoru (+BOLT)
           CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           echo "Yuki Clang indiriliyor: $CLANG_URL"
           
@@ -161,18 +162,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # --- PROFESYONEL DEBUG TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
+          # --- PROFESYONEL DEBUG TEMİZLİĞİ (Senin Çalışan Kombinasyonun) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
-          
-          # Sıfır Riskli İşlemci ve RAM Rahatlatıcıları
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MISC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
 
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -185,7 +181,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # İSİM DAMGASI VE GİT HASH İPTALİ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-Suki"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -203,7 +199,7 @@ jobs:
           # KALİTE KONTROL ŞEFİ (Eksik ayarları tamamla)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
-          # Derlemeyi Başlat
+          # Derlemeyi Başlat (Yuki Clang BOLT Aktif)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -218,18 +214,18 @@ jobs:
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ SukiSU Death Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ SukiSU Yuki Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-SukiSU-Asya-Zirhi.zip" ./*
+          zip -r "../CG+-SukiSU-Yuki-Zirhi.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ SukiSU Asya Zırhı V3"
+          name: "CG+ SukiSU Yuki Zırhı V3"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
