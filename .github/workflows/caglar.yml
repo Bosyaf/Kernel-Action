@@ -35,7 +35,8 @@ jobs:
           echo ">>> Neutron Clang Antman ile Çekiliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang
           cd $GITHUB_WORKSPACE/clang
-          curl -LO "https://raw.githubusercontent.com/neutron-org/neutron-build/main/antman"
+          # GÜNCEL VE DOĞRU ANTMAN LİNKİ:
+          curl -LO "https://raw.githubusercontent.com/neutron-toolchains/antman/main/antman"
           chmod +x antman
           ./antman -S
 
