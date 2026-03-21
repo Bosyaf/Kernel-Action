@@ -1,4 +1,4 @@
-name: CG+ Curry Ramen 6.1.138 (Nihai Houji - Boot Garantili V2)
+name: CG+ Orijinal Houji (shennong-u-oss) Kernel
 
 permissions:
   contents: write
@@ -22,10 +22,7 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Kendi Repomuzu Çek
-        uses: actions/checkout@v4
-
-      - name: 1. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
+      - name: Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -33,69 +30,32 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget llvm
           
           mkdir -p $GITHUB_WORKSPACE/clang
-          
-          # ZyC Clang 22 (Orijinal Kodları Bozmadan Derleyecek)
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyC Clang 22 indiriliyor..."
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek (DEEPONGI CURRY RAMEN 6.1.138)
+      - name: XİAOMİ ORİJİNAL KAYNAĞI ÇEK (MiCode - shennong-u-oss)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           
-          # Saf Motor Bloğu:
-          git clone --depth=1 -b android14-6.1-2025-06 https://github.com/deepongi-labs/kernel_common.git common
+          # İşte asıl fabrika burası: Xiaomi'nin Houji ve Shennong için yayınladığı saf kod!
+          git clone --depth=1 -b shennong-u-oss https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git common
 
-      - name: 3. SukiSU Ultra Kurulumu
+      - name: SukiSU Ultra Kurulumu
         run: |
           cd common
           echo ">>> SukiSU Ultra Çekiliyor..."
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Xiaomi ABI Kilidini Kırma ve Yamalar
+      - name: SUSFS Master Formülü (Hatasız)
         run: |
           cd common
-          
-          # >>> 1. XİAOMİ VE GOOGLE KİLİTLERİNİ AÇIYORUZ <<<
-          # Xiaomi'nin modülleri sorunsuz bağlansın diye korumalı dışa aktarımları siliyoruz
-          rm -f android/abi_gki_protected_exports_* || true
-          
-          # Wi-Fi yaması
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          
-          # CLIDR Hatasını Çözen Deepongi Yaması
-          curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" -o fix-clidr.patch
-          patch -p1 --forward < fix-clidr.patch || true
-
-          # BPF Derleme Hatası Çözümü (Deepongi Taktik)
-          sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c || true
-
-          # Dirty (Kirli) Etiketi Temizleyici
-          sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion || true
-
-          echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
-      - name: 5. SUSFS Master Formülü (Hatasız)
-        run: |
-          cd common
-          echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          echo "Kingfinik98 Özel 6.1 Fix Yaması Uygulanıyor..."
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -103,7 +63,6 @@ jobs:
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
-
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
           #define CL_COPY_MNT_NS BIT(25)
@@ -112,92 +71,50 @@ jobs:
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
           rm -f .ns_inject_tmp
           
-          echo "CRC Fix Uygulanıyor (6.1 Özel)..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (Şablonlar ve Zırhlar)
+      - name: Kernel Config (Orijinal Fabrika Beyni)
         run: |
           cd common
-          # Önce Özel defconfig'i mi yoksa gki_defconfig'i mi seçeceğimizi belirliyoruz
-          if [ -f "arch/arm64/configs/defconfig" ]; then
-            CONFIG_FILE="arch/arm64/configs/defconfig"
-            echo ">>> Xiaomi/Deepongi özel defconfig kalıbı kullanılıyor <<<"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          mkdir -p out
+          
+          # Xiaomi 14 Orijinal Config dosyasını bul ve uygula
+          if [ -f "arch/arm64/configs/vendor/houji_GKI.config" ]; then
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" vendor/houji_GKI.config
+            echo ">>> Xiaomi Houji Orijinal Config Uygulandı <<<"
           else
-            CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-            echo ">>> Standart gki_defconfig kalıbı kullanılıyor <<<"
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+            echo ">>> Standart GKI Config Uygulandı <<<"
           fi
           
-          # --- BATARYA DOSTU TEMBEL RCU ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_LAZY
+          # --- SUSFS ve KSU Zırhlarını Config'e Ekle ---
+          ./scripts/config --file out/.config --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file out/.config --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file out/.config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
           
-          # --- WALT & LTO ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          # --- SELINUX HATASI ÇÖZÜMÜ ---
+          ./scripts/config --file out/.config --enable CONFIG_SECURITY_SELINUX
+          ./scripts/config --file out/.config --set-val CONFIG_SECURITY_SELINUX_SID2STR_CACHE_SIZE 256
+          ./scripts/config --file out/.config --set-val CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS 9
           
-          # --- AĞ KODLARI VE ÇİNLİLERİN WIREGUARD ZIRHI ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          # --- İsim Damgası ---
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-CG+-MiCode"
+          ./scripts/config --file out/.config --disable CONFIG_LOCALVERSION_AUTO
           
-          # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
-          sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
-          
-          # --- ÇİNLİLERİN GELİŞMİŞ TMPFS VE BBG (ANTI-BRICK) AYARLARI ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
 
-          # --- PROFESYONEL DEBUG TEMİZLİĞİ ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
-
-          # --- SUSFS Config Mermileri ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          # İSİM DAMGASI VE GİT HASH İPTALİ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
-          sed -i 's/check_defconfig//' build.config.gki || true
-
-      - name: 7. Kernel Derleme (SAF -O2 HIZI - BOOT GARANTİLİ)
+      - name: Kernel Derleme (Orijinal Motor - Sürücü Uyumlu)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          # Xiaomi'nin şablonuyla derlemeyi başlatıyoruz (defconfig veya gki_defconfig)
-          if [ -f "arch/arm64/configs/defconfig" ]; then
-            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" defconfig
-          else
-            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
-          fi
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
-          
-          # 🔥 DİKKAT: -O3 VE POLLY İPTAL EDİLDİ! SAF VE TEMİZ -O2 KULLANILIYOR!
           KCFLAGS="-Wno-default-const-init-var-unsafe -Wno-error"
           
-          # Derlemeyi Başlat (Xiaomi sürücüleriyle %100 uyumlu)
+          # Sadece Image (Çekirdek) derliyoruz, modülleri Xiaomi halledecek
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -206,23 +123,23 @@ jobs:
             KCFLAGS="$KCFLAGS" \
             Image
             
-          echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=CG+-MiCode-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: AnyKernel3 (Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Nihai Houji 6.1.138/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Orijinal Houji MiCode/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Houji-Nihai-BootGarantili.zip" ./*
+          zip -r "../CG+-Houji-MiCode-Orijinal.zip" ./*
 
-      - name: 9. Release Yükle
+      - name: Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Nihai Houji V2"
+          name: "CG+ Houji Orijinal MiCode Source"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
