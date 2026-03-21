@@ -196,13 +196,14 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
-          # 🔥 KCFLAGS BASE (Limitleri Kaldırıyoruz)
+                    # 🔥 KCFLAGS BASE (Limitleri Kaldırıyoruz - GCC Çöpleri Temizlendi)
           BASE_FLAGS="-O3 -march=armv9-a+crypto \
           -fno-semantic-interposition \
           -falign-functions=64 -falign-loops=32 \
-          -finline-functions -finline-functions-called-once \
+          -finline-functions \
           -fno-trapping-math -fno-math-errno \
           -mllvm -polly -mllvm -polly-ast-use-context"
+
           
           if [ "$PGO_STAGE" = "generate" ]; then
             echo ">>> PGO GENERATE BUILD (Veri Toplama Modu)"
