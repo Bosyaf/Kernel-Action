@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (PGO GENERATE - Casus Kernel)
+name: CG+ Curry Ramen 6.1.138 (Normal Turbo V1)
 
 permissions:
   contents: write
@@ -14,7 +14,6 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      PGO_STAGE: "generate"   # VERİ TOPLAMA ŞALTERİ AÇIK
 
     steps:
       - name: Alanı Hazırla
@@ -23,10 +22,10 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+      - name: 0. Kendi Repomuzu Çek
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve ZyC Clang İndir
+      - name: 1. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -37,15 +36,16 @@ jobs:
           
           # Kusursuz Denge: ZyC Clang 22
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyC Clang 22 indiriliyor: $CLANG_URL"
-          
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          echo "ZyC Clang 22 indiriliyor..."
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek
+      - name: 2. Kaynakları Çek (DEEPONGI CURRY RAMEN 6.1.138)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          
+          # Saf Motor Bloğu:
+          git clone --depth=1 -b android14-6.1-2025-06 https://github.com/deepongi-labs/kernel_common.git common
 
       - name: 3. SADECE SukiSU Ultra Kurulumu
         run: |
@@ -105,10 +105,18 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (CG+ Mermileri ve Çin Zırhları)
+      - name: 6. Full Kernel Config (CG+ Mermileri ve Çöplerin Temizliği)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # --- DEEPONGI'NİN HANTAL ÇÖPLERİNİ SİLİYORUZ (Performans Katilleri) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
+          
+          # --- BATARYA DOSTU TEMBEL RCU (Deepongi'den Çalınan İnci) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_LAZY
           
           # --- 300 HZ & FULL PREEMPT ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -130,7 +138,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
           # --- SCHEDULER & CLUSTER ---
@@ -186,7 +193,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (PGO GENERATE - Casus Mod)
+      - name: 7. Kernel Derleme (O3 Turbo, LTO ve Polly)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -196,22 +203,13 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
-                    # 🔥 KCFLAGS BASE (Limitleri Kaldırıyoruz - GCC Çöpleri Temizlendi)
-          BASE_FLAGS="-O3 -march=armv9-a+crypto \
+          # 🔥 PGO YOK, SADECE SAF O3 TURBOSU VE POLLY VAR
+          KCFLAGS="-O3 -march=armv9-a+crypto \
           -fno-semantic-interposition \
           -falign-functions=64 -falign-loops=32 \
           -finline-functions \
           -fno-trapping-math -fno-math-errno \
           -mllvm -polly -mllvm -polly-ast-use-context"
-
-          
-          if [ "$PGO_STAGE" = "generate" ]; then
-            echo ">>> PGO GENERATE BUILD (Veri Toplama Modu)"
-            KCFLAGS="$BASE_FLAGS -fprofile-generate"
-          else
-            echo ">>> PGO USE BUILD"
-            KCFLAGS="$BASE_FLAGS -fprofile-use=default.profdata -fprofile-correction -Wno-profile-instr-out-of-date"
-          fi
           
           # Derlemeyi Başlat
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -222,32 +220,23 @@ jobs:
             KCFLAGS="$KCFLAGS" \
             Image
             
-          # BOLT ve analiz için ham beyni dışarı al
-          cp out/vmlinux $GITHUB_WORKSPACE/vmlinux
-          
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
-      - name: 7.5. Ham Kernel (vmlinux) Dışarı Aktar
-        uses: actions/upload-artifact@v4
-        with:
-          name: vmlinux-ham-beyin
-          path: vmlinux
 
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ PGO Casus Mod/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Curry Ramen Normal Turbo/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-PGO-Casus-Veri-Toplama.zip" ./*
+          zip -r "../CG+-Curry-Ramen-Turbo.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ PGO Casus Zırhı V3"
+          name: "CG+ Curry Ramen Turbo V1"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
