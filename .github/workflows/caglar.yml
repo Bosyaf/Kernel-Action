@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Ölüm Makinesi)
+name: caglar++ Total Ultimate V3 (Full LTO - Ölüm Makinesi)
 
 permissions:
   contents: write
@@ -16,16 +16,33 @@ jobs:
       KBUILD_BUILD_HOST: "caglar++"
 
     steps:
-      - name: Alanı Hazırla
+      - name: 1. Alanı Hazırla (SSD'yi Boşalt)
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+      - name: 2. KUSURSUZ FULL LTO ALTYAPISI (ZRAM + 20GB SWAP)
+        run: |
+          echo ">>> 1. Aşama: Işık Hızında ZRAM Kuruluyor (LZ4 Sıkıştırmalı)..."
+          sudo modprobe zram
+          sudo zramctl -s 8G -a lz4 /dev/zram0
+          sudo mkswap /dev/zram0
+          sudo swapon /dev/zram0 -p 10
+          
+          echo ">>> 2. Aşama: Yedek 20GB Dev Disk Swap Kuruluyor..."
+          sudo fallocate -l 20G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile -p 1
+          
+          echo ">>> RAM VE SWAP DURUMU:"
+          free -h
+
+      - name: 3. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve Yuki Clang İndir
+      - name: 4. Gerekli Paketleri Kur ve Yuki Clang İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -34,24 +51,24 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # Ustanın bulduğu özel Yuki Clang (+BOLT) linki
+          # Ustanın bulduğu özel Yuki Clang
           CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
-          echo "Yuki Clang indiriliyor: $CLANG_URL"
+          echo "Yuki Clang indiriliyor..."
           
           curl -fLSs "$CLANG_URL" -o clang.tar.zst || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Kaynakları Çek
+      - name: 5. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. SADECE VortexSU Kurulumu (Yeni Nesil Root)
+      - name: 6. SADECE VortexSU Kurulumu (Yeni Nesil Root)
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi Patch, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
+      - name: 7. Wi-Fi Patch, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
         run: |
           cd common
           
@@ -68,7 +85,7 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
+      - name: 8. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
         run: |
           cd common
           echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
@@ -103,7 +120,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (CG+ Mermileri ve Gelişmiş Zırhlar)
+      - name: 9. Full Kernel Config (Saf Full LTO Dönüşümü)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -132,9 +149,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
-          # --- COMPILER OPTİMİZASYONLARI ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
+          # >>> FULL LTO ŞALTERLERİ <<<
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
           # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
@@ -162,13 +180,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # --- PROFESYONEL DEBUG TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
+          # >>> DEBUG KATLİAMI (FULL LTO ÇÖKMESİNİ ELLER) <<<
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF
 
           # --- SUSFS Config Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -181,48 +201,47 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           # İSİM DAMGASI VE GİT HASH İPTALİ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+Full-LTO"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O2, Terzi İşi, BOLT, Polly, ThinLTO Turbo)
+      - name: 10. Kernel Derleme (Saf Full LTO - Ağır Yük)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           
-          # Git imzasını kör etmek için boş dosya oluştur
           touch .scmversion
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
+          # Tüm fantezi flagları temizlendi, sadece O2 bırakıldı.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
-            LLVM_BOLT=1 \
-            KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
+            KCFLAGS="-O2" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: 11. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine Full LTO/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate.zip" ./*
+          zip -r "../CG+-Total-Ultimate-Full-LTO.zip" ./*
 
-      - name: 9. Release Yükle
+      - name: 12. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V3"
+          name: "CG+ Total Ultimate V3 (Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
