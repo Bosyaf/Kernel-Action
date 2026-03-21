@@ -16,23 +16,23 @@ jobs:
       KBUILD_BUILD_HOST: "caglar++"
 
     steps:
-      - name: 1. Alanı Hazırla (83GB SSD Alanı Aç)
+      - name: 1. Alanı Hazırla (Gereksizleri Sil ve 24GB Swap Göm)
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
+          swap-size-mb: 24576  # İŞTE ÇÖZÜM BU: 24 GB Swap'ı doğrudan donanıma bağlar!
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
 
-      - name: 2. KUSURSUZ FULL LTO ALTYAPISI (DOĞRU YERE 24GB DEV SWAP)
+      - name: 2. RAM ve Swap Kontrolü
         run: |
-          echo ">>> 83 GB'lık devasa boşluğa 24GB Swap (Sanal RAM) Kuruluyor..."
-          # DİKKAT: Ana dizine (/) değil, yer olan /home/runner/work içine açıyoruz!
-          sudo fallocate -l 24G /home/runner/work/swapfile
-          sudo chmod 600 /home/runner/work/swapfile
-          sudo mkswap /home/runner/work/swapfile
-          sudo swapon /home/runner/work/swapfile
-          
-          echo ">>> RAM VE SWAP DURUMU:"
+          echo ">>> YENİ DİSK VE RAM DURUMU:"
           free -h
+          df -h
 
       - name: 3. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
@@ -211,7 +211,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Fanteziler atıldı, sadece -O2 bırakıldı. RAM şişmesi yaşanmayacak!
+          # Fanteziler atıldı, sadece -O2 bırakıldı.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
