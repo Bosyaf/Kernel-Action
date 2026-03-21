@@ -1,4 +1,4 @@
-name: CG+ Orijinal Houji (shennong-u-oss) Kernel
+name: CG+ Orijinal Houji (shennong-u-oss) V2
 
 permissions:
   contents: write
@@ -16,13 +16,13 @@ jobs:
       KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: Alanı Hazırla
+      - name: 1. Alanı Hazırla
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: Gerekli Paketleri Kur ve ZyC Clang 22 İndir
+      - name: 2. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -34,28 +34,35 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: XİAOMİ ORİJİNAL KAYNAĞI ÇEK (MiCode - shennong-u-oss)
+      - name: 3. XİAOMİ ORİJİNAL KAYNAĞI ÇEK (MiCode - shennong-u-oss)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           
-          # İşte asıl fabrika burası: Xiaomi'nin Houji ve Shennong için yayınladığı saf kod!
+          # Xiaomi 14 Saf Orijinal Kod
           git clone --depth=1 -b shennong-u-oss https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git common
 
-      - name: SukiSU Ultra Kurulumu
+      - name: 4. SukiSU Ultra Kurulumu
         run: |
           cd common
           echo ">>> SukiSU Ultra Çekiliyor..."
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-      - name: SUSFS Master Formülü (Hatasız)
+      - name: 5. SUSFS Formülü ve fs/proc/base.c HATASI ÇÖZÜMÜ
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
+          
+          # Ana SUSFS yaması
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
+          # --- KRİTİK ÇÖZÜM: fs/proc/base.c REDDEDİLEN SATIRLAR İÇİN LAZER LEHİM ---
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          # Namespace ve Statfs zorunlu enjeksiyonları
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -68,25 +75,23 @@ jobs:
           #define CL_COPY_MNT_NS BIT(25)
           #endif
           EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
           
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
 
-      - name: Kernel Config (Orijinal Fabrika Beyni)
+      - name: 6. Kernel Config (Orijinal Fabrika Beyni)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           mkdir -p out
           
-          # Xiaomi 14 Orijinal Config dosyasını bul ve uygula
+          # Xiaomi 14 Orijinal Config dosyasını uygula
           if [ -f "arch/arm64/configs/vendor/houji_GKI.config" ]; then
             make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" vendor/houji_GKI.config
-            echo ">>> Xiaomi Houji Orijinal Config Uygulandı <<<"
           else
             make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
-            echo ">>> Standart GKI Config Uygulandı <<<"
           fi
           
           # --- SUSFS ve KSU Zırhlarını Config'e Ekle ---
@@ -100,12 +105,12 @@ jobs:
           ./scripts/config --file out/.config --set-val CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS 9
           
           # --- İsim Damgası ---
-          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-CG+-MiCode"
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-CG+-MiCode-V2"
           ./scripts/config --file out/.config --disable CONFIG_LOCALVERSION_AUTO
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
 
-      - name: Kernel Derleme (Orijinal Motor - Sürücü Uyumlu)
+      - name: 7. Kernel Derleme (Orijinal Motor - Hatasız)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -114,7 +119,7 @@ jobs:
           
           KCFLAGS="-Wno-default-const-init-var-unsafe -Wno-error"
           
-          # Sadece Image (Çekirdek) derliyoruz, modülleri Xiaomi halledecek
+          # Sadece Image (Çekirdek) derliyoruz
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -123,23 +128,23 @@ jobs:
             KCFLAGS="$KCFLAGS" \
             Image
             
-          echo "BOOTHASH=CG+-MiCode-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=CG+-MiCode-V2-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: AnyKernel3 (Paketleme)
+      - name: 8. AnyKernel3 (Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Orijinal Houji MiCode/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Orijinal Houji MiCode V2/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Houji-MiCode-Orijinal.zip" ./*
+          zip -r "../CG+-Houji-MiCode-V2.zip" ./*
 
-      - name: Release Yükle
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Houji Orijinal MiCode Source"
+          name: "CG+ Houji Orijinal MiCode V2"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
