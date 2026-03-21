@@ -22,19 +22,13 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 2. KUSURSUZ FULL LTO ALTYAPISI (ZRAM + 20GB SWAP)
+      - name: 2. KUSURSUZ FULL LTO ALTYAPISI (24GB DEV SWAP)
         run: |
-          echo ">>> 1. Aşama: Işık Hızında ZRAM Kuruluyor (LZ4 Sıkıştırmalı)..."
-          sudo modprobe zram
-          sudo zramctl -s 8G -a lz4 /dev/zram0
-          sudo mkswap /dev/zram0
-          sudo swapon /dev/zram0 -p 10
-          
-          echo ">>> 2. Aşama: Yedek 20GB Dev Disk Swap Kuruluyor..."
-          sudo fallocate -l 20G /swapfile
+          echo ">>> ZRAM iptal, direkt 24GB Saf SSD Swap çakıyoruz..."
+          sudo fallocate -l 24G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
-          sudo swapon /swapfile -p 1
+          sudo swapon /swapfile
           
           echo ">>> RAM VE SWAP DURUMU:"
           free -h
@@ -216,7 +210,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Tüm fantezi flagları temizlendi, sadece O2 bırakıldı.
+          # Sadece O2 bırakıldı, fantezi kodlar temizlendi
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
