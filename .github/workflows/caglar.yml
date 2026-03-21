@@ -1,4 +1,4 @@
-name: CG+ Curry Ramen 6.1.138 (Normal Turbo V2 - Hatasız)
+name: CG+ Curry Ramen 6.1.138 (Nihai Houji - Boot Garantili V2)
 
 permissions:
   contents: write
@@ -34,7 +34,7 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # Kusursuz Denge: ZyC Clang 22
+          # ZyC Clang 22 (Orijinal Kodları Bozmadan Derleyecek)
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           echo "ZyC Clang 22 indiriliyor..."
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
@@ -47,15 +47,19 @@ jobs:
           # Saf Motor Bloğu:
           git clone --depth=1 -b android14-6.1-2025-06 https://github.com/deepongi-labs/kernel_common.git common
 
-      - name: 3. SADECE SukiSU Ultra Kurulumu
+      - name: 3. SukiSU Ultra Kurulumu
         run: |
           cd common
           echo ">>> SukiSU Ultra Çekiliyor..."
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Yamalar ve Hata Çözümleri (CLIDR + BPF + Zırhlar)
+      - name: 4. Xiaomi ABI Kilidini Kırma ve Yamalar
         run: |
           cd common
+          
+          # >>> 1. XİAOMİ VE GOOGLE KİLİTLERİNİ AÇIYORUZ <<<
+          # Xiaomi'nin modülleri sorunsuz bağlansın diye korumalı dışa aktarımları siliyoruz
+          rm -f android/abi_gki_protected_exports_* || true
           
           # Wi-Fi yaması
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
@@ -63,18 +67,15 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           
-          # >>> CLIDR Hatasını Çözen Deepongi Yaması <<<
+          # CLIDR Hatasını Çözen Deepongi Yaması
           curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" -o fix-clidr.patch
           patch -p1 --forward < fix-clidr.patch || true
 
-          # >>> BPF Derleme Hatası Çözümü (Deepongi'den Çalıntı) <<<
+          # BPF Derleme Hatası Çözümü (Deepongi Taktik)
           sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c || true
 
-          # >>> Dirty (Kirli) Etiketi Temizleyici <<<
+          # Dirty (Kirli) Etiketi Temizleyici
           sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion || true
-
-          echo ">>> BBRv3 Yaması Uygulanıyor..."
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
 
           echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
@@ -115,58 +116,33 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (CG+ Mermileri ve Çöplerin Temizliği)
+      - name: 6. Full Kernel Config (Şablonlar ve Zırhlar)
         run: |
           cd common
-          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          # Önce Özel defconfig'i mi yoksa gki_defconfig'i mi seçeceğimizi belirliyoruz
+          if [ -f "arch/arm64/configs/defconfig" ]; then
+            CONFIG_FILE="arch/arm64/configs/defconfig"
+            echo ">>> Xiaomi/Deepongi özel defconfig kalıbı kullanılıyor <<<"
+          else
+            CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+            echo ">>> Standart gki_defconfig kalıbı kullanılıyor <<<"
+          fi
           
-          # --- DEEPONGI'NİN HANTAL ÇÖPLERİNİ SİLİYORUZ (Performans Katilleri) ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
-          
-          # --- BATARYA DOSTU TEMBEL RCU (Deepongi'den Çalınan İnci) ---
+          # --- BATARYA DOSTU TEMBEL RCU ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_LAZY
           
-          # --- 300 HZ & FULL PREEMPT ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
-
-          # --- WALT & RCU & LTO ---
+          # --- WALT & LTO ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-          
-          # --- SCHEDULER & CLUSTER ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
           # --- AĞ KODLARI VE ÇİNLİLERİN WIREGUARD ZIRHI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
           # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
@@ -203,26 +179,25 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O3 Turbo, LTO ve Polly - Hata Susturucu Aktif)
+      - name: 7. Kernel Derleme (SAF -O2 HIZI - BOOT GARANTİLİ)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          # Xiaomi'nin şablonuyla derlemeyi başlatıyoruz (defconfig veya gki_defconfig)
+          if [ -f "arch/arm64/configs/defconfig" ]; then
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" defconfig
+          else
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          fi
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
-          # 🔥 SADECE SAF O3 TURBOSU VE POLLY VAR (+ ZyC Clang Uyarı Susturucusu)
-          KCFLAGS="-O3 -march=armv9-a+crypto \
-          -fno-semantic-interposition \
-          -falign-functions=64 -falign-loops=32 \
-          -finline-functions \
-          -fno-trapping-math -fno-math-errno \
-          -Wno-default-const-init-var-unsafe -Wno-error \
-          -mllvm -polly -mllvm -polly-ast-use-context"
+          # 🔥 DİKKAT: -O3 VE POLLY İPTAL EDİLDİ! SAF VE TEMİZ -O2 KULLANILIYOR!
+          KCFLAGS="-Wno-default-const-init-var-unsafe -Wno-error"
           
-          # Derlemeyi Başlat
+          # Derlemeyi Başlat (Xiaomi sürücüleriyle %100 uyumlu)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -236,18 +211,18 @@ jobs:
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Curry Ramen Normal Turbo/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Nihai Houji 6.1.138/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Curry-Ramen-Turbo.zip" ./*
+          zip -r "../CG+-Houji-Nihai-BootGarantili.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Curry Ramen Turbo V2"
+          name: "CG+ Nihai Houji V2"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
