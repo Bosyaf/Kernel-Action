@@ -16,19 +16,20 @@ jobs:
       KBUILD_BUILD_HOST: "caglar++"
 
     steps:
-      - name: 1. Alanı Hazırla (SSD'yi Boşalt)
+      - name: 1. Alanı Hazırla (83GB SSD Alanı Aç)
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 2. KUSURSUZ FULL LTO ALTYAPISI (24GB DEV SWAP)
+      - name: 2. KUSURSUZ FULL LTO ALTYAPISI (DOĞRU YERE 24GB DEV SWAP)
         run: |
-          echo ">>> ZRAM iptal, direkt 24GB Saf SSD Swap çakıyoruz..."
-          sudo fallocate -l 24G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          echo ">>> 83 GB'lık devasa boşluğa 24GB Swap (Sanal RAM) Kuruluyor..."
+          # DİKKAT: Ana dizine (/) değil, yer olan /home/runner/work içine açıyoruz!
+          sudo fallocate -l 24G /home/runner/work/swapfile
+          sudo chmod 600 /home/runner/work/swapfile
+          sudo mkswap /home/runner/work/swapfile
+          sudo swapon /home/runner/work/swapfile
           
           echo ">>> RAM VE SWAP DURUMU:"
           free -h
@@ -143,7 +144,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
-          # >>> FULL LTO ŞALTERLERİ <<<
+          # >>> FULL LTO ŞALTERLERİ AÇILIYOR <<<
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG 
@@ -174,7 +175,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # >>> DEBUG KATLİAMI (FULL LTO ÇÖKMESİNİ ELLER) <<<
+          # >>> DEBUG KATLİAMI (FULL LTO RAM ŞİŞMESİNİ ÖNLER) <<<
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
@@ -210,7 +211,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Sadece O2 bırakıldı, fantezi kodlar temizlendi
+          # Fanteziler atıldı, sadece -O2 bırakıldı. RAM şişmesi yaşanmayacak!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
