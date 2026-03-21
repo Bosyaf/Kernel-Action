@@ -1,4 +1,4 @@
-name: CG+ Curry Ramen 6.1.138 (Normal Turbo V1)
+name: CG+ Curry Ramen 6.1.138 (Normal Turbo V2 - Hatasız)
 
 permissions:
   contents: write
@@ -53,7 +53,7 @@ jobs:
           echo ">>> SukiSU Ultra Çekiliyor..."
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
+      - name: 4. Yamalar ve Hata Çözümleri (CLIDR + BPF + Zırhlar)
         run: |
           cd common
           
@@ -63,6 +63,16 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           
+          # >>> CLIDR Hatasını Çözen Deepongi Yaması <<<
+          curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" -o fix-clidr.patch
+          patch -p1 --forward < fix-clidr.patch || true
+
+          # >>> BPF Derleme Hatası Çözümü (Deepongi'den Çalıntı) <<<
+          sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c || true
+
+          # >>> Dirty (Kirli) Etiketi Temizleyici <<<
+          sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion || true
+
           echo ">>> BBRv3 Yaması Uygulanıyor..."
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
 
@@ -193,7 +203,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (O3 Turbo, LTO ve Polly)
+      - name: 7. Kernel Derleme (O3 Turbo, LTO ve Polly - Hata Susturucu Aktif)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -203,12 +213,13 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
-          # 🔥 PGO YOK, SADECE SAF O3 TURBOSU VE POLLY VAR
+          # 🔥 SADECE SAF O3 TURBOSU VE POLLY VAR (+ ZyC Clang Uyarı Susturucusu)
           KCFLAGS="-O3 -march=armv9-a+crypto \
           -fno-semantic-interposition \
           -falign-functions=64 -falign-loops=32 \
           -finline-functions \
           -fno-trapping-math -fno-math-errno \
+          -Wno-default-const-init-var-unsafe -Wno-error \
           -mllvm -polly -mllvm -polly-ast-use-context"
           
           # Derlemeyi Başlat
@@ -236,7 +247,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Curry Ramen Turbo V1"
+          name: "CG+ Curry Ramen Turbo V2"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
