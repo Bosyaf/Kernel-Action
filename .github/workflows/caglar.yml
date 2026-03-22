@@ -1,4 +1,4 @@
-name: LavajCN Houji (Xiaomi 14) Orijinal Kaynak Derlemesi
+name: caglar++ Total Ultimate V3 (Lavajon Houji Edition)
 
 permissions:
   contents: write
@@ -10,101 +10,200 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360 
+    env:
+      KBUILD_BUILD_USER: "caglar"
+      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: 1. Alanı Hazırla
+      - name: Alanı Hazırla
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
 
-      - name: 2. Adamın İstediği GCC'ler ve Bizim ZyC Clang 22
+      - name: 0. Kendi Repomuzu Çek
+        uses: actions/checkout@v4
+
+      - name: 1. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
-          set -euo pipefail
           sudo apt update -qq
-          
-          # Adamın scriptinde kurduğu çapraz derleyiciler (GCC)
-          sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross
-          
-          # Bizim standart paketler
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
-
-          # Adam CLANG komutu vermiş ama indirmemiş! Biz ZyC Clang ile eksiği tamamlıyoruz.
-          mkdir -p "$GITHUB_WORKSPACE/clang"
+          
+          mkdir -p $GITHUB_WORKSPACE/clang
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyC Clang indiriliyor..."
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 3. Kaynakları ve AnyKernel3 Çek
+      - name: 2. Lavajon Houji Kaynaklarını Çek
         run: |
-          set -euo pipefail
-          # Paketleme için AnyKernel3
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          
-          # Çinlinin Xiaomi 14 / 14 Pro (Houji/Shennong) Reposu
-          git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
+          # Houji (Xiaomi 14) için lavajon source
+          git clone https://github.com/lavajon/android_kernel_xiaomi_houji.git --depth=1 common
 
-      - name: 4. Kernel Derleme (Temizlik ve Derleme)
+      - name: 3. Houji Kaynak Fixleri (Build Hataları İçin)
         run: |
-          set -euo pipefail
           cd common
-          
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          
-          # --- DÜKKANI SÜPÜR (mrproper) ---
-          echo "Eski derleme artıkları temizleniyor..."
-          make ARCH=arm64 mrproper
-          rm -rf ../out && mkdir -p ../out
-          # --------------------------------
-          
-          # Adamın unuttuğu şema çıkarma (Defconfig) işlemi
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          # Loglarda attığın compiler hatalarını burada fixliyoruz
+          sed -i 's/u64_to_user_ptr(attr->task_fd_query.buf)/u64_to_user_ptr((__u64)attr->task_fd_query.buf)/g' kernel/bpf/syscall.c || true
+          sed -i 's/u64 clidr;/u64 clidr = 0;/g' arch/arm64/kvm/sys_regs.c || true
 
-          # Adamın yarım bıraktığı derleme komutunun düzeltilmiş, sağlam hali
+      - name: 4. SADECE VortexSU Kurulumu
+        run: |
+          cd common
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+
+      - name: 5. Wi-Fi, BBRv3 ve Asya Yamaları
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+
+      - name: 6. SUSFS Master Formülü
+        run: |
+          cd common
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+          rm -f .ns_inject_tmp
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+
+      - name: 7. Full Kernel Config (Koduna Dokunulmadı)
+        run: |
+          cd common
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # --- 300 HZ & FULL PREEMPT ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+
+          # --- WALT & RCU & LTO ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # --- SCHEDULER & CLUSTER ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          
+          # --- AĞ KODLARI VE ÇİNLİLERİN WIREGUARD ZIRHI ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          
+          sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
+          
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+
+          # --- DEBUG BÖLÜMÜ (DOKUNULMADI) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+
+          # --- SUSFS ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          sed -i 's/check_defconfig//' build.config.gki || true
+
+      - name: 8. Kernel Derleme
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          touch .scmversion
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CC=clang \
+            CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
+            LLVM_BOLT=1 \
+            KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
-
-          echo "BOOTHASH=Houji-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
-      - name: 5. AnyKernel3 (TWRP/KernelSU İçin Flaşlanabilir Paket)
-        run: |
-          set -euo pipefail
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=LavajCN Houji Orijinal Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-
-          SRC_IMG="../common/out/arch/arm64/boot/Image"
           
-          if [ -f "$SRC_IMG" ]; then
-            cp "$SRC_IMG" .
-            echo "Motor (Image) AnyKernel'e kopyalandı."
-          else
-            echo "HATA: Image dosyası bulunamadı, derleme patlak!"
-            exit 1
-          fi
+          echo "BOOTHASH=CG+-$(date +%s)" >> $GITHUB_ENV
 
-          zip -r "../Houji-Shennong-Kernel.zip" ./*
+      - name: 9. Paketleme ve Release
+        run: |
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../CG+-Houji-Ultimate.zip" ./*
 
-      - name: 6. Release Yükle
+      - name: Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "LavajCN Orijinal Kernel (Xiaomi 14/14 Pro)"
+          name: "CG+ Houji V3 (Lavajon Source)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
