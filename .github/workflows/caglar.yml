@@ -22,18 +22,20 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Gerekli Paketleri Kur ve Bazel (Bazelisk) Ayarla
+      - name: 0. Gerekli Paketleri Kur ve Bazel'ı Özel Klasöre Koy
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          echo ">>> Bazel (Bazelisk) Kuruluyor..."
+          echo ">>> Bazel (Bazelisk) Xiaomi scriptinin aradığı 'tools' klasörüne kuruluyor..."
+          mkdir -p $GITHUB_WORKSPACE/tools
           wget -q https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
           chmod +x bazelisk-linux-amd64
-          sudo mv bazelisk-linux-amd64 /usr/local/bin/bazel
-          bazel --version
+          # Doğrudan aradığı adrese taşıyoruz
+          mv bazelisk-linux-amd64 $GITHUB_WORKSPACE/tools/bazel
+          $GITHUB_WORKSPACE/tools/bazel --version
 
       - name: 1. Orijinal Google AOSP Clang İndir (r547379)
         run: |
@@ -66,7 +68,7 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. Nokta Atışı Config Mermileri (Senin Verdiğin Yollar)
+      - name: 5. Nokta Atışı Config Mermileri
         run: |
           cd common
           
@@ -89,7 +91,7 @@ jobs:
           # CONFIG_DEBUG_INFO_COMPRESSED is not set
           EOF
           
-          echo ">>> Doğrudan senin verdiğin adreslere enjeksiyon yapılıyor..."
+          echo ">>> Doğrudan adreslere enjeksiyon yapılıyor..."
           cat custom_configs.txt >> arch/arm64/configs/gki_defconfig
           cat custom_configs.txt >> arch/arm64/configs/vendor/houji_GKI.config
           cat custom_configs.txt >> arch/arm64/configs/vendor/pineapple_GKI.config
@@ -103,7 +105,6 @@ jobs:
           export LLVM=1
           
           echo ">>> Python Bazel Builder Tetikleniyor (Hedef: houji gki)..."
-          # Eksik parametre hatası çözüldü (TARGET ve VARIANT)
           python3 build_with_bazel.py -t houji gki || python3 build_with_bazel.py -t houji user
           
           echo "BOOTHASH=CG+-Houji-Bazel-$(date +%s)" >> $GITHUB_ENV
