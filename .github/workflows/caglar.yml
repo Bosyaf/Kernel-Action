@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4 (Deepongi Source & Mi 14)
+name: caglar++ Total Ultimate V4 (Deepongi Source - Fixed)
 
 permissions:
   contents: write
@@ -33,7 +33,7 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Gerekli Paketleri Kur ve Profesyonel Toolchain Hazırla
+      - name: 0. Gerekli Paketleri Kur ve Toolchain Hazırla
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -41,8 +41,6 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
           mkdir -p $GITHUB_WORKSPACE/toolchain
-          
-          # Clang 23 / ARM GNU 15.2 uyumlu en güncel ZyC sürümü
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/toolchain
@@ -50,10 +48,9 @@ jobs:
       - name: 1. Deepongi GKI Kaynağını Çek (Google Official)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Deepongi'nin kullandığı resmi Google GKI 6.1 (2026-03) dalı
           git clone --depth=1 --branch=android14-6.1-2026-03 https://android.googlesource.com/kernel/common common
 
-      - name: 2. KernelSU Varyant Enjeksiyonu
+      - name: 2. KernelSU Varyant Enjeksiyonu (Hata Giderildi)
         run: |
           cd common
           case "${{ github.event.inputs.ksu_variant }}" in
@@ -63,26 +60,29 @@ jobs:
             "next") KSU_REPO="KernelSU-Next/KernelSU-Next"; KSU_BRANCH="dev" ;;
           esac
           
-          git clone --depth=1 --branch=$KSU_BRANCH https://github.com/$KSU_REPO.git drivers/kernelsu
+          # Geçici klasöre çek
+          git clone --depth=1 --branch=$KSU_BRANCH https://github.com/$KSU_REPO.git ksu_tmp
+          
+          # Asıl dosyaları drivers/kernelsu altına taşı (Kconfig hatasını çözen hamle)
+          mkdir -p drivers/kernelsu
+          cp -r ksu_tmp/kernel/* drivers/kernelsu/
+          
+          # Make dosyalarına işle
           echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-          sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          grep -q "kernelsu" drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
 
       - name: 3. Wi-Fi Patch, ABI Bypass ve Profesyonel Fixler
         run: |
           cd common
-          # 1. SM8650 Wi-Fi Uyumluluk Yaması (VAZGEÇİLMEZ)
-          echo "📶 Wi-Fi yaması enjekte ediliyor..."
+          # SM8650 Wi-Fi Uyumluluk Yaması
           curl -LSs "https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch" | patch -p1 || true
           
-          # 2. GKI ABI Koruma Sınırlarını Kaldır
-          echo "🚫 ABI korumaları deşiliyor..."
+          # GKI ABI Koruma Sınırlarını Kaldır
           rm -f android/abi_gki_protected_exports_* || true
           
-          # 3. CLIDR (Önbellek) ve libbpf fixleri
+          # Fixler
           curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" | patch -p1 || true
           sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c
-          
-          # 4. Dirty version temizliği
           sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion
 
       - name: 4. SuSFS Master (GKI 6.1 Uyumlu)
@@ -98,12 +98,10 @@ jobs:
           cd drivers/kernelsu
           patch -p1 --forward < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
 
-      - name: 5. GKI 6.1 & Mi 14 Karma Config
+      - name: 5. Config Injection
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-          
-          # Deepongi'den gelen 48-bit VA + Performans mermileri
           cat << 'EOF' >> $CONFIG_FILE
           CONFIG_ARM64_VA_BITS=48
           CONFIG_HZ_300=y
@@ -116,10 +114,9 @@ jobs:
           CONFIG_KSU_SUSFS=y
           CONFIG_LOCALVERSION="-CG+"
           EOF
-          
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6. Build (O3 + Polly + Unroll Turbo)
+      - name: 6. Build (O3 + Polly + Unroll)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
@@ -128,26 +125,24 @@ jobs:
           export LLVM_IAS=1
           
           make O=out gki_defconfig
-          
-          # Agresif Derleme Bayrakları
           make -j$(nproc --all) O=out \
             KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-stack-protector" \
             Image
           
           echo "BOOTHASH=CG+-GKI-$(date +%s)" >> $GITHUB_ENV
 
-      - name: 7. Paketleme (AnyKernel3)
+      - name: 7. Paketleme
         run: |
           cp common/out/arch/arm64/boot/Image AnyKernel3/
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine v4 (GKI Source)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine v4/' anykernel.sh
           zip -r "../CG+-Mi14-GKI-V4.zip" ./*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Mi14 V4 (Deepongi Source Edition)"
+          name: "CG+ Mi14 V4 (Fixed Build)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
