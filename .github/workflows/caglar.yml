@@ -53,12 +53,18 @@ jobs:
           # Çinlinin Xiaomi 14 / 14 Pro (Houji/Shennong) Reposu
           git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
 
-      - name: 4. Kernel Derleme (Adamın Eksikleri Tamamlandı)
+      - name: 4. Kernel Derleme (Temizlik ve Derleme)
         run: |
           set -euo pipefail
           cd common
           
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          
+          # --- DÜKKANI SÜPÜR (mrproper) ---
+          echo "Eski derleme artıkları temizleniyor..."
+          make ARCH=arm64 mrproper
+          rm -rf ../out && mkdir -p ../out
+          # --------------------------------
           
           # Adamın unuttuğu şema çıkarma (Defconfig) işlemi
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
