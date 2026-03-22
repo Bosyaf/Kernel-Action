@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4 (Deepongi Source - Fixed)
+name: caglar++ Total Ultimate V3 (Hafifletilmiş Asya Zırhı)
 
 permissions:
   contents: write
@@ -6,17 +6,6 @@ permissions:
 
 on:
   workflow_dispatch:
-    inputs:
-      ksu_variant:
-        description: 'KernelSU varyantı seçin'
-        required: true
-        default: 'next'
-        type: choice
-        options:
-          - next
-          - tiann
-          - kowsu
-          - resukisu
 
 jobs:
   build-kernel:
@@ -33,116 +22,212 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Gerekli Paketleri Kur ve Toolchain Hazırla
+      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+        uses: actions/checkout@v4
+
+      - name: 1. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          mkdir -p $GITHUB_WORKSPACE/toolchain
+          mkdir -p $GITHUB_WORKSPACE/clang
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/toolchain
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 1. Deepongi GKI Kaynağını Çek (Google Official)
+      - name: 2. Spesifik Google GKI Kaynağını Çek (Archive Mode)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 --branch=android14-6.1-2026-03 https://android.googlesource.com/kernel/common common
+          mkdir common
+          echo ">>> Belirtilen Google GKI Arşivi İndiriliyor..."
+          curl -fLSs "https://android.googlesource.com/kernel/common/+archive/7c8b036330b75368815d7f44cf54555c980ad011.tar.gz" -o gki_source.tar.gz
+          tar -xzf gki_source.tar.gz -C common/
 
-      - name: 2. KernelSU Varyant Enjeksiyonu (Hata Giderildi)
+      - name: 3. VortexSU Kurulumu ve ABI Bypass
         run: |
           cd common
-          case "${{ github.event.inputs.ksu_variant }}" in
-            "tiann") KSU_REPO="tiann/KernelSU"; KSU_BRANCH="main" ;;
-            "kowsu") KSU_REPO="KOWX712/KernelSU"; KSU_BRANCH="master" ;;
-            "resukisu") KSU_REPO="ReSukiSU/ReSukiSU"; KSU_BRANCH="main" ;;
-            "next") KSU_REPO="KernelSU-Next/KernelSU-Next"; KSU_BRANCH="dev" ;;
-          esac
-          
-          # Geçici klasöre çek
-          git clone --depth=1 --branch=$KSU_BRANCH https://github.com/$KSU_REPO.git ksu_tmp
-          
-          # Asıl dosyaları drivers/kernelsu altına taşı (Kconfig hatasını çözen hamle)
-          mkdir -p drivers/kernelsu
-          cp -r ksu_tmp/kernel/* drivers/kernelsu/
-          
-          # Make dosyalarına işle
-          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-          grep -q "kernelsu" drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
-
-      - name: 3. Wi-Fi Patch, ABI Bypass ve Profesyonel Fixler
-        run: |
-          cd common
-          # SM8650 Wi-Fi Uyumluluk Yaması
-          curl -LSs "https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch" | patch -p1 || true
-          
-          # GKI ABI Koruma Sınırlarını Kaldır
+          # VortexSU Kurulumu
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          # ABI Bypass (Hataları Önlemek İçin)
           rm -f android/abi_gki_protected_exports_* || true
-          
-          # Fixler
-          curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" | patch -p1 || true
-          sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c
-          sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion
 
-      - name: 4. SuSFS Master (GKI 6.1 Uyumlu)
+      - name: 4. Wi-Fi, BBRv3, CLIDR Fix ve BBG Zırhı
         run: |
           cd common
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          cp ../susfs/kernel_patches/fs/susfs.c fs/
-          cp ../susfs/kernel_patches/include/linux/susfs.h include/linux/
-          cp ../susfs/kernel_patches/include/linux/susfs_def.h include/linux/
           
+          # CLIDR (Uninitialized Cache) Fix - Deepongi'den gelen mermi
+          echo ">>> CLIDR Fix Uygulanıyor..."
+          curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" | patch -p1 || true
+          
+          # Wi-Fi yaması
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch | patch -p1 || true
+          
+          echo ">>> BBRv3 Yaması Uygulanıyor..."
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+
+          echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+
+      - name: 5. SUSFS Master Formülü (Hatasız)
+        run: |
+          cd common
+          echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          cd drivers/kernelsu
-          patch -p1 --forward < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
+          echo "Kingfinik98 Özel 6.1 Fix Yaması Uygulanıyor..."
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
 
-      - name: 5. Config Injection
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+          rm -f .ns_inject_tmp
+          
+          echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+
+      - name: 6. Full Kernel Config (Kusursuz Enjeksiyon)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-          cat << 'EOF' >> $CONFIG_FILE
-          CONFIG_ARM64_VA_BITS=48
-          CONFIG_HZ_300=y
-          CONFIG_PREEMPT=y
-          CONFIG_LTO_CLANG_THIN=y
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_NET_SCH_CAKE=y
-          CONFIG_KSU=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_LOCALVERSION="-CG+"
-          EOF
+          
+          # --- 300 HZ & FULL PREEMPT ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+
+          # --- WALT & RCU & LTO ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # --- SCHEDULER & CLUSTER ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          
+          # --- AĞ KODLARI VE WIREGUARD ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          
+          # --- TMPFS VE BBG (ANTI-BRICK) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+
+          # --- BOOT GÜVENLİK ZIRHI (Dün Bahsettiğimiz CMDLINE) ---
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+
+          # --- PROFESYONEL DEBUG TEMİZLİĞİ ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+
+          # --- SUSFS Config Mermileri ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
+          # İsim Damgası
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          
+          # Built-in Modül Zorlaması
+          sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
+          
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6. Build (O3 + Polly + Unroll)
+      - name: 7. Kernel Derleme (O2, ThinLTO Turbo ve Kalite Kontrol)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          export ARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          touch .scmversion
           
-          make O=out gki_defconfig
-          make -j$(nproc --all) O=out \
-            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-stack-protector" \
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
+          
+          # Derlemeyi Başlat
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" \
+            LD=ld.lld \
+            HOSTLD=ld.lld \
+            LLVM_BOLT=1 \
+            KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
           
-          echo "BOOTHASH=CG+-GKI-$(date +%s)" >> $GITHUB_ENV
+          echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 7. Paketleme
+      - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
-          cp common/out/arch/arm64/boot/Image AnyKernel3/
-          cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine v4/' anykernel.sh
-          zip -r "../CG+-Mi14-GKI-V4.zip" ./*
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../CG+-Hafifletilmis-Asya-Zirhi.zip" ./*
 
-      - name: 8. Release
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Mi14 V4 (Fixed Build)"
+          name: "CG+ Hafifletilmiş Asya Zırhı V3 (Google Archive)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
