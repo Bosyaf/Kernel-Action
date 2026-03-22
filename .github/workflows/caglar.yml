@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V3 (Full LTO - Ölüm Makinesi)
+name: caglar++ Total Ultimate V3 (Saf Full LTO + Vendor Fix)
 
 permissions:
   contents: write
@@ -10,248 +10,122 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 
+    timeout-minutes: 360
     env:
       KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "caglar++"
+      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: 1. Alanı Hazırla (Gereksizleri Sil ve 24GB Swap Göm)
+      - name: 1. Alanı Hazırla
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-mb: 24576
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
 
-      - name: 2. RAM ve Swap Kontrolü
-        run: |
-          echo ">>> YENİ DİSK VE RAM DURUMU:"
-          free -h
-          df -h
-
-      - name: 3. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+      - name: 2. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
-      - name: 4. Gerekli Paketleri Kur ve Yuki Clang İndir
+      - name: 3. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget zstd
-          
-          mkdir -p $GITHUB_WORKSPACE/clang
-          
-          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
-          echo "Yuki Clang indiriliyor..."
-          
-          curl -fLSs "$CLANG_URL" -o clang.tar.zst || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
-          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
 
-      - name: 5. Kaynakları Çek
+          mkdir -p $GITHUB_WORKSPACE/clang
+
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "ZyC Clang 22 indiriliyor: $CLANG_URL"
+
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+
+      - name: 4. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 6. SADECE VortexSU Kurulumu (Yeni Nesil Root)
-        run: |
-          cd common
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-
-      - name: 7. Wi-Fi Patch ve Asya Yamaları (BBG Anti-Brick)
-        run: |
-          cd common
-          
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          
-          echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
-      - name: 8. SUSFS Master Formülü (Hatasız - Çakışmalar Temizlendi)
-        run: |
-          cd common
-          echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          echo "Kingfinik98 Özel 6.1 Fix Yaması Uygulanıyor..."
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
-          cat << 'EOF' > .ns_inject_tmp
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
-          rm -f .ns_inject_tmp
-          
-          echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-
-      - name: 9. Full Kernel Config (GKI Bypass + Saf Full LTO Dönüşümü)
+      - name: 5. Full Kernel Config (GKI + Vendor Uyumlu Full LTO)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-          
-          # --- 300 HZ (ISI VE TEPKİ SÜRESİ DENGESİ) ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
 
-          # --- FULL PREEMPT (Eksiksiz Akıcılık) ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+          echo ">>> GKI + VENDOR UYUMLULUK FIX (FULL LTO)"
 
-          # --- WALT & PERFORMANS YÖNETİMİ ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          
-          # --- RCU OPTİMİZASYONLARI (ZİRVE AKICILIK) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
+          # ABI / symbol stabilitesi
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_BASE_RELATIVE
 
-          # >>> FULL LTO ŞALTERLERİ AÇILIYOR <<<
+          # modül uyumu
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
+
+          # GKI ABI koruma
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ANDROID
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ANDROID_VENDOR_HOOKS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRACEPOINTS
+
+          # LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-          
-          # >>> GKI OVERRIDE ENGELLEME (KRİTİK HAMLE) <<<
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+
+          # memory / driver stability
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DMA_SHARED_BUFFER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYNC_FILE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOMMU_SUPPORT
+
+          # debug tarafı: boot güvenliği için açık bırak
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+
+          # GKI build override
           sed -i 's/LTO=thin/LTO=full/g' build.config.gki || true
-          sed -i 's/LTO=thin/LTO=full/g' build.config.common || true
-          
-          # >>> CFI VE GÜVENLİK SENSÖRLERİ KÖKTEN İPTAL (FULL LTO LINK HATASI ÇÖZÜMÜ) <<<
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_PERMISSIVE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG_SHADOW
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
-          
-          # >>> LTO DÜŞMANI AYARLAR İPTAL <<<
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
-          
-          # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # --- AĞ KODLARI (0 Ping) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          
-          # --- ÇİNLİLERİN GELİŞMİŞ TMPFS VE BBG (ANTI-BRICK) AYARLARI ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-
-          # >>> DEBUG KATLİAMI (FULL LTO RAM ŞİŞMESİNİ ÖNLER) <<<
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF
-
-          # --- SUSFS Config Mermileri ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          # İSİM DAMGASI VE GİT HASH İPTALİ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+Full-LTO"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
+          grep -q '^LTO=full$' build.config.gki || echo 'LTO=full' >> build.config.gki
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 10. Kernel Derleme (-O3 ve GKI LTO Override)
+          # isim damgası
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+Saf-LTO"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+
+      - name: 6. Kernel Derleme (Saf Kaynak + Full LTO)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
-          
           touch .scmversion
-          
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
-          
-          # Wno-error eklendi! Hata fırlatsa bile durmayacak, işini bitirecek!
+
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" \
+            CC=clang \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LTO=full \
-            KCFLAGS="-O2 -march=armv9-a+crypto -fno-semantic-interposition -fvisibility=hidden -Wno-error -Wno-frame-larger-than -Wno-constant-logical-operand"
+            KCFLAGS="-O2 -march=armv9-a+crypto -fno-semantic-interposition" \
+            Image
 
-          
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 11. AnyKernel3 (Temiz Paketleme)
+      - name: 7. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine Full LTO/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Saf Full LTO V3/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
-          # BBG (Baseband Guard) Zorunlu LSM Kilidi
-          sed -i '/is_slot_device/a patch_cmdline "lsm=lockdown,baseband_guard,yama,integrity,selinux,bpf"' anykernel.sh
-          
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Total-Ultimate-Full-LTO.zip" ./*
 
-      - name: 12. Release Yükle
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../CG+-Saf-Full-LTO.zip" ./*
+
+      - name: 8. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Total Ultimate V3 (Full LTO)"
+          name: "CG+ Saf Full LTO V3"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
