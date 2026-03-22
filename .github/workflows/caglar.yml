@@ -37,16 +37,16 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Lavajon Houji Kaynaklarını Çek
+      - name: 2. Lavajon Houji Kaynaklarını Çek (YENİ ADRES)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Houji (Xiaomi 14) için lavajon source
-          git clone https://github.com/lavajon/android_kernel_xiaomi_houji.git --depth=1 common
+          # Houji (Xiaomi 14) için lavajCN spec source
+          git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
 
       - name: 3. Houji Kaynak Fixleri (Build Hataları İçin)
         run: |
           cd common
-          # Loglarda attığın compiler hatalarını burada fixliyoruz
+          # Loglarda attığın compiler hataları için zorunlu müdahale
           sed -i 's/u64_to_user_ptr(attr->task_fd_query.buf)/u64_to_user_ptr((__u64)attr->task_fd_query.buf)/g' kernel/bpf/syscall.c || true
           sed -i 's/u64 clidr;/u64 clidr = 0;/g' arch/arm64/kvm/sys_regs.c || true
 
@@ -98,7 +98,6 @@ jobs:
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # --- 300 HZ & FULL PREEMPT ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -111,7 +110,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
-          # --- WALT & RCU & LTO ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
@@ -121,7 +119,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # --- SCHEDULER & CLUSTER ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
@@ -130,7 +127,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # --- AĞ KODLARI VE ÇİNLİLERİN WIREGUARD ZIRHI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
@@ -148,7 +144,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # --- DEBUG BÖLÜMÜ (DOKUNULMADI) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
@@ -156,7 +151,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
 
-          # --- SUSFS ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -189,12 +183,12 @@ jobs:
             KCFLAGS="-O2 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-semantic-interposition -fno-stack-protector -flto-jobs=$(nproc --all) -Wno-constant-logical-operand" \
             Image
           
-          echo "BOOTHASH=CG+-$(date +%s)" >> $GITHUB_ENV
+          echo "BOOTHASH=CG+-Houji-$(date +%s)" >> $GITHUB_ENV
 
       - name: 9. Paketleme ve Release
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Death Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Houji-Ultimate.zip" ./*
@@ -203,7 +197,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Houji V3 (Lavajon Source)"
+          name: "CG+ Houji V3 (lavajCN Source)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
