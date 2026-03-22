@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-mb: 24576  # İŞTE ÇÖZÜM BU: 24 GB Swap'ı doğrudan donanıma bağlar!
+          swap-size-mb: 24576  # 24 GB Swap'ı doğrudan donanıma bağlar!
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -63,7 +63,7 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 7. Wi-Fi Patch, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
+      - name: 7. Wi-Fi Patch ve Asya Yamaları (BBG Anti-Brick)
         run: |
           cd common
           
@@ -73,9 +73,8 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           
-          echo ">>> BBRv3 Yaması Uygulanıyor (Mikroskop Operasyonu)..."
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-
+          # NOT: BBRv3 yaması Clang'i çıldırttığı için KÖKTEN SİLİNMİŞTİR!
+          
           echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
@@ -211,7 +210,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Fanteziler atıldı, sadece -O2 bırakıldı.
+          # Fanteziler atıldı, sadece -O2 bırakıldı. RAM şişmesi yaşanmayacak!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
