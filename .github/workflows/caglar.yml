@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4 (MiCode & Google Clang Edition)
+name: caglar++ Total Ultimate V4 (MiCode & Google Clang - No KSU)
 
 permissions:
   contents: write
@@ -45,7 +45,6 @@ jobs:
           git config core.sparseCheckout true
           echo "clang-r547379/" >> .git/info/sparse-checkout
           git pull origin main --depth=1
-          echo "Clang başarıyla Google sunucularından indirildi."
 
       - name: 2. Resmi MiCode Kaynaklarını Çek (Shennong / Houji)
         run: |
@@ -60,50 +59,20 @@ jobs:
           sed -i -E 's/u64_to_user_ptr\(([^)]+)\)/u64_to_user_ptr((__u64)(\1))/g' kernel/bpf/syscall.c || true
           sed -i 's/u64 clidr;/u64 clidr = 0;/g' arch/arm64/kvm/sys_regs.c || true
 
-      - name: 4. VortexSU, SUSFS ve BBG Zırhı
+      - name: 4. BBG Zırhı (Anti-Brick)
         run: |
           cd common
-          
-          # VortexSU
-          echo ">>> VortexSU Kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-          
-          # BBG (Baseband Guard) Anti-Brick Zırhı
           echo ">>> BBG Zırhı Enjekte Ediliyor..."
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-          # SUSFS (Simonpunk Orijinal GKI 6.1)
-          echo ">>> SUSFS Mimarisi Kuruluyor..."
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          cat << 'EOF' > .ns_inject_tmp
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
-          rm -f .ns_inject_tmp
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-
-      - name: 5. Config Mermileri (Bazel Uyumlu)
+      - name: 5. Dinamik Config Mermileri (Bazel Uyumlu)
         run: |
           cd common
-          # Bazel sistemi dosyaların içine doğrudan yazılmasını sever.
           
-          CONFIG_INJECT=$(cat << 'EOF'
-          # CG+ Asya Zırhı & Performans
+          # Enjekte edilecek mermileri bir dosyaya yazıyoruz
+          cat << 'EOF' > custom_configs.txt
+          # CG+ Asya Zırhı & Performans (ThinLTO)
           CONFIG_HZ_300=y
           CONFIG_PREEMPT=y
           CONFIG_PREEMPT_BUILD=y
@@ -114,38 +83,32 @@ jobs:
           CONFIG_DEFAULT_NET_SCH="cake"
           CONFIG_WIREGUARD=y
           CONFIG_BBG=y
-          # SUSFS Mermileri
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
           # Çöpleri Temizle
           # CONFIG_PGO_CLANG is not set
           # CONFIG_DEBUG_INFO_REDUCED is not set
           # CONFIG_DEBUG_INFO_COMPRESSED is not set
           EOF
-          )
           
-          echo "$CONFIG_INJECT" >> arch/arm64/configs/gki_defconfig
-          echo "$CONFIG_INJECT" >> vendor/houji_GKI.config || true
-          echo "$CONFIG_INJECT" >> vendor/pineapple_GKI.config || true
+          echo ">>> Config dosyaları aranıyor ve mermiler basılıyor..."
+          # find ile gki_defconfig, houji ve pineapple configlerini bulup içine basıyoruz
+          find . -type f \( -name "gki_defconfig" -o -name "*houji*.config" -o -name "*pineapple*.config" \) -exec sh -c 'cat custom_configs.txt >> "$1"' _ {} \;
+          echo ">>> Config enjeksiyonu tamamlandı!"
 
       - name: 6. BAZEL / KLEAF Derlemeyi Başlat (Ana Operasyon)
         run: |
           cd common
-          # Google Clang yolunu Bazel'a gösteriyoruz
           export PATH="$GITHUB_WORKSPACE/clang/clang-r547379/bin:$PATH"
           export LLVM=1
           
-          echo ">>> Python Bazel Builder Tetikleniyor (Hedef: houji)..."
-          python3 build_with_bazel.py -t houji || python3 build_with_bazel.py
+          echo ">>> Python Bazel Builder Tetikleniyor (Hedef: houji gki)..."
+          # Eksik parametre hatası çözüldü (TARGET ve VARIANT eklendi)
+          python3 build_with_bazel.py -t houji gki || python3 build_with_bazel.py -t houji user
           
           echo "BOOTHASH=CG+-Houji-Bazel-$(date +%s)" >> $GITHUB_ENV
 
       - name: 7. Image Dosyasını Bul ve Paketle (Arama-Kurtarma)
         run: |
           cd common
-          # Bazel derlemesi bitince Image dosyasını derin dizinlerden bul çıkar
           IMAGE_PATH=$(find out/ bazel-bin/ -name "Image" -type f | head -n 1)
           
           if [ -z "$IMAGE_PATH" ]; then
@@ -157,15 +120,15 @@ jobs:
           cp "$IMAGE_PATH" ../AnyKernel3/
           
           cd ../AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji MiCode Ultimate/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji MiCode (No KSU)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          zip -r "../CG+-Houji-Ultimate-V4.zip" ./*
+          zip -r "../CG+-Houji-Ultimate-V4-NoKSU.zip" ./*
 
       - name: 8. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Houji V4 (Resmi MiCode - Google Clang)"
+          name: "CG+ Houji V4 (Resmi MiCode - No KSU)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
