@@ -42,7 +42,7 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/toolchain
           
-          # Clang 23 & ARM GNU 15.2 (Deepongi standartlarına uygun en güncel ZyC sürümü)
+          # Clang 23 / ARM GNU 15.2 uyumlu en güncel ZyC sürümü
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/toolchain
@@ -50,7 +50,7 @@ jobs:
       - name: 1. Deepongi GKI Kaynağını Çek (Google Official)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Deepongi'nin kullandığı resmi Google GKI 6.1 dalı
+          # Deepongi'nin kullandığı resmi Google GKI 6.1 (2026-03) dalı
           git clone --depth=1 --branch=android14-6.1-2026-03 https://android.googlesource.com/kernel/common common
 
       - name: 2. KernelSU Varyant Enjeksiyonu
@@ -67,19 +67,22 @@ jobs:
           echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
 
-      - name: 3. Deepongi Profesyonel Fixler & ABI Bypass
+      - name: 3. Wi-Fi Patch, ABI Bypass ve Profesyonel Fixler
         run: |
           cd common
-          # GKI ABI Koruma Sınırlarını Kaldır
+          # 1. SM8650 Wi-Fi Uyumluluk Yaması (VAZGEÇİLMEZ)
+          echo "📶 Wi-Fi yaması enjekte ediliyor..."
+          curl -LSs "https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch" | patch -p1 || true
+          
+          # 2. GKI ABI Koruma Sınırlarını Kaldır
+          echo "🚫 ABI korumaları deşiliyor..."
           rm -f android/abi_gki_protected_exports_* || true
           
-          # CLIDR uninitialized fix (Deepongi Patch)
+          # 3. CLIDR (Önbellek) ve libbpf fixleri
           curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" | patch -p1 || true
-          
-          # libbpf.c tip dönüşüm fix
           sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c
           
-          # Dirty version temizliği
+          # 4. Dirty version temizliği
           sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion
 
       - name: 4. SuSFS Master (GKI 6.1 Uyumlu)
@@ -95,12 +98,12 @@ jobs:
           cd drivers/kernelsu
           patch -p1 --forward < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
 
-      - name: 5. Mi 14 & Deepongi Karma Config
+      - name: 5. GKI 6.1 & Mi 14 Karma Config
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # Deepongi'den gelen 48-bit VA ve Net optimizasyonları + Senin Mi 14 ayarların
+          # Deepongi'den gelen 48-bit VA + Performans mermileri
           cat << 'EOF' >> $CONFIG_FILE
           CONFIG_ARM64_VA_BITS=48
           CONFIG_HZ_300=y
@@ -116,7 +119,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6. Build (O3 + Polly + Unroll)
+      - name: 6. Build (O3 + Polly + Unroll Turbo)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
@@ -126,14 +129,14 @@ jobs:
           
           make O=out gki_defconfig
           
-          # Deepongi Flags + Polly Turbo
+          # Agresif Derleme Bayrakları
           make -j$(nproc --all) O=out \
             KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-stack-protector" \
             Image
           
           echo "BOOTHASH=CG+-GKI-$(date +%s)" >> $GITHUB_ENV
 
-      - name: 7. Paketleme
+      - name: 7. Paketleme (AnyKernel3)
         run: |
           cp common/out/arch/arm64/boot/Image AnyKernel3/
           cd AnyKernel3
