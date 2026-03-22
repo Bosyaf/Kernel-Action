@@ -25,7 +25,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-mb: 24576  # >>> İŞTE KABA KUVVET BURADA! OOM Çökmesini Engeller <<<
+          swap-size-mb: 24576  # >>> OOM Çökmesini Engeller <<<
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -83,7 +83,6 @@ jobs:
           # LTO (6.1 için CONFIG_LTO_CLANG yeterli)
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG
-          # CONFIG_LTO_CLANG_FULL 6.1'de olmayabilir; varsa enable eder, yoksa hata vermez
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG_FULL || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
 
@@ -92,21 +91,21 @@ jobs:
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_SYNC_FILE
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_IOMMU_SUPPORT
 
-          # debug tarafı: boot güvenliği için açık bırak (BTF sorun çıkarsa fallback var)
+          # debug tarafı: boot güvenliği için açık bırak
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DEBUG_KERNEL
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DEBUG_INFO_BTF
 
-          # =========================
-          # EXPORT SYMBOL KORUMA (ÇOK KRİTİK LİSANS KIRICI)
-          # =========================
-          echo ">>> EXPORT_SYMBOL FIX uygulanıyor..."
-          sed -i 's/EXPORT_SYMBOL_GPL/EXPORT_SYMBOL/g' $(grep -rl EXPORT_SYMBOL_GPL .) || true
+          # =======================================================
+          # EXPORT SYMBOL KORUMA (CERRAHİ LİSANS KIRICI - HATASIZ)
+          # =======================================================
+          echo ">>> Cerrahi EXPORT_SYMBOL FIX uygulanıyor..."
+          # Macro isimlerini bozmadan sadece _gpl etiketini boşluğa çevirir!
+          sed -i 's/"_gpl"/""/g' include/linux/export.h || true
 
           # isim damgası
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "${LOCALVERSION_SUFFIX}"
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
 
-          # build.config.gki'yi zorlamaya çalışma; derleme sırasında LTO parametresi verilecek
           echo "Config güncellendi."
 
       - name: 6. Kernel Derleme (Saf Kaynak + Full LTO) with BTF fallback
