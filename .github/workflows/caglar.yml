@@ -71,7 +71,7 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü (Hatasız)
+      - name: 5. SUSFS Master Formülü (Temizlenmiş)
         run: |
           cd common
           echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
@@ -85,22 +85,7 @@ jobs:
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
-          cat << 'EOF' > .ns_inject_tmp
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
-          rm -f .ns_inject_tmp
+          # ÇİFTE KAYNAK (Redefinition) YAPAN FAZLALIK KOD BURADAN SİLİNDİ
           
           echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
