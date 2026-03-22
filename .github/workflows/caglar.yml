@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-mb: 24576  # 24 GB Swap'ı doğrudan donanıma bağlar!
+          swap-size-mb: 24576  # 24 GB Swap devrede!
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -73,8 +73,6 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           
-          # NOT: BBRv3 yaması Clang'i çıldırttığı için KÖKTEN SİLİNMİŞTİR!
-          
           echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
@@ -114,7 +112,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 9. Full Kernel Config (Saf Full LTO Dönüşümü)
+      - name: 9. Full Kernel Config (GKI Bypass + Saf Full LTO Dönüşümü)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -144,10 +142,16 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
           # >>> FULL LTO ŞALTERLERİ AÇILIYOR <<<
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # >>> GKI OVERRIDE ENGELLEME (KRİTİK HAMLE) <<<
+          sed -i 's/LTO=thin/LTO=full/g' build.config.gki || true
+          sed -i 's/LTO=thin/LTO=full/g' build.config.common || true
           
           # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -200,7 +204,7 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 10. Kernel Derleme (Saf Full LTO - Ağır Yük)
+      - name: 10. Kernel Derleme (-O3 ve GKI LTO Override)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
@@ -210,13 +214,14 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Fanteziler atıldı, sadece -O2 bırakıldı. RAM şişmesi yaşanmayacak!
+          # Arkadaşının verdiği o efsane Make ve KCFLAGS parametreleri!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
-            KCFLAGS="-O2" \
+            LTO=full \
+            KCFLAGS="-O3 -march=armv9-a+crypto -fno-semantic-interposition -fvisibility=hidden" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -227,6 +232,9 @@ jobs:
           sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine Full LTO/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
+          # BBG (Baseband Guard) Zorunlu LSM Kilidi
+          sed -i '/is_slot_device/a patch_cmdline "lsm=lockdown,baseband_guard,yama,integrity,selinux,bpf"' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG+-Total-Ultimate-Full-LTO.zip" ./*
