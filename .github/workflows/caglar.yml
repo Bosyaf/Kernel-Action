@@ -33,36 +33,33 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
           mkdir -p $GITHUB_WORKSPACE/clang
+          
+          # Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "ZyC Clang 22 indiriliyor: $CLANG_URL"
+          
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
 
-      - name: 2. Spesifik Google GKI Kaynağını Çek (Archive Mode)
+      - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          mkdir common
-          echo ">>> Belirtilen Google GKI Arşivi İndiriliyor..."
-          curl -fLSs "https://android.googlesource.com/kernel/common/+archive/7c8b036330b75368815d7f44cf54555c980ad011.tar.gz" -o gki_source.tar.gz
-          tar -xzf gki_source.tar.gz -C common/
+          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. VortexSU Kurulumu ve ABI Bypass
+      - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
-          # VortexSU Kurulumu
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-          # ABI Bypass (Hataları Önlemek İçin)
-          rm -f android/abi_gki_protected_exports_* || true
 
-      - name: 4. Wi-Fi, BBRv3, CLIDR Fix ve BBG Zırhı
+      - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
         run: |
           cd common
-          
-          # CLIDR (Uninitialized Cache) Fix - Deepongi'den gelen mermi
-          echo ">>> CLIDR Fix Uygulanıyor..."
-          curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" | patch -p1 || true
           
           # Wi-Fi yaması
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch | patch -p1 || true
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
           
           echo ">>> BBRv3 Yaması Uygulanıyor..."
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
@@ -71,7 +68,7 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü (Temizlenmiş)
+      - name: 5. SUSFS Master Formülü (Hatasız)
         run: |
           cd common
           echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
@@ -85,13 +82,28 @@ jobs:
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          # ÇİFTE KAYNAK (Redefinition) YAPAN FAZLALIK KOD BURADAN SİLİNDİ
+          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
+
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+          rm -f .ns_inject_tmp
           
           echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (Kusursuz Enjeksiyon)
+      - name: 6. Full Kernel Config (CG+ Mermileri ve Çin Zırhları)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -128,7 +140,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # --- AĞ KODLARI VE WIREGUARD ---
+          # --- AĞ KODLARI VE ÇİNLİLERİN WIREGUARD ZIRHI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
@@ -138,17 +150,21 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
-          # --- TMPFS VE BBG (ANTI-BRICK) ---
+          # >>> ZORLA BUILT-IN YAPMA (MODÜL İPTALİ) <<<
+          sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
+          sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
+          
+          # --- ÇİNLİLERİN GELİŞMİŞ TMPFS VE BBG (ANTI-BRICK) AYARLARI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # --- BOOT GÜVENLİK ZIRHI (Dün Bahsettiğimiz CMDLINE) ---
+          # --- BOOT GÜVENLİK ZIRHI (CMDLINE AYARLARI) ---
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
-          # --- PROFESYONEL DEBUG TEMİZLİĞİ ---
+          # --- PROFESYONEL DEBUG TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
@@ -166,13 +182,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          # İsim Damgası
+          # İSİM DAMGASI VE GİT HASH İPTALİ
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
-          # Built-in Modül Zorlaması
-          sed -i 's/CONFIG_TCP_CONG_BBR=m/CONFIG_TCP_CONG_BBR=y/g' $CONFIG_FILE
-          sed -i 's/CONFIG_NET_SCH_CAKE=m/CONFIG_NET_SCH_CAKE=y/g' $CONFIG_FILE
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -183,7 +195,10 @@ jobs:
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
+          # Önce ayarları işle
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          
+          # KALİTE KONTROL ŞEFİ (Eksik ayarları tamamla)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           
           # Derlemeyi Başlat
@@ -212,7 +227,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Hafifletilmiş Asya Zırhı V3 (Google Archive)"
+          name: "CG+ Hafifletilmiş Asya Zırhı V3"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
