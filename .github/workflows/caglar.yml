@@ -22,12 +22,18 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Gerekli Paketleri Kur
+      - name: 0. Gerekli Paketleri Kur ve Bazel (Bazelisk) Ayarla
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget bazel
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
+          
+          echo ">>> Bazel (Bazelisk) Kuruluyor..."
+          wget -q https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x bazelisk-linux-amd64
+          sudo mv bazelisk-linux-amd64 /usr/local/bin/bazel
+          bazel --version
 
       - name: 1. Orijinal Google AOSP Clang İndir (r547379)
         run: |
