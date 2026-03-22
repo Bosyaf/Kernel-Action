@@ -43,11 +43,15 @@ jobs:
           # Houji (Xiaomi 14) için lavajCN spec source
           git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 common
 
-      - name: 3. Houji Kaynak Fixleri (Build Hataları İçin)
+      - name: 3. Houji Kaynak Fixleri (Tüm Hatalar İçin Toplu Fix)
         run: |
           cd common
-          # u64_to_user_ptr ve clidr hatalarını kökten çözen sed mermileri
-          sed -i 's/u64_to_user_ptr(attr->task_fd_query.buf)/u64_to_user_ptr((__u64)attr->task_fd_query.buf)/g' kernel/bpf/syscall.c || true
+          echo ">>> BPF Syscall ve KVM Hataları Toplu Fixleniyor..."
+          
+          # BPF syscall.c içindeki BÜTÜN u64_to_user_ptr(X) makrolarını dinamik olarak u64_to_user_ptr((__u64)(X)) yapar
+          sed -i -E 's/u64_to_user_ptr\(([^)]+)\)/u64_to_user_ptr((__u64)(\1))/g' kernel/bpf/syscall.c || true
+          
+          # KVM clidr uninitialized hatası
           sed -i 's/u64 clidr;/u64 clidr = 0;/g' arch/arm64/kvm/sys_regs.c || true
 
       - name: 4. SADECE VortexSU Kurulumu
@@ -177,7 +181,7 @@ jobs:
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          # DİKKAT: Dirty source tree hatasını bu çözer
+          # Temizlik (Dirty tree hatası için)
           make ARCH=arm64 mrproper
           rm -rf out
           
