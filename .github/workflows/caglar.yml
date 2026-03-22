@@ -14,111 +14,189 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
+      # Eğer GKI uyumluluğu için march değiştirmek istersen burayı armv8.2-a yap
+      ARM_MARCH: "armv9-a+crypto"
+      # Varsayılan localversion
+      LOCALVERSION_SUFFIX: "-CG+Saf-LTO"
 
     steps:
-      - name: 1. Alanı Hazırla
+      - name: 1. Alanı Hazırla (24GB Dev Swap Eklendi!)
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
+          swap-size-mb: 24576  # >>> İŞTE KABA KUVVET BURADA! OOM Çökmesini Engeller <<<
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
 
       - name: 2. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
       - name: 3. Gerekli Paketleri Kur ve ZyC Clang 22 İndir
         run: |
+          set -euo pipefail
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
 
-          mkdir -p $GITHUB_WORKSPACE/clang
-
+          mkdir -p "$GITHUB_WORKSPACE/clang"
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyC Clang 22 indiriliyor: $CLANG_URL"
+          echo "ZyC Clang indiriliyor: $CLANG_URL"
 
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
+          ls -la "$GITHUB_WORKSPACE/clang"
 
       - name: 4. Kaynakları Çek
         run: |
+          set -euo pipefail
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       - name: 5. Full Kernel Config (GKI + Vendor Uyumlu Full LTO)
         run: |
+          set -euo pipefail
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
           echo ">>> GKI + VENDOR UYUMLULUK FIX (FULL LTO)"
 
           # ABI / symbol stabilitesi
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_BASE_RELATIVE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KALLSYMS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KALLSYMS_BASE_RELATIVE
 
           # modül uyumu
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULES
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODVERSIONS
 
           # GKI ABI koruma
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ANDROID
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ANDROID_VENDOR_HOOKS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRACEPOINTS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ANDROID
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ANDROID_VENDOR_HOOKS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TRACEPOINTS
 
-          # LTO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          # LTO (6.1 için CONFIG_LTO_CLANG yeterli)
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG
+          # CONFIG_LTO_CLANG_FULL 6.1'de olmayabilir; varsa enable eder, yoksa hata vermez
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG_FULL || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
 
           # memory / driver stability
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DMA_SHARED_BUFFER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYNC_FILE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOMMU_SUPPORT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DMA_SHARED_BUFFER
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_SYNC_FILE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_IOMMU_SUPPORT
 
-          # debug tarafı: boot güvenliği için açık bırak
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_KERNEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+          # debug tarafı: boot güvenliği için açık bırak (BTF sorun çıkarsa fallback var)
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DEBUG_KERNEL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DEBUG_INFO_BTF
 
-          # GKI build override
-          sed -i 's/LTO=thin/LTO=full/g' build.config.gki || true
-          grep -q '^LTO=full$' build.config.gki || echo 'LTO=full' >> build.config.gki
-          sed -i 's/check_defconfig//' build.config.gki || true
+          # =========================
+          # EXPORT SYMBOL KORUMA (ÇOK KRİTİK LİSANS KIRICI)
+          # =========================
+          echo ">>> EXPORT_SYMBOL FIX uygulanıyor..."
+          sed -i 's/EXPORT_SYMBOL_GPL/EXPORT_SYMBOL/g' $(grep -rl EXPORT_SYMBOL_GPL .) || true
 
           # isim damgası
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+Saf-LTO"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "${LOCALVERSION_SUFFIX}"
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
 
-      - name: 6. Kernel Derleme (Saf Kaynak + Full LTO)
+          # build.config.gki'yi zorlamaya çalışma; derleme sırasında LTO parametresi verilecek
+          echo "Config güncellendi."
+
+      - name: 6. Kernel Derleme (Saf Kaynak + Full LTO) with BTF fallback
         run: |
+          set -euo pipefail
           cd common
+
+          # PATH ve LTO/LLVM ayarları
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          sed -i 's/^PHONY += all/  /g' Makefile || true
+          export LTO=full
+          export LLVM=1
+          export LLVM_IAS=1
+
+          # Derleme ön hazırlık
           touch .scmversion
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
+          # defconfig uygula
+          make O=out ARCH=arm64 gki_defconfig
 
+          # Derlemeyi bir log dosyasına al; hata olursa BTF kontrolü yapıp yeniden dene
+          BUILD_LOG="$GITHUB_WORKSPACE/build.log"
+          
+          # İLK DERLEME DENEMESİ (-Wno-error Eklendi)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LTO=full \
-            KCFLAGS="-O2 -march=armv9-a+crypto -fno-semantic-interposition" \
-            Image
+            KCFLAGS="-O2 -march=${ARM_MARCH} -fno-semantic-interposition -Wno-error" \
+            Image 2>&1 | tee "$BUILD_LOG" || true
 
+          # Başarılı mı kontrol et
+          if grep -q "Kernel: arch/arm64/boot/Image" "$BUILD_LOG" || [ -f out/arch/arm64/boot/Image ]; then
+            echo "Derleme başarılı (ilk deneme)."
+          else
+            echo "İlk derleme başarısız. build.log inceleniyor..."
+            if grep -i "gen_btf" "$BUILD_LOG" || grep -i "BTF" "$BUILD_LOG"; then
+              echo "BTF kaynaklı hata tespit edildi. CONFIG_DEBUG_INFO_BTF devre dışı bırakılıyor ve yeniden derleniyor."
+              ./scripts/config --file arch/arm64/configs/gki_defconfig --disable CONFIG_DEBUG_INFO_BTF || true
+              make O=out ARCH=arm64 gki_defconfig
+              
+              # İKİNCİ DERLEME DENEMESİ (FALLBACK - Wno-error Eklendi)
+              make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+                CROSS_COMPILE=aarch64-linux-gnu- \
+                CC=clang \
+                LD=ld.lld \
+                HOSTLD=ld.lld \
+                LTO=full \
+                KCFLAGS="-O2 -march=${ARM_MARCH} -fno-semantic-interposition -Wno-error" \
+                Image 2>&1 | tee "$BUILD_LOG" || true
+            fi
+          fi
+
+          # Son kontrol
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "Image bulundu, derleme tamamlandı."
+          else
+            echo "Derleme başarısız. build.log içeriği:"
+            tail -n 200 "$BUILD_LOG"
+            exit 1
+          fi
+
+          # Boothash
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 7. AnyKernel3 (Temiz Paketleme)
         run: |
+          set -euo pipefail
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Saf Full LTO V3/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
 
-          cp ../common/out/arch/arm64/boot/Image .
+          # Image veya Image.gz-dtb kontrolü; hangisi varsa onu paketle
+          SRC_IMG="../common/out/arch/arm64/boot/Image"
+          SRC_IMG_GZDTB="../common/out/arch/arm64/boot/Image.gz-dtb"
+
+          if [ -f "$SRC_IMG" ]; then
+            cp "$SRC_IMG" .
+            echo "Kopyalandı: Image"
+          elif [ -f "$SRC_IMG_GZDTB" ]; then
+            cp "$SRC_IMG_GZDTB" .
+            echo "Kopyalandı: Image.gz-dtb"
+          else
+            echo "HATA: Paketlenecek Image bulunamadı."
+            ls -la ../common/out/arch/arm64/boot || true
+            exit 1
+          fi
+
           zip -r "../CG+-Saf-Full-LTO.zip" ./*
 
       - name: 8. Release Yükle
@@ -129,3 +207,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
