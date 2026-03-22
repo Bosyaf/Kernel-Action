@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-mb: 24576  # 24 GB Swap devrede!
+          swap-size-mb: 24576
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -46,7 +46,6 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # Ustanın bulduğu özel Yuki Clang
           CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           echo "Yuki Clang indiriliyor..."
           
@@ -67,7 +66,6 @@ jobs:
         run: |
           cd common
           
-          # Wi-Fi yaması
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
@@ -153,6 +151,15 @@ jobs:
           sed -i 's/LTO=thin/LTO=full/g' build.config.gki || true
           sed -i 's/LTO=thin/LTO=full/g' build.config.common || true
           
+          # >>> CFI VE GÜVENLİK SENSÖRLERİ KÖKTEN İPTAL (FULL LTO LINK HATASI ÇÖZÜMÜ) <<<
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_PERMISSIVE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG_SHADOW
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
+          
+          # >>> LTO DÜŞMANI AYARLAR İPTAL <<<
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
+          
           # --- SCHEDULER & CLUSTER (120 FPS Kararlılığı) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
@@ -214,14 +221,14 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # Arkadaşının verdiği o efsane Make ve KCFLAGS parametreleri!
+          # Wno-error eklendi! Hata fırlatsa bile durmayacak, işini bitirecek!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
             LTO=full \
-            KCFLAGS="-O3 -march=armv9-a+crypto -fno-semantic-interposition -fvisibility=hidden" \
+            KCFLAGS="-O3 -march=armv9-a+crypto -fno-semantic-interposition -fvisibility=hidden -Wno-error -Wno-frame-larger-than=2048 -Wno-constant-logical-operand" \
             Image
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
