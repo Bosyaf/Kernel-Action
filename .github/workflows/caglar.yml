@@ -228,8 +228,8 @@ jobs:
             LD=ld.lld \
             HOSTLD=ld.lld \
             LTO=full \
-            KCFLAGS="-O3 -march=armv9-a+crypto -fno-semantic-interposition -fvisibility=hidden -Wno-error -Wno-frame-larger-than=2048 -Wno-constant-logical-operand" \
-            Image
+            KCFLAGS="-O2 -march=armv9-a+crypto -fno-semantic-interposition -fvisibility=hidden -Wno-error -Wno-frame-larger-than -Wno-constant-logical-operand"
+
           
           echo "BOOTHASH=CG+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
