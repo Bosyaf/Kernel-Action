@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate V4 (MiCode & Google Clang - No KSU)
+name: caglar++ Total Ultimate V4 (Deepongi Source & Mi 14)
 
 permissions:
   contents: write
@@ -6,6 +6,17 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      ksu_variant:
+        description: 'KernelSU varyantı seçin'
+        required: true
+        default: 'next'
+        type: choice
+        options:
+          - next
+          - tiann
+          - kowsu
+          - resukisu
 
 jobs:
   build-kernel:
@@ -16,122 +27,124 @@ jobs:
       KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: Alanı Hazırla (Bazel Çok Yer İster)
+      - name: Alanı Hazırla
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
 
-      - name: 0. Gerekli Paketleri Kur ve Bazel'ı Özel Klasöre Koy
+      - name: 0. Gerekli Paketleri Kur ve Profesyonel Toolchain Hazırla
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget
           
-          echo ">>> Bazel (Bazelisk) Xiaomi scriptinin aradığı 'tools' klasörüne kuruluyor..."
-          mkdir -p $GITHUB_WORKSPACE/tools
-          wget -q https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-          chmod +x bazelisk-linux-amd64
-          # Doğrudan aradığı adrese taşıyoruz
-          mv bazelisk-linux-amd64 $GITHUB_WORKSPACE/tools/bazel
-          $GITHUB_WORKSPACE/tools/bazel --version
+          mkdir -p $GITHUB_WORKSPACE/toolchain
+          
+          # Clang 23 & ARM GNU 15.2 (Deepongi standartlarına uygun en güncel ZyC sürümü)
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/toolchain
 
-      - name: 1. Orijinal Google AOSP Clang İndir (r547379)
-        run: |
-          echo ">>> Resmi Google AOSP Clang r547379 çekiliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang
-          cd $GITHUB_WORKSPACE/clang
-          git init
-          git remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-          git config core.sparseCheckout true
-          echo "clang-r547379/" >> .git/info/sparse-checkout
-          git pull origin main --depth=1
-
-      - name: 2. Resmi MiCode Kaynaklarını Çek (Shennong / Houji)
+      - name: 1. Deepongi GKI Kaynağını Çek (Google Official)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Resmi Xiaomi Açık Kaynak Reposu (common klasörüne çıkarılır)
-          git clone https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git -b shennong-u-oss --depth=1 common
+          # Deepongi'nin kullandığı resmi Google GKI 6.1 dalı
+          git clone --depth=1 --branch=android14-6.1-2026-03 https://android.googlesource.com/kernel/common common
 
-      - name: 3. Hata Fixleri (BPF & KVM)
+      - name: 2. KernelSU Varyant Enjeksiyonu
         run: |
           cd common
-          # Kaynak kod derleme hatalarını baştan eziyoruz
-          sed -i -E 's/u64_to_user_ptr\(([^)]+)\)/u64_to_user_ptr((__u64)(\1))/g' kernel/bpf/syscall.c || true
-          sed -i 's/u64 clidr;/u64 clidr = 0;/g' arch/arm64/kvm/sys_regs.c || true
-
-      - name: 4. BBG Zırhı (Anti-Brick)
-        run: |
-          cd common
-          echo ">>> BBG Zırhı Enjekte Ediliyor..."
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
-      - name: 5. Nokta Atışı Config Mermileri
-        run: |
-          cd common
+          case "${{ github.event.inputs.ksu_variant }}" in
+            "tiann") KSU_REPO="tiann/KernelSU"; KSU_BRANCH="main" ;;
+            "kowsu") KSU_REPO="KOWX712/KernelSU"; KSU_BRANCH="master" ;;
+            "resukisu") KSU_REPO="ReSukiSU/ReSukiSU"; KSU_BRANCH="main" ;;
+            "next") KSU_REPO="KernelSU-Next/KernelSU-Next"; KSU_BRANCH="dev" ;;
+          esac
           
-          # Enjekte edilecek mermiler
-          cat << 'EOF' > custom_configs.txt
-          # CG+ Asya Zırhı & Performans (ThinLTO)
+          git clone --depth=1 --branch=$KSU_BRANCH https://github.com/$KSU_REPO.git drivers/kernelsu
+          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+      - name: 3. Deepongi Profesyonel Fixler & ABI Bypass
+        run: |
+          cd common
+          # GKI ABI Koruma Sınırlarını Kaldır
+          rm -f android/abi_gki_protected_exports_* || true
+          
+          # CLIDR uninitialized fix (Deepongi Patch)
+          curl -LSs "https://raw.githubusercontent.com/infectedmushi/kernel_patches/main/fix-clidr-uninitialized.patch" | patch -p1 || true
+          
+          # libbpf.c tip dönüşüm fix
+          sed -i 's/next_path = strchr(s, '"'"':'"'"');/next_path = (char *)strchr(s, '"'"':'"'"');/' tools/lib/bpf/libbpf.c
+          
+          # Dirty version temizliği
+          sed -i '/# Check for uncommitted changes\./,/fi/d' ./scripts/setlocalversion
+
+      - name: 4. SuSFS Master (GKI 6.1 Uyumlu)
+        run: |
+          cd common
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          cp ../susfs/kernel_patches/fs/susfs.c fs/
+          cp ../susfs/kernel_patches/include/linux/susfs.h include/linux/
+          cp ../susfs/kernel_patches/include/linux/susfs_def.h include/linux/
+          
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          cd drivers/kernelsu
+          patch -p1 --forward < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
+
+      - name: 5. Mi 14 & Deepongi Karma Config
+        run: |
+          cd common
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # Deepongi'den gelen 48-bit VA ve Net optimizasyonları + Senin Mi 14 ayarların
+          cat << 'EOF' >> $CONFIG_FILE
+          CONFIG_ARM64_VA_BITS=48
           CONFIG_HZ_300=y
           CONFIG_PREEMPT=y
-          CONFIG_PREEMPT_BUILD=y
           CONFIG_LTO_CLANG_THIN=y
           CONFIG_TCP_CONG_BBR=y
-          CONFIG_DEFAULT_TCP_CONG="bbr"
+          CONFIG_NET_SCH_FQ=y
           CONFIG_NET_SCH_CAKE=y
-          CONFIG_DEFAULT_NET_SCH="cake"
-          CONFIG_WIREGUARD=y
-          CONFIG_BBG=y
-          # Çöpleri Temizle
-          # CONFIG_PGO_CLANG is not set
-          # CONFIG_DEBUG_INFO_REDUCED is not set
-          # CONFIG_DEBUG_INFO_COMPRESSED is not set
+          CONFIG_KSU=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_LOCALVERSION="-CG+"
           EOF
           
-          echo ">>> Doğrudan adreslere enjeksiyon yapılıyor..."
-          cat custom_configs.txt >> arch/arm64/configs/gki_defconfig
-          cat custom_configs.txt >> arch/arm64/configs/vendor/houji_GKI.config
-          cat custom_configs.txt >> arch/arm64/configs/vendor/pineapple_GKI.config
-          cat custom_configs.txt >> arch/arm64/configs/vendor/houji_consolidate.config
-          echo ">>> Config enjeksiyonu TAMAM!"
+          sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 6. BAZEL / KLEAF Derlemeyi Başlat (Ana Operasyon)
+      - name: 6. Build (O3 + Polly + Unroll)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang/clang-r547379/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          export ARCH=arm64
           export LLVM=1
+          export LLVM_IAS=1
           
-          echo ">>> Python Bazel Builder Tetikleniyor (Hedef: houji gki)..."
-          python3 build_with_bazel.py -t houji gki || python3 build_with_bazel.py -t houji user
+          make O=out gki_defconfig
           
-          echo "BOOTHASH=CG+-Houji-Bazel-$(date +%s)" >> $GITHUB_ENV
+          # Deepongi Flags + Polly Turbo
+          make -j$(nproc --all) O=out \
+            KCFLAGS="-O3 -funroll-loops -march=armv9-a+crypto -mllvm -polly -mllvm -polly-ast-use-context -fno-stack-protector" \
+            Image
+          
+          echo "BOOTHASH=CG+-GKI-$(date +%s)" >> $GITHUB_ENV
 
-      - name: 7. Image Dosyasını Bul ve Paketle (Arama-Kurtarma)
+      - name: 7. Paketleme
         run: |
-          cd common
-          IMAGE_PATH=$(find out/ bazel-bin/ -name "Image" -type f | head -n 1)
-          
-          if [ -z "$IMAGE_PATH" ]; then
-            echo "HATA: Image dosyası bulunamadı! Bazel derlemeyi tamamlayamamış."
-            exit 1
-          fi
-          
-          echo ">>> Image bulundu: $IMAGE_PATH"
-          cp "$IMAGE_PATH" ../AnyKernel3/
-          
-          cd ../AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji MiCode (No KSU)/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          zip -r "../CG+-Houji-Ultimate-V4-NoKSU.zip" ./*
+          cp common/out/arch/arm64/boot/Image AnyKernel3/
+          cd AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Death Machine v4 (GKI Source)/' anykernel.sh
+          zip -r "../CG+-Mi14-GKI-V4.zip" ./*
 
-      - name: 8. Release Yükle
+      - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Houji V4 (Resmi MiCode - No KSU)"
+          name: "CG+ Mi14 V4 (Deepongi Source Edition)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
