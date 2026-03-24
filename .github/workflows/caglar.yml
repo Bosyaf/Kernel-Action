@@ -25,7 +25,7 @@ jobs:
       - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve ZyC Clang 23 İndir
+      - name: 1. Gerekli Paketleri Kur ve Google Clang İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -34,9 +34,9 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           
-          # ZyC Clang 23 (Ocak 2026)
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/23.0.0git-20260130-release/Clang-23.0.0git-20260130.tar.gz"
-          echo "ZyC Clang 23 indiriliyor: $CLANG_URL"
+          # Ustanın bulduğu çalışan gizli depo linki
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
+          echo "Clang indiriliyor: $CLANG_URL"
           
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
@@ -123,7 +123,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
 
           # --- WALT & RCU & LTO ---
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TOUCHBOOST 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
@@ -157,8 +156,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # --- BOOT GÜVENLİK ZIRHI (HACKER CMDLINE AYARLARI) ---
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard kasan=off schedstats=disable slub_debug=- loglevel=3 printk.devkmsg=off"
+          # --- BOOT GÜVENLİK ZIRHI (CMDLINE AYARLARI) ---
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
           # --- PROFESYONEL DEBUG TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
