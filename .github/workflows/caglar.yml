@@ -157,8 +157,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # --- BOOT GÜVENLİK ZIRHI (CMDLINE AYARLARI) ---
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
+          # --- BOOT GÜVENLİK ZIRHI (HACKER CMDLINE AYARLARI) ---
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard kasan=off schedstats=disable slub_debug=- loglevel=3 printk.devkmsg=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
           # --- PROFESYONEL DEBUG TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
