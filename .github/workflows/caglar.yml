@@ -44,12 +44,13 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. SADECE VortexSU Kurulumu
+      - name: 3. Orijinal Tiann KernelSU Kurulumu (TEMİZ)
         run: |
           cd common
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          echo ">>> Orijinal Tiann KernelSU Kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
       - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
         run: |
@@ -68,47 +69,30 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü (Hatasız)
+      - name: 5. SUSFS Master Formülü (Saf ve Hatasız Entegrasyon)
         run: |
           cd common
-          echo "Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
+          echo ">>> Simonpunk Orijinal SUSFS (GKI 6.1) Çekiliyor..."
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           
+          echo ">>> SUSFS Dosyaları Kernele Kopyalanıyor..."
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
+          
+          echo ">>> Kernel İçin SUSFS Yaması Atılıyor (50_add_susfs)..."
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          echo "Kingfinik98 Özel 6.1 Fix Yaması Uygulanıyor..."
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "Namespace SUSFS Tanımları Enjekte Ediliyor..."
-          cat << 'EOF' > .ns_inject_tmp
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
-          rm -f .ns_inject_tmp
-          
-          echo "CRC Fix Uygulanıyor (VorteXSU 6.1 Özel)..."
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+          echo ">>> KernelSU İçin SUSFS Yaması Atılıyor (10_enable_susfs_for_ksu)..."
+          cd drivers/kernelsu
+          patch -p1 --forward < ../../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
+          cd ../..
 
       - name: 6. Full Kernel Config (CG+ Mermileri ve Çin Zırhları)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # --- 300 HZ & FULL PREEMPT ---
+           # --- 300 HZ & FULL PREEMPT ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
@@ -217,7 +201,7 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG+-Hafifletilmis-Asya-Zirhi.zip" ./*
+          zip -r "../CG+-bss.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
@@ -227,4 +211,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
