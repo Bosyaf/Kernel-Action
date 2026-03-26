@@ -158,6 +158,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DYNAMIC_THERMAL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+
+          # --- TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           
           # --- AĞ KODLARI (BBR + FQ_CODEL) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
