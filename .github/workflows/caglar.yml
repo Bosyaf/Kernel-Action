@@ -130,7 +130,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
-          # HATA BURADAYDI, --enable OLARAK DÜZELTİLDİ:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_SIZE
 
           # === SCHEDULER MI14 1+5+2 ÖZEL ===
@@ -209,12 +208,13 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" gki_defconfig
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" olddefconfig
           
+          # HATA VEREN 2 FLAG SİLİNDİ
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
-            KCFLAGS="-O3 -march=armv9.2-a+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector-all -flto=thin -flto-jobs=$(nproc) -fuse-ld=lld -mpopcnt -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -mno-slow-unaligned-access -Wno-constant-logical-operand" \
+            KCFLAGS="-O3 -march=armv9.2-a+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -flto=thin -flto-jobs=$(nproc) -fuse-ld=lld -mpopcnt -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Zyc-ColdGaming-$(( $(date +%s) ))" >> $GITHUB_ENV
