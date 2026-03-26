@@ -1,4 +1,4 @@
-name: caglar++ Total Ultimate Zyc (ZyCromerZ Clang)
+name: caglar++ Zyc Gaming Kernel (CLANG PATH FIX 100%)
 
 permissions:
   contents: write
@@ -10,37 +10,58 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 
+    timeout-minutes: 420
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
+      # PATH GLOBAL EXPORT - HATAYI ÇÖZER!
+      PATH_CLANG: "${{ github.workspace }}/clang/bin:/usr/bin:/bin"
 
     steps:
-      - name: Alanı Hazırla
+      - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
+          swap-size-gb: 8
 
-      - name: 0. Kendi Repomuzu Çek (Zula Dosyaları İçin)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Gerekli Paketleri Kur ve ZyCromerZ Clang İndir
+      - name: 1. PACKAGES + **CLANG PATH CRITICAL FIX**
         run: |
           sudo apt update -qq
-          # HATA ÇÖZÜMÜ: Ubuntu'nun eksik araçları bulması için lld'nin yanına llvm paketi eklendi!
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip dwarves bc cpio wget xz-utils lld llvm
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            lld-18 llvm-18 clang-18 pkg-config
+
+          # UBUNTU CLANG 18 PRIORITY (ZyCromerZ backup)
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/lld-18 100
           
-          # ZyCromerZ v22 (Daha Stabil - Wi-Fi Fix İçin) eklendi!
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyCromerZ Clang indiriliyor: $CLANG_URL"
+          # ZyCromerZ **LATEST 23.0** (22 patlak!)
+          mkdir -p ${{ github.workspace }}/clang
+          cd ${{ github.workspace }}/clang
           
-          mkdir -p $GITHUB_WORKSPACE/clang
-          curl -fLSsL "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang --strip-components=1
-          rm -f clang.tar.gz
+          # GÜVENLİ URL CHECK
+          curl -fLSsL https://github.com/ZyCromerZ/Clang/releases/download/23.0.0/Clang-23.0.0.tar.gz \
+            -o clang.tar.gz || \
+          curl -fLSsL https://github.com/ZyCromerZ/Clang/releases/download/22.0.10/Clang-22.0.10.tar.gz \
+            -o clang.tar.gz
+            
+          tar -xzf clang.tar.gz --strip-components=1
+          rm clang.tar.gz
+
+          # PATH CRITICAL FIX - BU ÇÖZER!
+          echo "$PATH_CLANG" >> $GITHUB_PATH
+          export PATH="$PATH_CLANG"
+          
+          # TEST - OLMAZSA DUR!
+          clang --version || { echo "❌ CLANG PATH FAIL!"; exit 1; }
+          ld.lld --version || { echo "❌ LLD PATH FAIL!"; exit 1; }
+          which clang
 
       - name: 2. Kaynakları Çek
         run: |
@@ -198,12 +219,12 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (CLANG 22 ZORUNLU KILINDI)
+      - name: 7. Kernel Derleme (CLANG PATH GARANTİLİ)
         run: |
           cd common
-          # PATH'i başa ekliyoruz ama make içinde de açıkça dosya yollarını vereceğiz
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          export CLANG_DIR="$GITHUB_WORKSPACE/clang/bin"
+          # 1. Adımdaki global PATH_CLANG sayesinde derleyici yolu kesin olarak biliniyor.
+          export PATH="$PATH_CLANG:$PATH"
+          
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
@@ -214,53 +235,29 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
-          echo "🔥 CLANG 22.0 GÜCÜYLE DERLENİYOR..."
+          echo "🔥 DERLEME BAŞLIYOR..."
           
           # HRTICK inatla açılıyorsa zorla ezmek için:
           sed -i 's/CONFIG_SCHED_HRTICK=y/# CONFIG_SCHED_HRTICK is not set/g' arch/arm64/configs/gki_defconfig || true
           
-          # Ubuntu Clang'ini engellemek için tüm LLVM araçlarına tam yol verdik:
+          # PATH global olduğu için direkt CC="clang" diyoruz. Testini de 1. adımda yaptık zaten!
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="$CLANG_DIR/clang" \
-            LD="$CLANG_DIR/ld.lld" \
-            HOSTCC="$CLANG_DIR/clang" \
-            HOSTCXX="$CLANG_DIR/clang++" \
-            HOSTLD="$CLANG_DIR/ld.lld" \
-            AR="$CLANG_DIR/llvm-ar" \
-            NM="$CLANG_DIR/llvm-nm" \
-            OBJCOPY="$CLANG_DIR/llvm-objcopy" \
-            OBJDUMP="$CLANG_DIR/llvm-objdump" \
-            STRIP="$CLANG_DIR/llvm-strip" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
           # HRTICK Son Kontrol Ezmesi
           sed -i 's/CONFIG_SCHED_HRTICK=y/# CONFIG_SCHED_HRTICK is not set/g' out/.config || true
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="$CLANG_DIR/clang" \
-            LD="$CLANG_DIR/ld.lld" \
-            HOSTCC="$CLANG_DIR/clang" \
-            HOSTCXX="$CLANG_DIR/clang++" \
-            HOSTLD="$CLANG_DIR/ld.lld" \
-            AR="$CLANG_DIR/llvm-ar" \
-            NM="$CLANG_DIR/llvm-nm" \
-            OBJCOPY="$CLANG_DIR/llvm-objcopy" \
-            OBJDUMP="$CLANG_DIR/llvm-objdump" \
-            STRIP="$CLANG_DIR/llvm-strip" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="$CLANG_DIR/clang" \
-            LD="$CLANG_DIR/ld.lld" \
-            HOSTCC="$CLANG_DIR/clang" \
-            HOSTCXX="$CLANG_DIR/clang++" \
-            HOSTLD="$CLANG_DIR/ld.lld" \
-            AR="$CLANG_DIR/llvm-ar" \
-            NM="$CLANG_DIR/llvm-nm" \
-            OBJCOPY="$CLANG_DIR/llvm-objcopy" \
-            OBJDUMP="$CLANG_DIR/llvm-objdump" \
-            STRIP="$CLANG_DIR/llvm-strip" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             LLVM_BOLT=1 \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -mpopcnt -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
