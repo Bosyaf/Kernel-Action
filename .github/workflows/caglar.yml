@@ -1,4 +1,4 @@
-name: caglar++ Zyc Gaming Kernel (HRTICK ON)
+name: caglar++ Zyc Gaming Kernel (HRTICK ON + MLGO/POLLY)
 
 permissions:
   contents: write
@@ -231,12 +231,14 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
+          # 🔥 MLGO VE POLLY ENJEKSİYONU 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             LLVM_BOLT=1 \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand -mllvm -polly -mllvm -polly-vectorizer=stripmine -mllvm -polly-tiling -mllvm -polly-scheduling=dynamic -mllvm -vectorizer-maximize-bandwidth -mllvm -enable-ext-tsp-block-placement=1 -mllvm -enable-loopinterchange -mllvm -enable-ml-inliner=release -mllvm -regalloc-enable-advisor=release" \
+            KLDFLAGS="-Wl,-mllvm,-polly -Wl,-mllvm,-polly-vectorizer=stripmine -Wl,-mllvm,-vectorizer-maximize-bandwidth -Wl,-mllvm,-enable-ext-tsp-block-placement=1 -Wl,-mllvm,-enable-ml-inliner=release -Wl,-mllvm,-regalloc-enable-advisor=release" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Zyc+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -249,13 +251,13 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Zyc+-HRTICK-ON.zip" ./*
+          zip -r "../Zyc+-MLGO-POLLY.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Zyc Gaming Kernel"
+          name: "CG+ Zyc Gaming Kernel (Steroidli)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
