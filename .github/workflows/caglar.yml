@@ -130,7 +130,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CC_OPTIMIZE_FOR_SIZE "y"
+          # HATA BURADAYDI, --enable OLARAK DÜZELTİLDİ:
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_SIZE
 
           # === SCHEDULER MI14 1+5+2 ÖZEL ===
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -205,7 +206,6 @@ jobs:
           
           echo "🔥 MI14 8Gen3 SOĞUK GAMING KCFLAGS aktif!"
           
-          # HATA ÇÖZÜMÜ: Bağlayıcı (LD ve HOSTLD) yolları Config aşamasına da eklendi.
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" gki_defconfig
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" olddefconfig
           
