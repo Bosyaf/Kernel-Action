@@ -37,7 +37,8 @@ jobs:
           
           mkdir -p $GITHUB_WORKSPACE/clang
           curl -fLSsL "$CLANG_URL" -o clang.tar.gz || { echo "❌ HATA: Clang URL'si patlak (404)!"; exit 1; }
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang --strip-components=1
+          # HATA BURADAYDI: --strip-components=1 silindi, artık "bin" klasörü düzgünce çıkacak!
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
           rm -f clang.tar.gz
 
       - name: 2. Kaynakları Çek
@@ -103,7 +104,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (KUM TORBALARI İMHA EDİLDİ)
+      - name: 6. Full Kernel Config (ÖZEL AYARLAR)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -169,29 +170,16 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
-          echo "🗑️ KUM TORBALARI (DEBUG, KASAN, AUDIT, GEREKSİZ MİMARİLER) İMHA EDİLİYOR..."
+          echo "🗑️ GEREKSİZ YÜKLER İMHA EDİLİYOR..."
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_KERNEL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_HW_TAGS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN_TRAP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN_BOUNDS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN_SANITIZE_ALL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_INFO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_AUDIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_AUDITSYSCALL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_SUNXI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_HISI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_TEGRA
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_BCM
 
           # --- SUSFS Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
