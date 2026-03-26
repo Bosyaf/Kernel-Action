@@ -1,4 +1,4 @@
-name: caglar++ Zyc Gaming Kernel (CLANG PATH FIX 100%)
+name: caglar++ Zyc Gaming Kernel (Ogay Clang Metodu)
 
 permissions:
   contents: write
@@ -14,8 +14,6 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      # PATH GLOBAL EXPORT - HATAYI ÇÖZER!
-      PATH_CLANG: "${{ github.workspace }}/clang/bin:/usr/bin:/bin"
 
     steps:
       - name: Maximize Space
@@ -28,40 +26,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. PACKAGES + **CLANG PATH CRITICAL FIX**
+      - name: 1. Paketler ve ZyCromerZ Clang (Ogay Metodu)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            lld-18 llvm-18 clang-18 pkg-config
+            lld llvm pkg-config
 
-          # UBUNTU CLANG 18 PRIORITY (ZyCromerZ backup)
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
-          sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/lld-18 100
+          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
           
-          # ZyCromerZ **LATEST 23.0** (22 patlak!)
-          mkdir -p ${{ github.workspace }}/clang
-          cd ${{ github.workspace }}/clang
+          curl -L -o clang.tar.gz "$CLANG_LINK"
           
-          # GÜVENLİ URL CHECK
-          curl -fLSsL https://github.com/ZyCromerZ/Clang/releases/download/23.0.0/Clang-23.0.0.tar.gz \
-            -o clang.tar.gz || \
-          curl -fLSsL https://github.com/ZyCromerZ/Clang/releases/download/22.0.10/Clang-22.0.10.tar.gz \
-            -o clang.tar.gz
-            
-          tar -xzf clang.tar.gz --strip-components=1
-          rm clang.tar.gz
-
-          # PATH CRITICAL FIX - BU ÇÖZER!
-          echo "$PATH_CLANG" >> $GITHUB_PATH
-          export PATH="$PATH_CLANG"
+          echo "Arşiv Çıkarılıyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          rm -f clang.tar.gz
           
-          # TEST - OLMAZSA DUR!
-          clang --version || { echo "❌ CLANG PATH FAIL!"; exit 1; }
-          ld.lld --version || { echo "❌ LLD PATH FAIL!"; exit 1; }
-          which clang
+          echo "✅ Clang Hazır."
 
       - name: 2. Kaynakları Çek
         run: |
@@ -126,7 +111,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (ÖZEL AYARLAR)
+      - name: 6. Full Kernel Config (ÖZEL AYARLAR + DEBLOAT)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -219,16 +204,19 @@ jobs:
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (CLANG PATH GARANTİLİ)
+      - name: 7. Kernel Derleme
         run: |
           cd common
-          # 1. Adımdaki global PATH_CLANG sayesinde derleyici yolu kesin olarak biliniyor.
-          export PATH="$PATH_CLANG:$PATH"
+          # PATH Ogay'ın metodundaki gibi direkt veriliyor.
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
+          echo "🔥 CLANG TESTİ:"
+          clang --version || { echo "❌ CLANG ÇALIŞMIYOR!"; exit 1; }
+          ld.lld --version || { echo "❌ LLD ÇALIŞMIYOR!"; exit 1; }
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          # Denetmen bypass
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
@@ -237,16 +225,13 @@ jobs:
           
           echo "🔥 DERLEME BAŞLIYOR..."
           
-          # HRTICK inatla açılıyorsa zorla ezmek için:
           sed -i 's/CONFIG_SCHED_HRTICK=y/# CONFIG_SCHED_HRTICK is not set/g' arch/arm64/configs/gki_defconfig || true
           
-          # PATH global olduğu için direkt CC="clang" diyoruz. Testini de 1. adımda yaptık zaten!
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
-          # HRTICK Son Kontrol Ezmesi
           sed -i 's/CONFIG_SCHED_HRTICK=y/# CONFIG_SCHED_HRTICK is not set/g' out/.config || true
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -278,7 +263,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Zyc Hafifletilmiş Asya Zırhı V3"
+          name: "CG+ Zyc Gaming Kernel"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
