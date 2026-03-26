@@ -140,7 +140,7 @@ jobs:
           # --- SCHEDULER (MI14 8Gen3) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_TUNE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
@@ -218,14 +218,10 @@ jobs:
           
           echo "🔥 DERLEME BAŞLIYOR..."
           
-          sed -i 's/CONFIG_SCHED_HRTICK=y/# CONFIG_SCHED_HRTICK is not set/g' arch/arm64/configs/gki_defconfig || true
-          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-          
-          sed -i 's/CONFIG_SCHED_HRTICK=y/# CONFIG_SCHED_HRTICK is not set/g' out/.config || true
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
