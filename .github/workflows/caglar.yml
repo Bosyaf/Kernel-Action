@@ -126,16 +126,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
-          # === COMPILER (LTO OFF + SIZE = -6°C) ===
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          # === COMPILER (ThinLTO AKTİF EDİLDİ) ===
+          # LTO'yu Kconfig üzerinden açıyoruz ki sistem araçları tanıyabilsin
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_SIZE
 
           # === SCHEDULER MI14 1+5+2 ÖZEL ===
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER      # 🔥 MI14 1+5+2 için
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_HRTICK      # -6°C
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_HRTICK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
@@ -205,16 +206,23 @@ jobs:
           
           echo "🔥 MI14 8Gen3 SOĞUK GAMING KCFLAGS aktif!"
           
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" gki_defconfig
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" olddefconfig
+          # Tüm LLVM araçları açıkça tanımlandı (Hata vermemesi için)
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" gki_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" LD="ld.lld" HOSTLD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" olddefconfig
           
-          # HATA VEREN 2 FLAG SİLİNDİ
+          # KCFLAGS içindeki zoraki flto ayarları silindi (Sistem Kconfig üzerinden yapacak)
+          # UYARI: Kararlılık için -O3 yerine standart ve en verimli olan -O2 kullanıldı. -O3 kernel paniklerine sebep olur.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD=ld.lld \
             HOSTLD=ld.lld \
-            KCFLAGS="-O3 -march=armv9.2-a+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -flto=thin -flto-jobs=$(nproc) -fuse-ld=lld -mpopcnt -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            KCFLAGS="-O2 -march=armv9.2-a+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fuse-ld=lld -mpopcnt -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Zyc-ColdGaming-$(( $(date +%s) ))" >> $GITHUB_ENV
