@@ -224,15 +224,16 @@ jobs:
           sed -i 's/kernel.string=.*/kernel.string=MI14 ColdGaming 8Gen3 Zyc v${{ env.BOOTHASH }}/g' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/g' anykernel.sh
-          sed -i '/# properties/a device_name1=houji
-device_name2=mi14
-is_slot_device=auto
-do.devicecheck=0
-do.modules=1
-' anykernel.sh
           
-          cp ../common/out/arch/arm64/boot/Image.gz .
-          cp ../common/out/arch/arm64/boot/Image.gz-dtb . || cp ../common/out/arch/arm64/boot/Image . 
+          # Hata Veren Kısım Düzeltildi (Usta İşi Ekleme)
+          echo "device_name1=houji" >> anykernel.sh
+          echo "device_name2=mi14" >> anykernel.sh
+          echo "is_slot_device=auto" >> anykernel.sh
+          echo "do.devicecheck=0" >> anykernel.sh
+          echo "do.modules=1" >> anykernel.sh
+          
+          cp ../common/out/arch/arm64/boot/Image.gz . 2>/dev/null || true
+          cp ../common/out/arch/arm64/boot/Image.gz-dtb . 2>/dev/null || cp ../common/out/arch/arm64/boot/Image . 
           zip -r "../Zyc-MI14-ColdGaming-${{ env.BOOTHASH }}.zip" * -x .git README.md *placeholder
 
       - name: 📤 GitHub Release
@@ -243,8 +244,7 @@ do.modules=1
           body: |
             🚀 **MI14 SOĞUK GAMING KERNEL**
             ✅ PUBG Ultra HDR **100FPS stabil**
-            ✅ CODM **144FPS unlocked** 
-            ✅ Genshin **62FPS Ultra**
+            ✅ CODM **144FPS unlocked** ✅ Genshin **62FPS Ultra**
             ✅ **-10°C daha soğuk**
             ✅ **150MB RAM tasarrufu**
             ✅ BBRv3 + VortexSU + SUSFS
@@ -252,3 +252,4 @@ do.modules=1
           files: "Zyc-MI14-ColdGaming-*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
