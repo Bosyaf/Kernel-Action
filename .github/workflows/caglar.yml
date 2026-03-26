@@ -177,17 +177,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
-          echo "🗑️ GEREKSİZ YÜKLER İMHA EDİLİYOR..."
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_KERNEL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_HW_TAGS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
-
           # --- SUSFS Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
