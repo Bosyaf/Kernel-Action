@@ -244,7 +244,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             LLVM_BOLT=1 \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -mpopcnt -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Zyc+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
