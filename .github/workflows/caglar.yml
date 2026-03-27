@@ -1,4 +1,4 @@
-name: caglar++ Yuki Gaming Kernel (HRTICK ON + POLLY)
+name: caglar++ Google Clang Gaming Kernel (HRTICK ON + POLLY)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Yuki Clang Çekimi
+      - name: 1. Paketler ve Google Clang Çekimi (r596125)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,15 +35,16 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
 
-          echo "🔥 Yuki Clang Linki Çekiliyor..."
-          curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "🔥 Google Clang (r596125) Çekiliyor..."
+          mkdir -p $GITHUB_WORKSPACE/google-clang
+          # Gitiles üzerinden doğrudan klasörün arşivini çekiyoruz
+          curl -L -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r596125.tar.gz"
           
           echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
-          rm -f clang.tar.zst
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/google-clang
+          rm -f clang.tar.gz
           
-          echo "✅ Yuki Clang Hazır."
+          echo "✅ Google Clang Hazır."
 
       - name: 2. Kaynakları Çek
         run: |
@@ -201,7 +202,7 @@ jobs:
         run: |
           cd common
           
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/google-clang/bin:$PATH"
           
           echo "🔥 CLANG TESTİ:"
           clang --version || { echo "❌ CLANG ÇALIŞMIYOR!"; exit 1; }
@@ -238,23 +239,23 @@ jobs:
             KLDFLAGS="-Wl,-mllvm,-polly -Wl,-mllvm,-polly-vectorizer=stripmine -Wl,-mllvm,-vectorizer-maximize-bandwidth -Wl,-mllvm,-enable-ext-tsp-block-placement=1" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Google+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Machine/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Google Machine/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Yuki+-POLLY.zip" ./*
+          zip -r "../Google+-POLLY.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Gaming Kernel (Polly Steroid)"
+          name: "CG+ Google Gaming Kernel"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
