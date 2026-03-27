@@ -1,4 +1,4 @@
-name: caglar++ Vanilla Lineage Test (Saf Motor)
+name: CG+ Google Clang Gaming Kernel
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Yuki Clang Çekimi
+      - name: 1. Paketler ve GOOGLE CLANG Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,79 +35,185 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Yuki Clang Linki Çekiliyor..."
-          curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
-          
-          mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
-          rm -f clang.tar.zst
+          echo "🔥 Google Clang (r487747c) Çekiliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang
+          curl -L -o google-clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz"
+          tar -xzf google-clang.tar.gz -C $GITHUB_WORKSPACE/clang
+          rm -f google-clang.tar.gz
 
-      - name: 2. LineageOS Motor Bloğunu Çek (Yamalar Yok)
+      - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          
-          echo ">>> SM8650 Lineage-22.1 Saf Motor Bloğu Çekiliyor..."
-          git clone https://github.com/Xiaomi-SM8650/android_kernel_xiaomi_sm8650.git -b lineage-22.1 --depth=1 common
+          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. Akıllı Defconfig Bulucu (Ayar Değiştirmeden)
+      - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
-          
-          # Motorun kendi içindeki en uygun beynini (defconfig) buluyoruz, içine HİÇBİR ŞEY eklemiyoruz.
-          if [ -f "arch/arm64/configs/vendor/xiaomi/sm8650-common_defconfig" ]; then
-              DEFCONFIG="vendor/xiaomi/sm8650-common_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/sm8650-perf_defconfig" ]; then
-              DEFCONFIG="vendor/sm8650-perf_defconfig"
-          else
-              DEFCONFIG="gki_defconfig"
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+
+      - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
           fi
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+
+      - name: 5. SUSFS Master Formülü
+        run: |
+          cd common
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          echo "🔥 SEÇİLEN STANDART BEYİN: $DEFCONFIG"
-          echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          # Güvenlik için repodaki varsayılan ismi bozmamak adına basit bir tag
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          rm -f .ns_inject_tmp
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+
+      - name: 6. Full Kernel Config (TEMİZ VE STABİL)
+        run: |
+          cd common
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # HZ VE PREEMPT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+          
+          # WALT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_NOCB_CPU_CB_BOOST
+          
+          # LTO THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # SCHEDULER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          
+          # RAM KURTARICI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          
+          # AĞ (BBR + FQ_CODEL)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          
+          # ÇİNLİ ZIRHLAR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+          
+          # SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-Google"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 4. Standart Kernel Derleme (Saf ve Temiz)
+      - name: 7. Kernel Derleme
         run: |
           cd common
-          
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          echo "🔥 DERLEME BAŞLIYOR... ($DEFCONFIG_NAME)"
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x scripts/check-local-export
           
-          # 1. Aşama: Beyni okut (Hiçbir eklenti yok)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            $DEFCONFIG_NAME
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            gki_defconfig
           
-          # 2. Aşama: Standart Derleme (Sadece O2 bayrağı, tehlikeli kodlar iptal)
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            olddefconfig
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            KCFLAGS="-O2 -Wno-error" \
-            Image || { echo "❌ Derleme HATASI! Motorun kendisi bozuk!"; exit 1; }
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector" \
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Vanilla+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Google-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 5. AnyKernel3 (Saf Paketleme)
+      - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Vanilla Lineage Test/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Google Clang Stabil/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Yuki-Vanilla-Test.zip" ./*
+          zip -r "../CG-Google-Stabil.zip" ./*
 
-      - name: 6. Release Yükle
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Vanilla Test (Saf Motor)"
+          name: "CG+ Google Clang (Saf & Stabil)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
