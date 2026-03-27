@@ -1,4 +1,4 @@
-name: caglar++ Yuki CCTV18 Gaming Kernel (MLGO/POLLY)
+name: caglar++ Yuki CCTV18 Gaming Kernel (POLLY FIX)
 
 permissions:
   contents: write
@@ -34,7 +34,6 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
-
           echo "🔥 Yuki Clang Linki Çekiliyor..."
           curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
           
@@ -60,7 +59,6 @@ jobs:
         run: |
           cd common
           
-          # Wi-Fi yaması
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
@@ -68,7 +66,6 @@ jobs:
           
           echo ">>> BBRv3 Yaması Uygulanıyor..."
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-
           echo ">>> BBG (Baseband Guard) Anti-Brick Zırhı Enjekte Ediliyor..."
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
@@ -95,7 +92,6 @@ jobs:
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
-
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
           #define CL_COPY_MNT_NS BIT(25)
@@ -126,19 +122,16 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
           
-          # --- WALT GERİ GELDİ ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_NOCB_CPU_CB_BOOST
 
-          # --- LTO THIN (HIZLANDIRICI) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROFILING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # --- SCHEDULER (MI14 8Gen3) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
@@ -150,21 +143,18 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_SVE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SVE_PROG_BITS_128B
 
-          echo "🔥 THERMAL: FAIR SHARE VARSAYILAN YAPILIYOR..."
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_THERMAL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DYNAMIC_THERMAL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
 
-          # --- TEMİZLİĞİ (BTF HARİÇ - RAM KURTARICI) ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           
-          # --- AĞ KODLARI (BBR + FQ_CODEL) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
@@ -174,7 +164,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
-          # --- ÇİNLİLERİN ZIRHLARI ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
@@ -182,7 +171,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
-          # --- SUSFS Mermileri ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -192,8 +180,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          # İSİM DAMGASI
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-MLGO"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-POLLY"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -202,7 +189,6 @@ jobs:
         run: |
           cd common
           
-          # YUKI CLANG YOLU AYARLANDI
           export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
           
           echo "🔥 CLANG TESTİ:"
@@ -230,14 +216,14 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
-          # 🔥 MLGO VE POLLY ENJEKSİYONU 🔥
+          # 🔥 MLGO SİLİNDİ, SAF POLLY ZIRHI KALDI 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             LLVM_BOLT=1 \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand -mllvm -polly -mllvm -polly-vectorizer=stripmine -mllvm -polly-tiling -mllvm -polly-scheduling=dynamic -mllvm -vectorizer-maximize-bandwidth -mllvm -enable-ext-tsp-block-placement=1 -mllvm -enable-loopinterchange -mllvm -enable-ml-inliner=release -mllvm -regalloc-enable-advisor=release" \
-            KLDFLAGS="-Wl,-mllvm,-polly -Wl,-mllvm,-polly-vectorizer=stripmine -Wl,-mllvm,-vectorizer-maximize-bandwidth -Wl,-mllvm,-enable-ext-tsp-block-placement=1 -Wl,-mllvm,-enable-ml-inliner=release -Wl,-mllvm,-regalloc-enable-advisor=release" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand -mllvm -polly -mllvm -polly-vectorizer=stripmine -mllvm -polly-tiling -mllvm -polly-scheduling=dynamic -mllvm -vectorizer-maximize-bandwidth -mllvm -enable-ext-tsp-block-placement=1 -mllvm -enable-loopinterchange" \
+            KLDFLAGS="-Wl,-mllvm,-polly -Wl,-mllvm,-polly-vectorizer=stripmine -Wl,-mllvm,-vectorizer-maximize-bandwidth -Wl,-mllvm,-enable-ext-tsp-block-placement=1" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Zyc+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -245,12 +231,12 @@ jobs:
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki CCTV18 MLGO/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki CCTV18 POLLY/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Yuki-CCTV18-MLGO.zip" ./*
+          zip -r "../Yuki-CCTV18-POLLY-FIXED.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
