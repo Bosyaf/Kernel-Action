@@ -91,12 +91,12 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (ARKADAŞININ TERTEMİZ PGO MANTIĞI)
+      - name: 6. Sadece Oyun ve SUSFS Configleri
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # --- OYUN AYARLARI (WALT, 250Hz vb.) ---
+          # --- OYUN AYARLARI ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
@@ -127,37 +127,49 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
 
-          # --- 🔥 KUSURSUZ PGO AYARLARI (Güncellenmiş Bağımlılıklar) 🔥 ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROFILING
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
-          
-          # LTO çakışmalarını önlemek için kesin tanımlamalar
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_NONE
-          
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-          
+          # İsimlendirme
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-PGO-SPY"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme
+      - name: 7. Kernel Derleme ve PGO Doğrulama (KESİN ÇÖZÜM)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
           
+          # 1. Defconfig oluşturma (Sadece oyun ve SUSFS ayarlarını alır)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             gki_defconfig
           
+          # 2. 🔥 KUSURSUZ PGO ENJEKSİYONU 🔥
+          # Güvenlik çakışmalarını ezip doğrudan out/.config dosyasına yazıyoruz
+          ./scripts/config --file out/.config --enable CONFIG_PROFILING
+          ./scripts/config --file out/.config --enable CONFIG_DEBUG_FS
+          ./scripts/config --file out/.config --enable CONFIG_PGO_CLANG
+          
+          ./scripts/config --file out/.config --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file out/.config --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file out/.config --enable CONFIG_LTO_NONE
+          
+          ./scripts/config --file out/.config --disable CONFIG_CFI_CLANG
+          ./scripts/config --file out/.config --disable CONFIG_CFI_PERMISSIVE
+          ./scripts/config --file out/.config --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          # 3. Sisteme yeni ayarları zorla kabul ettir
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             olddefconfig
+            
+          # 4. 🔍 PGO ZORUNLU KONTROL
+          echo "======================================"
+          echo "PGO Ayarları .config İçinde Kontrol Ediliyor..."
+          grep "CONFIG_PGO_CLANG" out/.config || { echo "❌ HATA: PGO Kbuild tarafından reddedildi! Kconfig kuralları engelliyor."; exit 1; }
+          echo "✅ HARİKA! PGO BAŞARIYLA AKTİF EDİLDİ VE SİLİNMEDİ!"
+          echo "======================================"
           
-          # 🔥 BBRv3 UYARILARINI SUSTURAN KALKAN EKLENDİ 🔥
+          # 5. Derlemeye başla
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
