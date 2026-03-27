@@ -1,96 +1,181 @@
-name: caglar++ Kernel (PGO GENERATE CLEAN + WIFI)
+name: caglar++ Yuki Casus Kernel (Kusursuz PGO)
 
 permissions:
   contents: write
+  actions: write
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-kernel:
     runs-on: ubuntu-latest
     timeout-minutes: 420
-
     env:
       KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "pgo-gen"
+      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Maximize Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          swap-size-gb: 8
 
-      - name: Setup
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 1. Paketler ve Yuki Clang Çekimi
         run: |
           sudo apt update -qq
-          sudo apt install -y \
-            git curl bc bison flex libssl-dev make libc6-dev \
-            libncurses5-dev lld llvm zstd gcc-aarch64-linux-gnu
-
-      - name: Clang
-        run: |
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            lld llvm pkg-config zstd
+          echo "🔥 Yuki Clang Linki Çekiliyor..."
           curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
-          mkdir clang
-          tar -I zstd -xf clang.tar.zst -C clang
-          rm clang.tar.zst
+          
+          mkdir -p $GITHUB_WORKSPACE/yuki-clang
+          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
+          rm -f clang.tar.zst
 
-      - name: Source
+      - name: 2. Kaynakları Çek
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      # 🔥 WIFI PATCH BURADA
-      - name: Apply WiFi Patch
+      - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-          echo ">>> WiFi patch indiriliyor..."
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch -o wifi.patch || true
-
+      - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları (BBG Anti-Brick)
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            echo ">>> WiFi patch uygulanıyor..."
             patch -p1 --forward < wifi.patch || true
-          else
-            echo ">>> WiFi patch boş veya indirilemedi, skip"
           fi
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: CONFIG (PGO GENERATE)
+      - name: 5. SUSFS Master Formülü (Vortex Fixli)
         run: |
           cd common
-          CFG=arch/arm64/configs/gki_defconfig
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          rm -f .ns_inject_tmp
+          
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-          # 🔥 PGO GENERATE
-          ./scripts/config --file $CFG --enable CONFIG_PGO_CLANG
-          ./scripts/config --file $CFG --enable CONFIG_DEBUG_FS
-
-          # ❗ USE kapalı olacak
-          ./scripts/config --file $CFG --disable CONFIG_PGO_CLANG_USE
-
-          # ❗ LTO kapalı (çok önemli)
-          ./scripts/config --file $CFG --disable CONFIG_LTO_CLANG_THIN
-
-          # stabil config
-          ./scripts/config --file $CFG --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-
-          ./scripts/config --file $CFG --set-str CONFIG_LOCALVERSION "-PGO-GEN"
-
-      - name: BUILD
+      - name: 6. Full Kernel Config (ARKADAŞININ TERTEMİZ PGO MANTIĞI)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # --- OYUN AYARLARI (WALT, 250Hz vb.) ---
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          
+          # --- SUSFS ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
 
+          # --- 🔥 KUSURSUZ PGO AYARLARI (Arkadaşının Fixleri) 🔥 ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-PGO-SPY"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          
+          sed -i 's/check_defconfig//' build.config.gki || true
+
+      - name: 7. Kernel Derleme
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             gki_defconfig
-
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-
-          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            olddefconfig
+          
+          # 🔥 SADECE TEMİZ O2 BAYRAĞI (Çatışma yok, EFI hatası yok) 🔥
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC=clang LD=ld.lld \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             KCFLAGS="-O2" \
-            Image
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+          
+          echo "BOOTHASH=Casus+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: PACK
+      - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
-          cd AnyKernel3
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki PGO SPY/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r ../PGO-GEN.zip ./*
+          zip -r "../Yuki+-PGO-KUSURSUZ-KAYIT.zip" ./*
+
+      - name: 9. Release Yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Yuki Casus Kernel (Kusursuz Kayıt)"
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
