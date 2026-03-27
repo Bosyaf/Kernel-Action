@@ -134,10 +134,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # --- 🔥 USTADAN NOT: PGO PROFİL KAYDI İÇİN CONFIG AÇILIYOR 🔥 ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GCOV_KERNEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GCOV_PROFILE_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROFILING
+          # --- 🔥 USTADAN NOT: PGO PROFİL KAYDI İÇİN CLANG CONFIG AÇILIYOR 🔥 ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_GCOV_KERNEL
           
           # --- SCHEDULER (MI14 8Gen3) ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -211,6 +211,10 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
+          echo "🔥 EFI STUB ZIRHI DELİNİYOR (Casus İstisnası)..."
+          echo 'override KCFLAGS := $(filter-out -fprofile-generate%,$(KCFLAGS))' >> drivers/firmware/efi/libstub/Makefile
+          echo 'override KBUILD_CFLAGS := $(filter-out -fprofile-generate%,$(KBUILD_CFLAGS))' >> drivers/firmware/efi/libstub/Makefile
+          
           echo "🔥 DERLEME BAŞLIYOR..."
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -223,13 +227,13 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
-          # 🔥 USTADAN NOT: PGO GENERATE (KAYIT) STEROİDİ EKLENDİ 🔥
+          # 🔥 USTADAN NOT: SADECE -fprofile-generate BIRAKILDI 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             LLVM_BOLT=1 \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand -fprofile-generate=/sys/kernel/debug/pgo" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+fp16+dotprod+simd+sve -mtune=cortex-a720 -mcpu=cortex-x4 -mno-outline-atomics -fno-semantic-interposition -fno-stack-protector -fuse-ld=lld -ffast-math -fno-trapping-math -fno-math-errno -msve-vector-bits=128 -mstrict-align -Wno-constant-logical-operand -fprofile-generate" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Casus+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
