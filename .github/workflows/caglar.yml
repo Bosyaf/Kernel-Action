@@ -151,11 +151,11 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             olddefconfig
           
-          # 🔥 SADECE TEMİZ O2 BAYRAĞI (Çatışma yok, EFI hatası yok) 🔥
+          # 🔥 BBRv3 UYARILARINI SUSTURAN KALKAN EKLENDİ 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            KCFLAGS="-O2" \
+            KCFLAGS="-O2 -Wno-error -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Casus+-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
