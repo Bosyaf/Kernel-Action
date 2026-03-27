@@ -127,10 +127,16 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
 
-          # --- 🔥 KUSURSUZ PGO AYARLARI (Arkadaşının Fixleri) 🔥 ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
+          # --- 🔥 KUSURSUZ PGO AYARLARI (Güncellenmiş Bağımlılıklar) 🔥 ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROFILING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PGO_CLANG
+          
+          # LTO çakışmalarını önlemek için kesin tanımlamalar
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_NONE
+          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-PGO-SPY"
