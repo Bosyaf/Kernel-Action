@@ -1,4 +1,4 @@
-name: CG+ Google Clang Gaming Kernel
+name: CG+ Yuki Gaming Kernel
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve GOOGLE CLANG Çekimi
+      - name: 1. Paketler ve YUKİ CLANG Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,11 +35,11 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Google Clang (r487747c) Çekiliyor..."
+          echo "🔥 Yuki Clang Linki Çekiliyor..."
+          curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
           mkdir -p $GITHUB_WORKSPACE/clang
-          curl -L -o google-clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz"
-          tar -xzf google-clang.tar.gz -C $GITHUB_WORKSPACE/clang
-          rm -f google-clang.tar.gz
+          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang
+          rm -f clang.tar.zst
 
       - name: 2. Kaynakları Çek
         run: |
@@ -162,7 +162,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-Google"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf-Yuki"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -197,23 +197,23 @@ jobs:
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Google-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Google Clang Stabil/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Clang Stabil/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Google-Stabil.zip" ./*
+          zip -r "../CG-Yuki-Stabil.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Google Clang (Saf & Stabil)"
+          name: "CG+ Yuki Clang (Saf & Stabil)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
