@@ -95,7 +95,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (ALTIN DENGE & YENİ KODLAR)
+      - name: 6. Full Kernel Config (BUZ GİBİ SERİN AYARLAR)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -114,6 +114,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
+          # TICK AYARLARI (Batarya ve Isı Dostu)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          
           # WALT (Gecikmesiz Şanzıman)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
@@ -121,10 +125,10 @@ jobs:
           # DERİN UYKU (CPU Idle)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           
-          # THERMAL: STEP_WISE + POWER_ALLOCATOR (Kusursuz Soğutma)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_FAIR_SHARE
+          # THERMAL: SADECE SENİN İSTEDİKLERİN (Kusursuz Soğutma)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
@@ -138,10 +142,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # SCHEDULER & SVE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_SVE
+          # SCHEDULER & SVE (Isı Yapan SVE ve Core İptal Edildi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
@@ -240,4 +242,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
