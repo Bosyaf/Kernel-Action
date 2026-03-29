@@ -1,290 +1,258 @@
-name: CG+ ZyC Gaming Kernel
-
-permissions:
-  contents: write
-  actions: write
+name: SamI_Peridot_Build
 
 on:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      BUILD_TITLE:
+        description: 'Custom Build Title'
+        required: false
+      KERNEL_TREE:
+        description: 'Kernel Tree'
+        default: 'https://github.com/shyamaldasandhi/SamI_Peridot_Kernel'
+        required: true
+      KERNEL_TREE_BRANCH:
+        description: 'Kernel Tree Branch'
+        required: true
+        default: 'main'
+      CODENAME:
+        description: 'Phone Codename'
+        default: 'peridot'
+        required: true
+      UPLOAD_TO_RELEASE:
+        description: 'Upload to release'
+        type: boolean
+        default: false
+      NOTIFY_START:
+        description: 'Notify Build Start'
+        type: boolean
+        default: true
+      NOTIFY_SUCCESS:
+        description: 'Notify Build Success'
+        type: boolean
+        default: true
+      TELEGRAM_CHAT_ID:
+        description: 'Telegram Chat ID (optional)'
+        required: false
+      KERNELSU_OPTION:
+        description: 'Choose KernelSU setup option (1: next, 2: next-susfs, 3: none)'
+        required: true
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
 
 jobs:
-  build-kernel:
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-latest
-    timeout-minutes: 420
-    env:
-      KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "guvenc"
-
+    environment: Telegram
+    permissions:
+      contents: write
     steps:
-      - name: Maximize Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-gb: 8
+    - name: Display User Inputs
+      run: |
+        echo "::group::User Environment Variables"
+        echo "Custom Build Title: ${{ github.event.inputs.BUILD_TITLE }}"
+        echo "Kernel Tree: ${{ github.event.inputs.KERNEL_TREE }}/tree/${{ github.event.inputs.KERNEL_TREE_BRANCH }}"
+        echo "Codename: ${{ github.event.inputs.CODENAME }}"
+        echo "Upload to Release: ${{ github.event.inputs.UPLOAD_TO_RELEASE }}"
+        echo "Notify Build Start: ${{ github.event.inputs.NOTIFY_START }}"
+        echo "Notify Build Success: ${{ github.event.inputs.NOTIFY_SUCCESS }}"
+        echo "Telegram Chat ID: ${{ github.event.inputs.TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}"
+        echo "KernelSU Option: ${{ github.event.inputs.KERNELSU_OPTION }}"
+        echo "::endgroup::"
 
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Notify Build Start
+      if: ${{ github.event.inputs.NOTIFY_START == 'true' }}
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ github.event.inputs.TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_TOKEN }}
+        format: html
+        message: |
+          <b>🚀 Kernel Build Started</b>
+          🔧 <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow Run</a>
+          <b>📦 Build Title</b>: <code>${{ github.event.inputs.BUILD_TITLE || github.event.inputs.CODENAME }}</code>
+          <b>📱 Device Codename</b>: <code>${{ github.event.inputs.CODENAME }}</code>
+          <b>🌳 Kernel Tree</b>: <code>${{ github.event.inputs.KERNEL_TREE }}/tree/${{ github.event.inputs.KERNEL_TREE_BRANCH }}</code>
+          <b>📤 Upload to Release</b>: <code>${{ github.event.inputs.UPLOAD_TO_RELEASE }}</code>
+          <b>🔧 KernelSU Option</b>: <code>${{ github.event.inputs.KERNELSU_OPTION }}</code>
 
-      - name: 1. Paketler ve ZYC CLANG Çekimi (Gizli Tünel)
-        run: |
-          sudo apt update -qq
-          sudo apt install -y --no-install-recommends \
-            python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
-            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            lld llvm pkg-config zstd
-          
-          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
-          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          echo "İndirilecek Link: $CLANG_LINK"
-          
-          curl -L -o clang.tar.gz "$CLANG_LINK"
-          
-          echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
-          rm -f clang.tar.gz
+    - name: Generate Build Date
+      id: build_date
+      run: |
+        build_date=$(date +"%Y%m%d")  
+        echo "build_date=$build_date" >> $GITHUB_OUTPUT
 
-      - name: 2. Kaynakları Çek (Yeni Staging Dalı)
-        run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+    - name: Initialize workspace
+      run: |
+        mkdir workspace
+        cd workspace
+        echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
+        echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "build_title=${{ github.event.inputs.BUILD_TITLE || github.event.inputs.CODENAME }}" >> $GITHUB_OUTPUT
+      id: workspace
 
-      - name: 3. SADECE VortexSU Kurulumu
-        run: |
-          cd common
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+    - name: Prepare the build environment
+      run: |
+        sudo apt update -y
+        sudo apt install -y flex bison libncurses-dev libssl-dev bc build-essential git ccache binutils-aarch64-linux-gnu
+        mkdir -p $HOME/tc
+        cd $HOME/tc
+        # Ustanın istediği Clang r547379 zaten burada hazır çekiliyor
+        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
+        mkdir clang
+        tar -xf clang.tar.gz -C clang
+        echo "tools-folder=$HOME/tc/clang" >> $GITHUB_OUTPUT
+      id: tools
 
-      - name: 4. Yamalar (Wi-Fi, BBRv3, BBG + WALT/UAG)
-        run: |
-          cd common
-          # Wi-Fi
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          
-          # BBRv3
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-          
-          # WALT + UAG (6.1 GKI Uyumlu Cerrahi Yama)
-          curl -fLSs https://raw.githubusercontent.com/taran-serdar/scripts/main/patches/6.1/walt_uag_v2.patch > walt_uag.patch || true
-          [ -s walt_uag.patch ] && patch -p1 --forward < walt_uag.patch || echo "UAG Yaması atlandı!"
-          
-          # Baseband Guard
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+    - name: Clone kernel source
+      run: |
+        git clone --depth=1 ${{ github.event.inputs.KERNEL_TREE }} -b ${{ github.event.inputs.KERNEL_TREE_BRANCH }} kernel_tree
+        echo "kernel-folder=$(pwd)/kernel_tree" >> $GITHUB_OUTPUT
+      working-directory: ${{ steps.workspace.outputs.workspace-folder }}
+      id: kernel
 
-      - name: 5. SUSFS Master Formülü
-        run: |
-          cd common
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          cat << 'EOF' > .ns_inject_tmp
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
-          rm -f .ns_inject_tmp
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+    - name: Building kernel
+      run: |
+        # Remove existing KernelSU-Next directory if it exists
+        rm -rf KernelSU-Next
 
-      - name: 6. 🧠 UAG VIP KODUNU MOTOR BLOĞUNA GÖMME (C Enjeksiyonu)
-        run: |
-          cd common
-          echo "🔥 Kernel içine UAG Enforcer kodlanıyor..."
-          cat << 'EOF' > kernel/uag_enforcer.c
-          #include <linux/init.h>
-          #include <linux/kmod.h>
-          #include <linux/umh.h>
-          #include <linux/workqueue.h>
-          #include <linux/jiffies.h>
+        # Choose the KernelSU setup script based on the selected option
+        if [[ "${{ github.event.inputs.KERNELSU_OPTION }}" == '1' ]]; then
+          echo "Using KernelSU Next setup script..."
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+        elif [[ "${{ github.event.inputs.KERNELSU_OPTION }}" == '2' ]]; then
+          echo "Using KernelSU Next-SUSFS setup script..."
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s next-susfs
+        elif [[ "${{ github.event.inputs.KERNELSU_OPTION }}" == '3' ]]; then
+          echo "Skipping KernelSU setup..."
+        else
+          echo "Invalid KernelSU option selected!"
+          exit 1
+        fi
 
-          /* Sanayi İşi Hardcode: Çekirdekleri VIP'ye kilitler */
-          static void set_uag_cpusets(struct work_struct *work)
-          {
-              char *envp[] = { "HOME=/", "PATH=/sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin", NULL };
-              char *argv[] = { "/system/bin/sh", "-c", "sleep 25 && echo 0-1,7 > /dev/cpuset/top-app/cpus && echo 0-6 > /dev/cpuset/foreground/cpus && echo 0-1 > /dev/cpuset/background/cpus && echo 0-1 > /dev/cpuset/system-background/cpus", NULL };
-              call_usermodehelper(argv[0], argv, envp, UMH_NO_WAIT);
-          }
-          static DECLARE_DELAYED_WORK(uag_work, set_uag_cpusets);
+        # Continue with the rest of the build process
+        export PATH="$HOME/tc/clang/bin:$PATH"
+        export LD_LIBRARY_PATH=${HOME}/tc/clang/lib64:$LD_LIBRARY_PATH
+        export KBUILD_COMPILER_STRING=$($HOME/tc/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
+        export KBUILD_LINKER_STRING=$($HOME/tc/clang/bin/ld.lld --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//' | sed 's/(compatible with [^)]*)//')
 
-          static int __init uag_enforcer_init(void)
-          {
-              schedule_delayed_work(&uag_work, msecs_to_jiffies(20000));
-              return 0;
-          }
-          late_initcall(uag_enforcer_init);
-          EOF
-          
-          # Derleyiciye bu yeni beyni okumasını emret
-          echo "obj-y += uag_enforcer.o" >> kernel/Makefile
+        DATE=$(date '+%Y%m%d-%H%M')
+        OUT_DIR=out/
+        VERSION="agmad-isis-PERIDOT-${DATE}"
 
-      - name: 7. Full Kernel Config (UAG VIP + UCLAMP İPTAL)
-        run: |
-          cd common
-          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-          
-          # SENİN EFSANE CMDLINE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
-          # HZ VE PREEMPT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          # TICK AYARLARI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          
-          # DERİN UYKU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          
-          # THERMAL (Kusursuz Soğutma)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          
-          # KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-         
-          # LTO THIN & PERFORMANS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-          
-          # 🔥 UAG VE WALT AKTİVASYONU 🔥
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UAG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPUSETS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_TUNE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UAG_VIP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_GROUP_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          
-          # ❌ UAG İLE ÇAKIŞAN UCLAMP KÖKÜNDEN KAPATILDI ❌
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # RAM KURTARICI & SUNUCU KODLARINI İPTAL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # AĞ & HOTSPOT KORUMASI
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          
-          # ÇİNLİ ZIRHLAR & DOSYA SİSTEMİ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-          # SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          sed -i 's/check_defconfig//' build.config.gki || true
+        if [[ -z "${KEBABS}" ]]; then
+            COUNT="$(grep -c '^processor' /proc/cpuinfo)"
+            export KEBABS="$COUNT"
+        fi
 
-      - name: 8. Kernel Derleme
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          touch .scmversion
-          
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          EOF
-          chmod +x scripts/check-local-export
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-          
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
-          echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+        echo "Jobs: ${KEBABS}"
 
-      - name: 9. AnyKernel3 (Saf Zip)
-        run: |
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC UAG-WALT Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-UAG-WALT.zip" ./*
+        ARGS="ARCH=arm64 \
+        O=${OUT_DIR} \
+        CC=clang \
+        LD=ld.lld \
+        CLANG_TRIPLE=aarch64-linux-gnu- \
+        CROSS_COMPILE=aarch64-linux-gnu- \
+        CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+        -j${KEBABS}"
 
-      - name: 10. Release Yükle
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC (Saf Kernel Gömülü UAG 0-1,7)"
-          files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        START=$(date +"%s")
+
+        echo "------ Starting Compilation ------"
+
+        # DİKKAT: YML dosyasında peridot_defconfig olarak ayarlı.
+        make -j${KEBABS} ${ARGS} peridot_defconfig
+        cd ${OUT_DIR}
+        make -j${KEBABS} ${ARGS} CC="ccache clang" HOSTCC="ccache gcc" HOSTCXX="cache g++" olddefconfig
+        cd ../
+        make -j${KEBABS} ${ARGS} CC="ccache clang" HOSTCC="ccache gcc" HOSTCXX="ccache g++" 2>&1 | tee build.log
+
+        echo "------ Finishing Build ------"
+
+        END=$(date +"%s")
+        DIFF=$((END - START))
+        if [ -f "out/arch/arm64/boot/Image.gz" ]; then
+            git clone -q https://github.com/ahmedtohamy1/ak3 -b peridot ak3
+            cp out/arch/arm64/boot/Image.gz ak3
+            cd ak3
+            zip -r9 "../${VERSION}.zip" * -x '*.git*' README.md *placeholder >> /dev/null
+            cd ..
+            rm -rf ak3
+            echo -e "\nCompleted in $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s) !"
+            echo -e "${VERSION}.zip is ready!"
+            echo "zipname=${VERSION}.zip" >> $GITHUB_OUTPUT
+        else
+            echo -e "\n Compilation Failed!"
+            exit 1
+        fi
+      working-directory: ${{ steps.kernel.outputs.kernel-folder }}
+      id: build
+
+    - name: Upload to Release
+      if: ${{ github.event.inputs.UPLOAD_TO_RELEASE == 'true' }}
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          ${{ steps.kernel.outputs.kernel-folder }}/${{ steps.build.outputs.zipname }}
+        name: ${{ github.event.inputs.CODENAME }}-${{ steps.build_date.outputs.build_date }}
+        tag_name: ${{ github.event.inputs.CODENAME }}-${{ steps.build_date.outputs.build_date }}
+        body: |
+          <b>Kernel Build Succeeded</b> ✅
+          <b>${{ steps.workspace.outputs.build_title }}</b>
+          <b>Kernel successfully built!</b>, took ${{ steps.build.outputs.elapsed_time }} seconds.
+          <b>📱 Device Codename</b>: <code>${{ github.event.inputs.CODENAME }}</code>
+          <b>Kernel tree</b>: ${{ github.event.inputs.KERNEL_TREE }}/tree/${{ github.event.inputs.KERNEL_TREE_BRANCH }}
+          <b>Action</b>: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          <b>Workflow File</b>: ${{ github.workflow }}.yml
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      id: upload_release
+
+    - name: Create GoFile upload script
+      run: |
+        echo '#!/bin/bash' > upload_gofile.sh
+        echo '' >> upload_gofile.sh
+        echo 'if [[ "$#"  ==  '\''0'\'' ]]; then' >> upload_gofile.sh
+        echo 'echo  -e '\''ERROR: No File Specified!'\'' && exit 1' >> upload_gofile.sh
+        echo 'fi' >> upload_gofile.sh
+        echo 'FILE="@$1"' >> upload_gofile.sh
+        echo 'SERVER=$(curl -s https://api.gofile.io/servers | jq -r '\''.data.servers[0].name'\'')' >> upload_gofile.sh
+        echo 'LINK=$(curl -# -F file=${FILE} https://${SERVER}.gofile.io/uploadFile | jq -r '\''.data|.downloadPage'\'') 2>&1' >> upload_gofile.sh
+        echo 'echo $LINK' >> upload_gofile.sh
+        chmod +x upload_gofile.sh
+
+    - name: Rename Kernel ZIP for GoFile
+      run: |
+        BUILD_TIME_SUFFIX=$(date +"%Y%m%d%H%M%S")
+        mv ${{ steps.kernel.outputs.kernel-folder }}/${{ steps.build.outputs.zipname }} ${{ steps.kernel.outputs.kernel-folder }}/${{ github.event.inputs.CODENAME }}-${{ steps.build_date.outputs.build_date }}-${BUILD_TIME_SUFFIX}.zip
+        echo "BUILD_TIME_SUFFIX=${BUILD_TIME_SUFFIX}" >> $GITHUB_ENV
+
+    - name: Upload Kernel ZIP to GoFile
+      id: upload_gofile
+      run: |
+        ./upload_gofile.sh ${{ steps.kernel.outputs.kernel-folder }}/${{ github.event.inputs.CODENAME }}-${{ steps.build_date.outputs.build_date }}-${{ env.BUILD_TIME_SUFFIX }}.zip > gofile_link.txt
+        FILE_URL=$(cat gofile_link.txt)
+        echo "FILE_URL=${FILE_URL}" >> $GITHUB_ENV
+
+    - name: Notify Build Success
+      if: ${{ success() && github.event.inputs.NOTIFY_SUCCESS == 'true' }}
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ github.event.inputs.TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_TOKEN }}
+        format: html
+        message: |
+          <b>Kernel Build Succeeded</b> ✅
+          🔧 <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View Workflow Run</a>
+          <b>📦 Build Title</b>: <code>${{ steps.workspace.outputs.build_title }}</code>
+          <b>📱 Device Codename</b>: <code>${{ github.event.inputs.CODENAME }}</code>
+          <b>📄 Files</b>: <code>${{ steps.build.outputs.zipname }}</code>
+          <b>🔗 GoFile Download Link</b>: <a href="${{ env.FILE_URL }}">Download</a>
+        files: |
+          ${{ steps.kernel.outputs.kernel-folder }}/${{ steps.build.outputs.zipname }}
           
