@@ -1,4 +1,4 @@
-name: SamI Peridot (Ustanın Özel Defconfig'i + Clang r547379)
+name: SamI Peridot (ZCAT Full Config + Clang r547379)
 
 permissions:
   contents: write
@@ -23,7 +23,7 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Kendi Deponu Çek (Defconfig İçin)
+      - name: Kendi Deponu Çek (ZCAT Dosyası İçin)
         uses: actions/checkout@v4
 
       - name: 1. Paketler ve Google Clang r547379 Kurulumu
@@ -41,7 +41,6 @@ jobs:
           wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
           tar -xf clang.tar.gz
           
-          # Clang yolunu sisteme tanıtıyoruz
           echo "$GITHUB_WORKSPACE/clang-google/bin" >> $GITHUB_PATH
 
       - name: 2. SamI Kaynağını Çek
@@ -49,27 +48,26 @@ jobs:
           git clone https://github.com/shyamaldasandhi/SamI_Peridot_Kernel.git --depth=1 common
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
 
-      - name: 3. Ustanın Özel Defconfig'ini Motora Tak
+      - name: 3. ZCAT Config'ini Motora Doğrudan Enjekte Et
         run: |
           cd common
-          echo "🔥 Senin yüklediğin peridot_defconfig.txt motor bloğuna kaynatılıyor..."
-          # Senin depoya yüklediğin dosyayı alıp, kaynağın içine asıl isimle yapıştırıyoruz
-          cp $GITHUB_WORKSPACE/peridot_defconfig.txt arch/arm64/configs/peridot_defconfig
-          
-          # Versiyon ismini mühürleyelim
-          ./scripts/config --file arch/arm64/configs/peridot_defconfig --set-str CONFIG_LOCALVERSION "-SamI-UstaIsi"
+          mkdir -p out
+          echo "🔥 Adamın zcat ile çektiği full .config dosyasını doğrudan kalıp olarak alıyoruz..."
+          # Klasik defconfig klasörüne DEĞİL, doğrudan derleme merkezine .config olarak atıyoruz!
+          cp $GITHUB_WORKSPACE/peridot_defconfig.txt out/.config
 
-      - name: 4. Kernel Derleme (Google Clang r547379)
+      - name: 4. Kernel Derleme (Google Clang r547379 + olddefconfig)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-google/bin:$PATH"
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/clang-google/lib64:$LD_LIBRARY_PATH"
           
-          # Önce senin defconfig'i hazırla
+          echo "------ Full Config'i Motora Uyarla (olddefconfig) ------"
+          # make defconfig DEMİYORUZ! Zcat'ten çıkan kalıbı olddefconfig ile okutuyoruz.
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            peridot_defconfig
+            olddefconfig
           
           echo "------ Ana Derleme Başlıyor ------"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -81,19 +79,18 @@ jobs:
       - name: 5. AnyKernel3 (Saf Paketleme)
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=SamI Peridot UstaIsi/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=SamI Peridot ZCAT-Build/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           
-          # Derlenen Image dosyasını alıyoruz
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../SamI-Peridot-UstaIsi.zip" ./*
+          zip -r "../SamI-Peridot-ZCAT.zip" ./*
 
       - name: 6. GitHub Releases'e Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: SamI-Usta-${{ github.run_id }}
-          name: "SamI Peridot (Clang r547379 + Özel Defconfig)"
-          files: "SamI-Peridot-UstaIsi.zip"
+          tag_name: SamI-ZCAT-${{ github.run_id }}
+          name: "SamI Peridot (Clang r547379 + ZCAT Config)"
+          files: "SamI-Peridot-ZCAT.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
