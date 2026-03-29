@@ -58,13 +58,11 @@ jobs:
           cd common
           curl -LSs https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh | bash -s main
 
-      - name: Patchler (WiFi + BBRv3 + BBG)
+      - name: Patchler (WiFi + BBG)
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           [ -s wifi.patch ] && patch -p1 --forward < wifi.patch || true
-
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
 
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
@@ -97,7 +95,7 @@ jobs:
           # Performans
           ./scripts/config --file $CONFIG --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
-          # BBR
+          # BBR (Linux 6.1 Native)
           ./scripts/config --file $CONFIG --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG --set-str CONFIG_DEFAULT_TCP_CONG bbr
 
@@ -119,7 +117,7 @@ jobs:
           make O=out olddefconfig
 
           # ❗ FULL LTO için düşük paralellik
-          make -j2 O=out \
+          make -j1 O=out \
             CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
@@ -138,3 +136,4 @@ jobs:
         with:
           tag_name: ${{ env.BOOTHASH }}
           files: kernel.zip
+          
