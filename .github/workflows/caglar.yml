@@ -66,7 +66,8 @@ jobs:
         echo "::endgroup::"
 
     - name: Notify Build Start
-      if: ${{ github.event.inputs.NOTIFY_START == 'true' }}
+      # USTANIN DÜZELTMESİ: Eğer Telegram Token yoksa bu adımı atla, hata verme!
+      if: ${{ github.event.inputs.NOTIFY_START == 'true' && secrets.TELEGRAM_TOKEN != '' }}
       uses: appleboy/telegram-action@master
       with:
         to: ${{ github.event.inputs.TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
@@ -102,7 +103,6 @@ jobs:
         sudo apt install -y flex bison libncurses-dev libssl-dev bc build-essential git ccache binutils-aarch64-linux-gnu
         mkdir -p $HOME/tc
         cd $HOME/tc
-        # Ustanın istediği Clang r547379 zaten burada hazır çekiliyor
         wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
         mkdir clang
         tar -xf clang.tar.gz -C clang
@@ -118,10 +118,8 @@ jobs:
 
     - name: Building kernel
       run: |
-        # Remove existing KernelSU-Next directory if it exists
         rm -rf KernelSU-Next
 
-        # Choose the KernelSU setup script based on the selected option
         if [[ "${{ github.event.inputs.KERNELSU_OPTION }}" == '1' ]]; then
           echo "Using KernelSU Next setup script..."
           curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
@@ -135,7 +133,6 @@ jobs:
           exit 1
         fi
 
-        # Continue with the rest of the build process
         export PATH="$HOME/tc/clang/bin:$PATH"
         export LD_LIBRARY_PATH=${HOME}/tc/clang/lib64:$LD_LIBRARY_PATH
         export KBUILD_COMPILER_STRING=$($HOME/tc/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')
@@ -165,7 +162,6 @@ jobs:
 
         echo "------ Starting Compilation ------"
 
-        # DİKKAT: YML dosyasında peridot_defconfig olarak ayarlı.
         make -j${KEBABS} ${ARGS} peridot_defconfig
         cd ${OUT_DIR}
         make -j${KEBABS} ${ARGS} CC="ccache clang" HOSTCC="ccache gcc" HOSTCXX="cache g++" olddefconfig
@@ -240,7 +236,8 @@ jobs:
         echo "FILE_URL=${FILE_URL}" >> $GITHUB_ENV
 
     - name: Notify Build Success
-      if: ${{ success() && github.event.inputs.NOTIFY_SUCCESS == 'true' }}
+      # USTANIN DÜZELTMESİ: Eğer Telegram Token yoksa bu adımı atla!
+      if: ${{ success() && github.event.inputs.NOTIFY_SUCCESS == 'true' && secrets.TELEGRAM_TOKEN != '' }}
       uses: appleboy/telegram-action@master
       with:
         to: ${{ github.event.inputs.TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
