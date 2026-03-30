@@ -23,7 +23,7 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 8
 
-      - name: 🛠️ 2. Paketler ve Google Clang r596125 Çekimi
+      - name: 🛠️ 2. Google Clang r584948 Çekimi (Hızlı Arşiv)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -32,9 +32,13 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Hedef: Google Clang r596125 Cekiliyor..."
+          echo "🔥 Hedef: Google Clang r584948 (Arşivden) Cekiliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-llvm
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b mirror-goog-main-llvm-toolchain-source $GITHUB_WORKSPACE/clang-llvm
+          curl -L -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
+          
+          echo "📦 Arşiv Açılıyor..."
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-llvm
+          rm -f clang.tar.gz
           echo "✅ Google Clang Tezgaha Indi."
 
       - name: 🛠️ 3. Kaynaklari ve AnyKernel3 Çek
@@ -78,7 +82,9 @@ jobs:
       - name: 🛠️ 6. Sensörlü Kernel Derleme (Ustanin Özel Komutu)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-llvm/clang-r596125/bin:$PATH"
+          
+          # Arşivden direkt çıkan bin klasörüne giden doğru yol (Path ayarı düzeltildi)
+          export PATH="$GITHUB_WORKSPACE/clang-llvm/bin:$PATH"
           
           echo "🔥 Clang Testi:"
           clang --version || { echo "❌ CLANG HATASI!"; exit 1; }
