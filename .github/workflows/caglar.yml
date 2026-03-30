@@ -46,7 +46,7 @@ jobs:
           rm -f clang.tar.gz
           echo "✅ ZyC Clang Tezgaha Hazir!"
 
-      - name: 🛠️ 3. Orijinal AutoFDO Aletini (Prebuilt) İndir ve Karneyi Çevir
+      - name: 🛠️ 3. Orijinal AutoFDO Aletini İndir ve Karneyi SÜZGEÇTEN Çevir
         run: |
           echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
           mkdir -p $GITHUB_WORKSPACE/autofdo-bin
@@ -67,14 +67,21 @@ jobs:
           tar -xf perf.tar.xz
           
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
-          mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
           
-          echo "⚙️ Karne Tercüme Ediliyor..."
+          echo "🧪 RAM Duvarını Aşmak İçin Veri Raw Hale Alınıyor..."
+          mv $PERF_FILE $GITHUB_WORKSPACE/perf_raw.data
+          
+          echo "⚙️ Karne Tercüme Ediliyor (SÜZGEÇ DEVREDE)..."
           # Aletin sembolleri cozmese icin ZyC Clang yolunu tanitiyoruz
           CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
-          $CREATE_LLVM_PROF --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
+          # 🔥 İŞTE RAM'İ KURTARACAK O SÜZGEÇ KODU 🔥
+          $CREATE_LLVM_PROF \
+            --binary=vmlinux \
+            --profile=$GITHUB_WORKSPACE/perf_raw.data \
+            --out=$GITHUB_WORKSPACE/kernel.afdo \
+            --sample_threshold=200
           
           if [ ! -f "$GITHUB_WORKSPACE/kernel.afdo" ]; then
              echo "❌ Çeviri patladı usta! Alet çalışmadı."
