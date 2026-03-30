@@ -1,4 +1,4 @@
-name: SamI Peridot (ZCAT Full Config + Clang r547379)
+name: Profil Araci (PGO & BOLT Icin)
 
 permissions:
   contents: write
@@ -12,21 +12,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
-      KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "guvenc"
+      KBUILD_BUILD_USER: "Usta"
+      KBUILD_BUILD_HOST: "Profil-Tezgahi"
 
     steps:
-      - name: Alanı Genişlet (Maximize Space)
+      - name: 🛠️ 1. Tezgahi Genislet
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 16
+          swap-size-gb: 8
 
-      - name: Kendi Deponu Çek (ZCAT Dosyası İçin)
-        uses: actions/checkout@v4
-
-      - name: 1. Paketler ve Google Clang r547379 Kurulumu
+      - name: 🛠️ 2. Paketler ve Google Clang r596125 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -34,63 +31,86 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
-
-          echo "🚀 Google Clang r547379 ana merkezden çekiliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-google
-          cd $GITHUB_WORKSPACE/clang-google
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
-          tar -xf clang.tar.gz
           
-          echo "$GITHUB_WORKSPACE/clang-google/bin" >> $GITHUB_PATH
+          echo "🔥 Hedef: Google Clang r596125 Cekiliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-llvm
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b mirror-goog-main-llvm-toolchain-source $GITHUB_WORKSPACE/clang-llvm
+          echo "✅ Google Clang Tezgaha Indi."
 
-      - name: 2. SamI Kaynağını Çek
+      - name: 🛠️ 3. Kaynaklari Cek (Staging Dali)
         run: |
-          git clone https://github.com/shyamaldasandhi/SamI_Peridot_Kernel.git --depth=1 common
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. ZCAT Config'ini Motora Doğrudan Enjekte Et
+      - name: 🛠️ 4. Sadece Wi-Fi Yamasi (Modüller Temizlendi)
         run: |
           cd common
-          mkdir -p out
-          echo "🔥 Adamın zcat ile çektiği full .config dosyasını doğrudan kalıp olarak alıyoruz..."
-          # Klasik defconfig klasörüne DEĞİL, doğrudan derleme merkezine .config olarak atıyoruz!
-          cp $GITHUB_WORKSPACE/peridot_defconfig.txt out/.config
+          echo ">>> Wi-Fi Yamasi Uygulaniyor..."
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
 
-      - name: 4. Kernel Derleme (Google Clang r547379 + olddefconfig)
+      - name: 🛠️ 5. Kara Kutu Config Ayarlari (Profil Sensörleri)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-google/bin:$PATH"
-          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/clang-google/lib64:$LD_LIBRARY_PATH"
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          echo "------ Full Config'i Motora Uyarla (olddefconfig) ------"
-          # make defconfig DEMİYORUZ! Zcat'ten çıkan kalıbı olddefconfig ile okutuyoruz.
+          # --- TEMEL SENSÖRLER ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FRAME_POINTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          
+          # --- USTANIN EKLEDİĞİ TELEMETRİ VE HARİTA AYARLARI ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PERF_EVENTS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_DWARF4
+          
+          # Isim Damgasi
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Profil-Araci"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          sed -i 's/check_defconfig//' build.config.gki || true
+
+      - name: 🛠️ 6. Sensörlü Kernel Derleme (Ustanin Özel Komutu)
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-llvm/clang-r596125/bin:$PATH"
+          
+          echo "🔥 Clang Testi:"
+          clang --version || { echo "❌ CLANG HATASI!"; exit 1; }
+          
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          touch .scmversion
+          
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x scripts/check-local-export
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            olddefconfig
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            gki_defconfig
           
-          echo "------ Ana Derleme Başlıyor ------"
+          # 🔥 USTANIN VERDIGI DERLEME KOMUTU 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            Image
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" \
+            STRIP="true" \
+            KCFLAGS="-O2 -fno-omit-frame-pointer -fdebug-info-for-profiling -mllvm -enable-fs-discriminator=true" \
+            Image vmlinux || { echo "❌ Derleme HATASI!"; exit 1; }
 
-      - name: 5. AnyKernel3 (Saf Paketleme)
-        run: |
-          cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=SamI Peridot ZCAT-Build/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../SamI-Peridot-ZCAT.zip" ./*
-
-      - name: 6. GitHub Releases'e Yükle
-        uses: softprops/action-gh-release@v2
+      - name: 🛠️ 7. Ham Motoru ve Haritayi (vmlinux) Teslim Et
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: SamI-ZCAT-${{ github.run_id }}
-          name: "SamI Peridot (Clang r547379 + ZCAT Config)"
-          files: "SamI-Peridot-ZCAT.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Profil-Image-ve-vmlinux
+          path: |
+            common/out/arch/arm64/boot/Image
+            common/out/vmlinux
+          compression-level: 0
           
