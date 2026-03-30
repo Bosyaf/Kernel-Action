@@ -34,7 +34,7 @@ jobs:
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            libssl-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
@@ -52,11 +52,17 @@ jobs:
           echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
           mkdir -p $GITHUB_WORKSPACE/autofdo-bin
           
-          # 1. HAMLE: Eski sistem kütüphanelerini kuruyoruz (ubuntu-latest üzerinde aletin çalışması için)
-          echo "📦 Eski bağımlılıklar (libssl1.1 vb.) tezgaha ekleniyor..."
+          # 1. HAMLE: Eski sistem kütüphanelerini arşivlerden elle kuruyoruz (ubuntu-latest depolarında yok!)
+          echo "📦 Eski bağımlılıklar (libssl1.1, libtinfo5, libncurses5) tezgaha ekleniyor..."
+          
           wget -q http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb || wget -q http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-          sudo dpkg -i libssl1.1*.deb || echo "⚠️ libssl1.1 kurulamadı, alternatif bağımlılıklara geçiliyor."
-          sudo apt-get install -y libncurses5 libtinfo5
+          sudo dpkg -i libssl1.1*.deb || echo "⚠️ libssl1.1 kurulamadı."
+          
+          wget -q http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb || wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.4-2_amd64.deb
+          sudo dpkg -i libtinfo5*.deb || echo "⚠️ libtinfo5 kurulamadı."
+          
+          wget -q http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2ubuntu0.1_amd64.deb || wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.4-2_amd64.deb
+          sudo dpkg -i libncurses5*.deb || echo "⚠️ libncurses5 kurulamadı."
           
           wget -q https://github.com/google/autofdo/releases/download/v0.30.1/create_llvm_prof-x86_64-v0.30.1.zip
           unzip create_llvm_prof-x86_64-v0.30.1.zip -d $GITHUB_WORKSPACE/autofdo-bin
