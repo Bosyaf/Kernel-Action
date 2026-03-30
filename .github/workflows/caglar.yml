@@ -1,4 +1,4 @@
-name: CG+ Ultimate (Yuki Clang PGO+MLGO)
+name: CG+ Ultimate (ZyC Clang PGO+MLGO)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠️ 2. Paketler ve Yuki Clang (+BOLT) Çekimi
+      - name: 🛠️ 2. Paketler ve ZyC CLANG Çekimi (Gizli Tünel)
         run: |
           echo "🔥 Temel paketler yükleniyor..."
           sudo apt update -qq
@@ -37,17 +37,19 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Ustanin Ozel Silahi: Yuki Clang Linki Çekiliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-yuki
-          curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
           
-          echo "📦 Yuki Clang ZSTD Formatindan Cikariliyor..."
-          # tar komutu zstd'yi otomatik tanir
-          tar -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
-          rm -f clang.tar.zst
-          echo "✅ Yuki Clang Tezgaha Hazir!"
+          curl -L -o clang.tar.gz "$CLANG_LINK"
+          
+          echo "📦 Arşiv Çıkarılıyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          rm -f clang.tar.gz
+          echo "✅ ZyC Clang Tezgaha Hazir!"
 
-      - name: 🛠️ 3. Yuki'nin Aletleriyle Karneyi Çevir (PGO)
+      - name: 🛠️ 3. ZyC'nin Aletleriyle Karneyi Çevir (PGO)
         run: |
           echo "📦 Ustanin 732MB'lik Karnesi ve Haritasi İndiriliyor..."
           gh release download Profil-1774880797 -p "perf.tar.xz" -p "vmlinux-haritasi.zip"
@@ -59,24 +61,22 @@ jobs:
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
           mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
           
-          echo "🔍 Yuki Clang icinde aletler araniyor..."
-          # Özel toolchain'in bin klasorunu otomatik buluyoruz
-          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-yuki -type d -name "bin" | head -n 1)
+          echo "🔍 ZyC Clang icinde aletler araniyor..."
+          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
-          CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/clang-yuki -name "create_llvm_prof" | head -n 1)
+          CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/clang-zyc -name "create_llvm_prof" | head -n 1)
           
           if [ -n "$CREATE_LLVM_PROF" ]; then
-             echo "✅ Yuki icinde create_llvm_prof bulundu! Islem basliyor..."
+             echo "✅ ZyC icinde create_llvm_prof bulundu! Islem basliyor..."
              $CREATE_LLVM_PROF --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
           else
              echo "⚠️ create_llvm_prof yok, llvm-profdata ile deneniyor..."
-             # Custom toolchain'lerde cogu zaman llvm-profdata bu isi ustlenir
              llvm-profdata merge -sample -extbinary -output=$GITHUB_WORKSPACE/kernel.afdo $GITHUB_WORKSPACE/perf.data || true
           fi
           
           if [ ! -f "$GITHUB_WORKSPACE/kernel.afdo" ]; then
-             echo "❌ Yuki'nin aletleri de bu karneyi ceviremedi usta!"
+             echo "❌ ZyC'nin aletleri de bu karneyi ceviremedi usta!"
              exit 1
           fi
           
@@ -215,11 +215,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 🛠️ 9. PGO + MLGO ile Kernel Derleme (Yuki Clang Gücüyle!)
+      - name: 🛠️ 9. PGO + MLGO ile Kernel Derleme (ZyC Clang Gücüyle!)
         run: |
           cd common
-          # Yuki Clang'in bin klasorunu derleme icin tanitiyoruz
-          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-yuki -type d -name "bin" | head -n 1)
+          # ZyC Clang'in bin klasorunu derleme icin tanitiyoruz
+          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
@@ -249,18 +249,18 @@ jobs:
       - name: 🛠️ 10. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate PGO-MLGO (Yuki) Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate PGO-MLGO (ZyC) Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Ultimate-Yuki-PGO.zip" ./*
+          zip -r "../CG-Ultimate-ZyC-PGO.zip" ./*
 
       - name: 🛠️ 11. Dükkana Teslim (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Ultimate (Yuki PGO + MLGO)"
+          name: "CG+ Ultimate (ZyC PGO + MLGO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
