@@ -47,7 +47,7 @@ jobs:
           rm -f clang.tar.gz
           echo "✅ ZyC Clang Tezgaha Hazir!"
 
-            - name: 🛠️ 3. Orijinal AutoFDO Aletini İndir ve Karneyi Çevir
+      - name: 🛠️ 3. Orijinal AutoFDO Aletini İndir ve Karneyi Çevir
         run: |
           echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
           mkdir -p $GITHUB_WORKSPACE/autofdo-bin
@@ -107,7 +107,6 @@ jobs:
           fi
           
           echo "✅ PGO Profili (kernel.afdo) Hazir!"
-
 
       - name: 🛠️ 4. Kaynakları Çek (Staging Dalı)
         run: |
