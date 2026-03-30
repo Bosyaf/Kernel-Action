@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠️ 2. Paketler ve ZyC CLANG Çekimi (Gizli Tünel)
+      - name: 🛠️ 2. Paketler ve ZyC CLANG Çekimi
         run: |
           echo "🔥 Temel paketler yükleniyor..."
           sudo apt update -qq
@@ -39,18 +39,26 @@ jobs:
           
           echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
           CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          echo "İndirilecek Link: $CLANG_LINK"
-          
           curl -L -o clang.tar.gz "$CLANG_LINK"
           
-          echo "📦 Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
           echo "✅ ZyC Clang Tezgaha Hazir!"
 
-      - name: 🛠️ 3. ZyC'nin Aletleriyle Karneyi Çevir (PGO)
+      - name: 🛠️ 3. Orijinal AutoFDO Aletini (Prebuilt) İndir ve Karneyi Çevir
         run: |
+          echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
+          mkdir -p $GITHUB_WORKSPACE/autofdo-bin
+          
+          # Iste buldugum o gizli, hazir calisan alet!
+          wget -q https://github.com/google/autofdo/releases/download/v0.30.1/create_llvm_prof-x86_64-v0.30.1.zip
+          unzip create_llvm_prof-x86_64-v0.30.1.zip -d $GITHUB_WORKSPACE/autofdo-bin
+          
+          CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/autofdo-bin -type f -name "create_llvm_prof" | head -n 1)
+          chmod +x $CREATE_LLVM_PROF
+          echo "✅ Orijinal create_llvm_prof tezgaha indi: $CREATE_LLVM_PROF"
+          
           echo "📦 Ustanin 732MB'lik Karnesi ve Haritasi İndiriliyor..."
           gh release download Profil-1774880797 -p "perf.tar.xz" -p "vmlinux-haritasi.zip"
           
@@ -61,22 +69,15 @@ jobs:
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
           mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
           
-          echo "🔍 ZyC Clang icinde aletler araniyor..."
+          echo "⚙️ Karne Tercüme Ediliyor..."
+          # Aletin sembolleri cozmese icin ZyC Clang yolunu tanitiyoruz
           CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
-          CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/clang-zyc -name "create_llvm_prof" | head -n 1)
-          
-          if [ -n "$CREATE_LLVM_PROF" ]; then
-             echo "✅ ZyC icinde create_llvm_prof bulundu! Islem basliyor..."
-             $CREATE_LLVM_PROF --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
-          else
-             echo "⚠️ create_llvm_prof yok, llvm-profdata ile deneniyor..."
-             llvm-profdata merge -sample -extbinary -output=$GITHUB_WORKSPACE/kernel.afdo $GITHUB_WORKSPACE/perf.data || true
-          fi
+          $CREATE_LLVM_PROF --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
           
           if [ ! -f "$GITHUB_WORKSPACE/kernel.afdo" ]; then
-             echo "❌ ZyC'nin aletleri de bu karneyi ceviremedi usta!"
+             echo "❌ Çeviri patladı usta! Alet çalışmadı."
              exit 1
           fi
           
@@ -218,7 +219,6 @@ jobs:
       - name: 🛠️ 9. PGO + MLGO ile Kernel Derleme (ZyC Clang Gücüyle!)
         run: |
           cd common
-          # ZyC Clang'in bin klasorunu derleme icin tanitiyoruz
           CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
