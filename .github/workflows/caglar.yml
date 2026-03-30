@@ -17,12 +17,13 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: 🛠️ 1. Tezgahi Genislet ve Kaynaklari Hazirla
+      - name: 🛠️ 1. Tezgahi ve SANAL RAM'i Maksimuma Cikar (Kaba Kuvvet)
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 8
+          # İŞTE BALYOZ BURADA: Sanal RAM tam 24 GB yapıldı! Çökme ihtimali bitti.
+          swap-size-gb: 24
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,12 +47,11 @@ jobs:
           rm -f clang.tar.gz
           echo "✅ ZyC Clang Tezgaha Hazir!"
 
-      - name: 🛠️ 3. Orijinal AutoFDO Aletini İndir ve Karneyi SÜZGEÇTEN Çevir
+      - name: 🛠️ 3. Orijinal AutoFDO Aletini İndir ve Karneyi Çevir
         run: |
           echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
           mkdir -p $GITHUB_WORKSPACE/autofdo-bin
           
-          # Iste buldugum o gizli, hazir calisan alet!
           wget -q https://github.com/google/autofdo/releases/download/v0.30.1/create_llvm_prof-x86_64-v0.30.1.zip
           unzip create_llvm_prof-x86_64-v0.30.1.zip -d $GITHUB_WORKSPACE/autofdo-bin
           
@@ -67,21 +67,14 @@ jobs:
           tar -xf perf.tar.xz
           
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
+          mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
           
-          echo "🧪 RAM Duvarını Aşmak İçin Veri Raw Hale Alınıyor..."
-          mv $PERF_FILE $GITHUB_WORKSPACE/perf_raw.data
-          
-          echo "⚙️ Karne Tercüme Ediliyor (SÜZGEÇ DEVREDE)..."
-          # Aletin sembolleri cozmese icin ZyC Clang yolunu tanitiyoruz
+          echo "⚙️ Karne Tercüme Ediliyor (24 GB Sanal RAM Devrede!)..."
           CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
-          # 🔥 İŞTE RAM'İ KURTARACAK O SÜZGEÇ KODU 🔥
-          $CREATE_LLVM_PROF \
-            --binary=vmlinux \
-            --profile=$GITHUB_WORKSPACE/perf_raw.data \
-            --out=$GITHUB_WORKSPACE/kernel.afdo \
-            --sample_threshold=200
+          # Hata veren süzgeç komutu silindi. Saf kaba kuvvetle okuyoruz.
+          $CREATE_LLVM_PROF --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
           
           if [ ! -f "$GITHUB_WORKSPACE/kernel.afdo" ]; then
              echo "❌ Çeviri patladı usta! Alet çalışmadı."
