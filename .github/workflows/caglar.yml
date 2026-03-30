@@ -37,9 +37,10 @@ jobs:
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 -b mirror-goog-main-llvm-toolchain-source $GITHUB_WORKSPACE/clang-llvm
           echo "✅ Google Clang Tezgaha Indi."
 
-      - name: 🛠️ 3. Kaynaklari Cek (Staging Dali)
+      - name: 🛠️ 3. Kaynaklari ve AnyKernel3 Çek
         run: |
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
 
       - name: 🛠️ 4. Sadece Wi-Fi Yamasi (Modüller Temizlendi)
         run: |
@@ -104,13 +105,33 @@ jobs:
             STRIP="true" \
             KCFLAGS="-O2 -fno-omit-frame-pointer -fdebug-info-for-profiling -mllvm -enable-fs-discriminator=true" \
             Image vmlinux || { echo "❌ Derleme HATASI!"; exit 1; }
+          
+          echo "BOOTHASH=Profil-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 🛠️ 7. Ham Motoru ve Haritayi (vmlinux) Teslim Et
-        uses: actions/upload-artifact@v4
+      - name: 🛠️ 7. AnyKernel3 (Paketleme) ve vmlinux Hazirligi
+        run: |
+          # 1. Image dosyasını telefona kurmalık ZIP yapıyoruz
+          cd AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=PGO BOLT Profil Kerneli/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../Profil-Kernel-Flashable.zip" ./*
+          
+          # 2. Devasa vmlinux haritasını bizim için ZIPliyoruz (Telefona flashlanmaz!)
+          cd ..
+          echo ">>> Devasa vmlinux haritasi zipleniyor..."
+          zip -j "vmlinux-haritasi.zip" common/out/vmlinux
+
+      - name: 🛠️ 8. Dükkana Teslim (Release)
+        uses: softprops/action-gh-release@v2
         with:
-          name: Profil-Image-ve-vmlinux
-          path: |
-            common/out/arch/arm64/boot/Image
-            common/out/vmlinux
-          compression-level: 0
+          tag_name: ${{ env.BOOTHASH }}
+          name: "PGO/BOLT Profil Çıkarma Aracı"
+          files: |
+            Profil-Kernel-Flashable.zip
+            vmlinux-haritasi.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
