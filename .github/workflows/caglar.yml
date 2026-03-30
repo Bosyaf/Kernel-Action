@@ -52,7 +52,7 @@ jobs:
           echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
           mkdir -p $GITHUB_WORKSPACE/autofdo-bin
           
-          # 1. HAMLE: Eski sistem kütüphanelerini arşivlerden elle kuruyoruz (ubuntu-latest depolarında yok!)
+          # 1. HAMLE: Eski sistem kütüphanelerini arşivlerden elle kuruyoruz
           echo "📦 Eski bağımlılıklar (libssl1.1, libtinfo5, libncurses5) tezgaha ekleniyor..."
           
           wget -q http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb || wget -q http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
@@ -70,9 +70,6 @@ jobs:
           CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/autofdo-bin -type f -name "create_llvm_prof" | head -n 1)
           chmod +x $CREATE_LLVM_PROF
           
-          echo "🔍 Aletin kütüphane bağlantıları (ldd) test ediliyor:"
-          ldd $CREATE_LLVM_PROF || echo "ldd testi başarısız ama devam ediyoruz..."
-          
           echo "✅ Orijinal create_llvm_prof tezgaha indi: $CREATE_LLVM_PROF"
           
           echo "📦 Ustanin 732MB'lik Karnesi ve Haritasi İndiriliyor..."
@@ -82,14 +79,18 @@ jobs:
           unzip -o vmlinux-haritasi.zip
           tar -xf perf.tar.xz
           
-          # Dosyaların yerini garantiye alıyoruz
+          # Dosyaların yerini garantiye alıyoruz (Aynı dosya hatasını önlemek için '-ef' kontrolü eklendi)
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
-          mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
+          if [ ! "$PERF_FILE" -ef "$GITHUB_WORKSPACE/perf.data" ]; then
+            mv "$PERF_FILE" "$GITHUB_WORKSPACE/perf.data"
+          fi
           
           VMLINUX_FILE=$(find . -name "vmlinux" | head -n 1)
           if [ -n "$VMLINUX_FILE" ]; then
-            mv $VMLINUX_FILE $GITHUB_WORKSPACE/vmlinux
-            echo "✅ vmlinux dosyası çalışma dizinine taşındı."
+            if [ ! "$VMLINUX_FILE" -ef "$GITHUB_WORKSPACE/vmlinux" ]; then
+              mv "$VMLINUX_FILE" "$GITHUB_WORKSPACE/vmlinux"
+            fi
+            echo "✅ vmlinux dosyası hazır."
           else
             echo "❌ vmlinux dosyası bulunamadı! Haritada bir sorun var."
             exit 1
