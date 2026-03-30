@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠️ 2. Paketler ve Google Clang Çekimi
+      - name: 🛠️ 2. Paketler ve En Yeni Google Clang Çekimi
         run: |
           echo "🔥 Temel paketler yükleniyor..."
           sudo apt update -qq
@@ -37,47 +37,65 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Google Clang r584948 (Arşivden) Çekiliyor..."
+          # Bu bizim motoru toplayacagimiz EN YENI (r584948) derleyicimiz. Bunu ellemiyoruz.
+          echo "🔥 Kernel derleyicisi (r584948) Cekiliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-llvm
           curl -L -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-llvm
           rm -f clang.tar.gz
 
-      - name: 🛠️ 3. Google'ın Hazır Alet Çantasını (Clang-Tools) Çek
+      - name: 🛠️ 3. Mühürlü Depodan Aleti Çek ve Karneyi Çevir (KESİN ÇÖZÜM)
         run: |
-          echo "🔥 Kendi aletimizi dövmekten vazgeçtik, Google'ın fabrikasındaki hazır aleti indiriyoruz!"
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang-tools $GITHUB_WORKSPACE/clang-tools
-          chmod +x $GITHUB_WORKSPACE/clang-tools/linux-x86/bin/create_llvm_prof
-          echo "✅ Orijinal ve HAZIR create_llvm_prof tezgaha indi!"
-
-      - name: 🛠️ 4. Karneyi ve Haritayı Dükkandan İndir
-        run: |
+          echo "🔥 Usta, mühürlü Android 14 deposuna giriyoruz. Alet %100 burada!"
+          
+          # Android-14.0.0_r1 etiketli, bozulmasi imkansiz orijinal paketi cekiyoruz
+          curl -f -L -o autofdo.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-14.0.0_r1/clang-r487747c.tar.gz"
+          
+          mkdir -p $GITHUB_WORKSPACE/autofdo-bin
+          tar -xzf autofdo.tar.gz -C $GITHUB_WORKSPACE/autofdo-bin
+          rm -f autofdo.tar.gz
+          
+          echo "🔍 Alet klasorun icinde araniyor..."
+          CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/autofdo-bin -name "create_llvm_prof" | head -n 1)
+          
+          if [ -z "$CREATE_LLVM_PROF" ]; then
+             echo "❌ Alet yine yok! Bu cidden imkansiz."
+             exit 1
+          fi
+          
+          echo "✅ Orijinal Alet Bulundu: $CREATE_LLVM_PROF"
+          chmod +x $CREATE_LLVM_PROF
+          
           echo "📦 Ustanin 732MB'lik Karnesi ve Haritasi İndiriliyor..."
           gh release download Profil-1774880797 -p "perf.tar.xz" -p "vmlinux-haritasi.zip"
           
           echo "🔍 Dosyalar Mutfaga Aciliyor..."
-          unzip vmlinux-haritasi.zip
+          unzip -o vmlinux-haritasi.zip
           tar -xf perf.tar.xz
           
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
           mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
           
-          echo "⚙️ Karne Tercüme Ediliyor (Hazir Google Aletiyle)..."
-          $GITHUB_WORKSPACE/clang-tools/linux-x86/bin/create_llvm_prof --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
+          echo "⚙️ Karne Tercüme Ediliyor..."
+          # Aletin kütüphaneleri (DLL) bulabilmesi icin kütüphane yolunu tanitiyoruz
+          TOOLCHAIN_DIR=$(dirname $(dirname $CREATE_LLVM_PROF))
+          export LD_LIBRARY_PATH=$TOOLCHAIN_DIR/lib:$TOOLCHAIN_DIR/lib64:$LD_LIBRARY_PATH
+          
+          $CREATE_LLVM_PROF --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
           
           echo "✅ PGO Profili (kernel.afdo) Hazir!"
 
-      - name: 🛠️ 5. Kaynakları Çek (Staging Dalı)
+      - name: 🛠️ 4. Kaynakları Çek (Staging Dalı)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 🛠️ 6. VortexSU Kurulumu
+      - name: 🛠️ 5. VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 🛠️ 7. Wi-Fi, BBRv3 ve Asya Yamaları
+      - name: 🛠️ 6. Wi-Fi, BBRv3 ve Asya Yamaları
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
@@ -88,7 +106,7 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 🛠️ 8. SUSFS Master Formülü
+      - name: 🛠️ 7. SUSFS Master Formülü
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
@@ -116,7 +134,7 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 🛠️ 9. Efsane Config Ayarları (Buz Gibi Serin)
+      - name: 🛠️ 8. Efsane Config Ayarları (Buz Gibi Serin)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
@@ -196,13 +214,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Ultimate++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Ultimate"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 🛠️ 10. PGO + MLGO ile Kernel Derleme (Vira Bismillah!)
+      - name: 🛠️ 9. PGO + MLGO ile Kernel Derleme (Vira Bismillah!)
         run: |
           cd common
+          # 2. Adimda indirdigimiz EN YENI derleyici (r584948) kullaniliyor
           export PATH="$GITHUB_WORKSPACE/clang-llvm/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
@@ -229,7 +248,7 @@ jobs:
           
           echo "BOOTHASH=CG-Ultimate-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 🛠️ 11. AnyKernel3 (Temiz Paketleme)
+      - name: 🛠️ 10. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate PGO-MLGO Kernel/' anykernel.sh
@@ -239,7 +258,7 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Ultimate-PGO.zip" ./*
 
-      - name: 🛠️ 12. Dükkana Teslim (Release)
+      - name: 🛠️ 11. Dükkana Teslim (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
