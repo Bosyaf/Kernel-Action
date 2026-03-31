@@ -1,4 +1,4 @@
-name: CG+ Ultimate (Yuki Clang + Özel Config)
+name: CG+ Ultimate (ZyC Clang 22.0 + Özel Config)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠️ 2. Paketler ve YUKI CLANG (Bolt) Çekimi
+      - name: 🛠️ 2. Paketler ve ZYC CLANG (Ustanın Verdiği Sürüm) Çekimi
         run: |
           echo "🔥 Temel paketler yükleniyor..."
           sudo apt update -qq
@@ -37,14 +37,14 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi lld llvm pkg-config zstd
           
-          echo "🔥 Yuki Clang (+Bolt) İndiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          wget -qO yuki.tar.zst "Https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
+          echo "🔥 ZyCromerZ Clang (22.0.0git-20250928) İndiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          wget -qO clang.tar.gz "https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           
-          echo "📦 Yuki Paketi Açılıyor..."
-          tar -I zstd -xf yuki.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
-          rm -f yuki.tar.zst
-          echo "✅ Yuki Clang Tezgaha Hazir!"
+          echo "📦 Clang Paketi Açılıyor..."
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          rm -f clang.tar.gz
+          echo "✅ ZyC Clang Tezgaha Hazir!"
 
       - name: 🛠️ 3. Kaynakları Çek (Staging Dalı)
         run: |
@@ -171,15 +171,15 @@ jobs:
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Ultimate"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 🛠️ 7. Yuki Clang ile Motoru Derle
+      - name: 🛠️ 7. ZyC Clang (22.0) ile Motoru Derle
         run: |
           cd common
-          YUKI_BIN=$(find $GITHUB_WORKSPACE/yuki-clang -type d -name "bin" | head -n 1)
-          export PATH="$YUKI_BIN:$PATH"
+          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
+          export PATH="$CLANG_BIN:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -190,15 +190,16 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
+          echo "🔥 Defconfig Ayarlaniyor..."
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" REAL_CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
+          echo "🔥 ZYC CLANG (22.0) ILE DERLEME BASLIYOR..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" REAL_CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
@@ -209,18 +210,18 @@ jobs:
       - name: 🛠️ 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate Yuki-Clang Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate ZyC-22.0 Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Ultimate-YukiClang.zip" ./*
+          zip -r "../CG-Ultimate-ZyC-22.0.zip" ./*
 
       - name: 🛠️ 9. Dükkana Teslim (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Ultimate (Yuki Clang + Özel Config)"
+          name: "CG+ Ultimate (ZyC Clang 22.0 + Özel Config)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
