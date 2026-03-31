@@ -1,4 +1,4 @@
-name: CG+ Ultimate (Yuki Clang + MLGO)
+name: CG+ Ultimate (Yuki Clang + Yeni Ayarlar)
 
 permissions:
   contents: write
@@ -39,10 +39,9 @@ jobs:
           
           echo "🔥 Yuki Clang (+Bolt) İndiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          # Senin verdigin zst uzantili canavar linki:
           wget -qO yuki.tar.zst "Https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           
-          echo "📦 Yuki Paketi Açılıyor (Zstd Devrede)..."
+          echo "📦 Yuki Paketi Açılıyor..."
           tar -I zstd -xf yuki.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
           rm -f yuki.tar.zst
           echo "✅ Yuki Clang Tezgaha Hazir!"
@@ -52,14 +51,12 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 🛠️ 4. VortexSU Kurulumu
+      - name: 🛠️ 4. VortexSU ve Özel Yamalar
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-
-      - name: 🛠️ 5. Wi-Fi, BBRv3 ve Asya Yamaları
-        run: |
-          cd common
+          
+          # WiFi ve BBG Yaması
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
@@ -67,8 +64,15 @@ jobs:
           patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+          
+          # USTANIN DOSYASINDAN GELEN BTQCA YAMASI
+          echo "🔥 Ustanın dosyasından BTQCA kopma düzeltmesi uygulanıyor..."
+          TARGET_FILE="drivers/bluetooth/btqca.h"
+          if [ -f "$TARGET_FILE" ]; then
+            sed -i '/QCA_WCN3998,/a\	QCA_WCN3988,' "$TARGET_FILE" || true
+          fi
 
-      - name: 🛠️ 6. SUSFS Master Formülü
+      - name: 🛠️ 5. Gelişmiş SUSFS Master Formülü (Ustanın Dosyalarından)
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
@@ -79,6 +83,7 @@ jobs:
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
+          # USTANIN DOSYASINDAN GELEN GELİŞMİŞ NAMESPACE INJECTION
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -88,6 +93,9 @@ jobs:
           extern bool susfs_is_sdcard_android_data_decrypted;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
+          #define DEFAULT_KSU_MNT_ID 100000
+          #define DEFAULT_KSU_MNT_GROUP_ID 100000
+          #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT BIT(24)
           #define CL_COPY_MNT_NS BIT(25)
           #endif
           EOF
@@ -96,94 +104,71 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 🛠️ 7. Efsane Config Ayarları (Buz Gibi Serin)
+      - name: 🛠️ 6. Ustanın Dosyalarından Efsane Config Ayarları
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
+          # Temel Performans
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
           
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
+          # YENİ: ZRAM, MGLRU, F2FS ve I/O HIZLANDIRMALARI (Ustanın dosyasından)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_MEMORY_TRACKING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_DEADLINE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_COMPRESSION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
           
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+          # YENİ: GEREKSİZ HATA AYIKLAYICILARI (DEBUG) KAPAT (Performans artışı)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_TRACE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # RAM KURTARICI & SUNUCU KODLARINI İPTAL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # AG ve ARAYUZ (BBRv3 vb.)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          # Ağ ve Arayüz (Westwood ve BBRv3 eklendi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
+          # YENİ: EKSTRA SUSFS GİZLİLİK ZIRHLARI (Ustanın dosyasından)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Ultimate++"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 🛠️ 8. Yuki Clang ile Motoru Derle (MLGO Devrede)
+      - name: 🛠️ 7. Yuki Clang ile Motoru Derle (MLGO Devrede)
         run: |
           cd common
-          # Yuki'yi Path'e aliyoruz
           YUKI_BIN=$(find $GITHUB_WORKSPACE/yuki-clang -type d -name "bin" | head -n 1)
           export PATH="$YUKI_BIN:$PATH"
           
@@ -196,26 +181,23 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
-          echo "🔥 Defconfig Ayarlaniyor..."
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" REAL_CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
-          echo "🔥 YUKI CLANG ILE DEV DERLEME BASLIYOR..."
-          # Resimdeki kurallari birebir uyguladik, CROSS_COMPILE_COMPAT dahil!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" REAL_CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            KCFLAGS="-O2 -mllvm -enable-mlgo-inline=all -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
+            KCFLAGS="-O2 -mllvm -enable-ml-inliner=all -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=CG-Ultimate-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 🛠️ 9. AnyKernel3 (Temiz Paketleme)
+      - name: 🛠️ 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate Yuki-Clang Kernel/' anykernel.sh
@@ -225,11 +207,11 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Ultimate-YukiClang.zip" ./*
 
-      - name: 🛠️ 10. Dükkana Teslim (Release)
+      - name: 🛠️ 9. Dükkana Teslim (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Ultimate (Yuki Clang + MLGO)"
+          name: "CG+ Ultimate (Yuki Clang + Yeni Config)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
