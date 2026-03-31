@@ -1,4 +1,4 @@
-name: CG+ Ultimate (ZyC Clang 22.0 + Özel Config)
+name: CG+ Ultimate (Yuki Clang + Özel Config)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠️ 2. Paketler ve ZYC CLANG (Ustanın Verdiği Sürüm) Çekimi
+      - name: 🛠️ 2. Paketler ve YUKI CLANG (Bolt) Çekimi
         run: |
           echo "🔥 Temel paketler yükleniyor..."
           sudo apt update -qq
@@ -37,15 +37,14 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi lld llvm pkg-config zstd
           
-          echo "🔥 ZyCromerZ Clang (22.0.0git-20250928) İndiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          # Ustanın verdiği direkt link:
-          wget -qO clang.tar.gz "https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "🔥 Yuki Clang (+Bolt) İndiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/yuki-clang
+          wget -qO yuki.tar.zst "Https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           
-          echo "📦 Clang Paketi Açılıyor..."
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
-          rm -f clang.tar.gz
-          echo "✅ ZyC Clang Tezgaha Hazir!"
+          echo "📦 Yuki Paketi Açılıyor..."
+          tar -I zstd -xf yuki.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
+          rm -f yuki.tar.zst
+          echo "✅ Yuki Clang Tezgaha Hazir!"
 
       - name: 🛠️ 3. Kaynakları Çek (Staging Dalı)
         run: |
@@ -72,7 +71,7 @@ jobs:
             sed -i '/QCA_WCN3998,/a\	QCA_WCN3988,' "$TARGET_FILE" || true
           fi
 
-      - name: 🛠️ 5. Gelişmiş SUSFS Master Formülü (Ustanın Dosyalarından)
+      - name: 🛠️ 5. Gelişmiş SUSFS Master Formülü (Hata Düzeltildi!)
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
@@ -83,6 +82,7 @@ jobs:
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
+          # 🔥 HATA VEREN 3 SATIR SİLİNDİ, MOTORUN KENDİ SUSFS_DEF.H DOSYASINA BIRAKILDI 🔥
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -92,9 +92,6 @@ jobs:
           extern bool susfs_is_sdcard_android_data_decrypted;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-          #define DEFAULT_KSU_MNT_ID 100000
-          #define DEFAULT_KSU_MNT_GROUP_ID 100000
-          #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT BIT(24)
           #define CL_COPY_MNT_NS BIT(25)
           #endif
           EOF
@@ -103,20 +100,19 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 🛠️ 6. Ustanın Dosyalarından Efsane Config Ayarları (Birebir Kopyası)
+      - name: 🛠️ 6. Ustanın Dosyalarından Efsane Config Ayarları (Full Preempt Devrede)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # Bizim Temel Optimizasyonumuz
+          # Bizim Temel Optimizasyonumuz + 🔥 FULL PREEMPT 🔥
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           
-          # 🔥 BURADAN İTİBAREN SADECE VE SADECE USTANIN DOSYASINDAKİ (gki_defconfig.sh) AYARLAR VARDIR 🔥
-          
-          # Performans ve Frekans (gki_defconfig.sh)
+          # Performans ve Frekans 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -125,7 +121,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_ONDEMAND
           
-          # ZRAM, MGLRU, F2FS ve I/O (gki_defconfig.sh)
+          # ZRAM, MGLRU, F2FS ve I/O 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
@@ -140,7 +136,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
           
-          # Ağ ve Arayüz Optimizasyonları (gki_defconfig.sh)
+          # Ağ ve Arayüz Optimizasyonları 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
@@ -151,12 +147,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           
-          # Gereksiz Hata Ayıklayıcıları Kapatma (TAMAMEN USTANIN LİSTESİ)
+          # Gereksiz Hata Ayıklayıcıları Kapatma 
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_TRACE
           
-          # SUSFS Gizlilik Zırhları (gki_defconfig.sh)
+          # SUSFS Gizlilik Zırhları 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MAP
@@ -175,16 +171,15 @@ jobs:
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Ultimate++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG++"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 🛠️ 7. ZyC Clang (22.0) ile Motoru Derle
+      - name: 🛠️ 7. Yuki Clang ile Motoru Derle
         run: |
           cd common
-          # ZyC Clang'i Path'e aliyoruz
-          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
-          export PATH="$CLANG_BIN:$PATH"
+          YUKI_BIN=$(find $GITHUB_WORKSPACE/yuki-clang -type d -name "bin" | head -n 1)
+          export PATH="$YUKI_BIN:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -195,17 +190,15 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
-          echo "🔥 Defconfig Ayarlaniyor..."
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" REAL_CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
-          echo "🔥 ZYC CLANG (22.0) ILE DERLEME BASLIYOR..."
-          # 🔥 HATA VEREN MLGO PARÇASI (-enable-mlgo-inline=all) SİLİNDİ 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" REAL_CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
@@ -216,18 +209,18 @@ jobs:
       - name: 🛠️ 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate ZyC-22.0 Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Ultimate Yuki-Clang Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Ultimate-ZyC-22.0.zip" ./*
+          zip -r "../CG-Ultimate-YukiClang.zip" ./*
 
       - name: 🛠️ 9. Dükkana Teslim (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Ultimate (ZyC Clang 22.0 + Özel Config)"
+          name: "CG+ Ultimate (Yuki Clang + Özel Config)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
