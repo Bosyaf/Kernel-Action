@@ -17,13 +17,12 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: 🛠️ 1. Tezgahi ve SANAL RAM'i Maksimuma Cikar (Kaba Kuvvet)
+      - name: 🛠️ 1. Tezgahi Genislet ve Kaynaklari Hazirla
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          # İŞTE BALYOZ BURADA: Sanal RAM tam 24 GB yapıldı! Çökme ihtimali bitti.
-          swap-size-gb: 24
+          swap-size-gb: 12
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +33,7 @@ jobs:
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev liblz4-tool zlib1g-dev libxml2-utils \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
@@ -47,73 +46,56 @@ jobs:
           rm -f clang.tar.gz
           echo "✅ ZyC Clang Tezgaha Hazir!"
 
-      - name: 🛠️ 3. Orijinal AutoFDO Aletini İndir ve Karneyi Çevir
+      - name: 🛠️ 3. Orijinal Simpleperf ve AutoFDO ile PGO Çevirisi (Zeka Devrede)
         run: |
-          echo "🔥 Dükkanı kapatmak yok! Google'ın resmi AutoFDO deposundan orijinal aleti çekiyoruz..."
-          mkdir -p $GITHUB_WORKSPACE/autofdo-bin
+          echo "🔥 Google Yapay Zekası Asla Pes Etmez! O PGO buraya gelecek..."
           
-          # 1. HAMLE: Eski sistem kütüphanelerini arşivlerden elle kuruyoruz
-          echo "📦 Eski bağımlılıklar (libssl1.1, libtinfo5, libncurses5) tezgaha ekleniyor..."
+          echo "📦 Ustanin Karnesi ve Haritasi İndiriliyor..."
+          # Dosyanın ismine takılmıyoruz, dükkandaki her şeyi indiriyoruz
+          gh release download Profil-1774880797
           
-          wget -q http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb || wget -q http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-          sudo dpkg -i libssl1.1*.deb || echo "⚠️ libssl1.1 kurulamadı."
+          unzip -o vmlinux-haritasi.zip || true
           
-          wget -q http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb || wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.4-2_amd64.deb
-          sudo dpkg -i libtinfo5*.deb || echo "⚠️ libtinfo5 kurulamadı."
+          # Ustanın uyarısı: Tar xz ise çıkar, değilse zaten perf.data ortadadır
+          if [ -f "perf.tar.xz" ]; then
+            echo "📦 Tar paketi açılıyor..."
+            tar -xf perf.tar.xz || true
+          fi
           
-          wget -q http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2ubuntu0.1_amd64.deb || wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.4-2_amd64.deb
-          sudo dpkg -i libncurses5*.deb || echo "⚠️ libncurses5 kurulamadı."
-          
-          wget -q https://github.com/google/autofdo/releases/download/v0.30.1/create_llvm_prof-x86_64-v0.30.1.zip
-          unzip create_llvm_prof-x86_64-v0.30.1.zip -d $GITHUB_WORKSPACE/autofdo-bin
-          
-          CREATE_LLVM_PROF=$(find $GITHUB_WORKSPACE/autofdo-bin -type f -name "create_llvm_prof" | head -n 1)
-          chmod +x $CREATE_LLVM_PROF
-          
-          echo "✅ Orijinal create_llvm_prof tezgaha indi: $CREATE_LLVM_PROF"
-          
-          echo "📦 Ustanin 732MB'lik Karnesi ve Haritasi İndiriliyor..."
-          gh release download Profil-1774880797 -p "perf.tar.xz" -p "vmlinux-haritasi.zip"
-          
-          echo "🔍 Dosyalar Mutfaga Aciliyor..."
-          unzip -o vmlinux-haritasi.zip
-          tar -xf perf.tar.xz
-          
-          # Dosyaların yerini garantiye alıyoruz (Aynı dosya hatasını önlemek için '-ef' kontrolü eklendi)
+          echo "🔍 perf.data tezgaha alınıyor..."
           PERF_FILE=$(find . -name "perf.data" | head -n 1)
-          if [ ! "$PERF_FILE" -ef "$GITHUB_WORKSPACE/perf.data" ]; then
-            mv "$PERF_FILE" "$GITHUB_WORKSPACE/perf.data"
+          if [ -z "$PERF_FILE" ]; then
+             echo "❌ Usta, perf.data dosyasını bulamadım! İndirilen depoyu bir kontrol et."
+             exit 1
           fi
+          mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
           
-          VMLINUX_FILE=$(find . -name "vmlinux" | head -n 1)
-          if [ -n "$VMLINUX_FILE" ]; then
-            if [ ! "$VMLINUX_FILE" -ef "$GITHUB_WORKSPACE/vmlinux" ]; then
-              mv "$VMLINUX_FILE" "$GITHUB_WORKSPACE/vmlinux"
-            fi
-            echo "✅ vmlinux dosyası hazır."
-          else
-            echo "❌ vmlinux dosyası bulunamadı! Haritada bir sorun var."
-            exit 1
-          fi
+          echo "🛠️ Android'in Orijinal Simpleperf Aleti Çekiliyor..."
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/simpleperf $GITHUB_WORKSPACE/simpleperf-tools
           
-          echo "⚙️ Karne Tercüme Ediliyor (24 GB Sanal RAM Devrede!)..."
+          echo "🧪 Aşama 1: Simpleperf Inject (4.4 GB'ı Hafifletme ve Formatlama)"
+          # İşte RAM'i kurtaracak asıl sihir! O raw veri, RAM'i patlatmayacak şekle (perf.inject) çevriliyor.
+          $GITHUB_WORKSPACE/simpleperf-tools/bin/linux/x86_64/simpleperf inject -i $GITHUB_WORKSPACE/perf.data -o $GITHUB_WORKSPACE/perf.inject --symdir .
+          
+          echo "🔥 Aşama 2: Orijinal AutoFDO Aleti İndiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/autofdo-bin
+          wget -q https://github.com/google/autofdo/releases/download/v0.30.1/create_llvm_prof-x86_64-v0.30.1.zip
+          unzip -o create_llvm_prof-x86_64-v0.30.1.zip -d $GITHUB_WORKSPACE/autofdo-bin
+          chmod +x $GITHUB_WORKSPACE/autofdo-bin/create_llvm_prof
+          
+          echo "⚙️ Aşama 3: Hafifletilmiş Karne Tercüme Ediliyor..."
           CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
-          # 2. HAMLE: İşlemi çalıştırıyor ve çökerse sistem loglarını döküyoruz
-          if ! $CREATE_LLVM_PROF --binary=$GITHUB_WORKSPACE/vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo; then
-             echo "❌ Çeviri patladı usta! Alet çalışmadı veya RAM yetmedi."
-             echo "🚨 ÇEKİRDEK LOGLARI (OOM Killer aracı öldürmüş olabilir mi?):"
-             sudo dmesg -T | tail -n 30
-             exit 1
-          fi
+          # Ağır perf.data yerine, formatlanmış ve hafifletilmiş perf.inject veriyoruz! RAM patlamayacak.
+          $GITHUB_WORKSPACE/autofdo-bin/create_llvm_prof --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.inject --out=$GITHUB_WORKSPACE/kernel.afdo
           
           if [ ! -f "$GITHUB_WORKSPACE/kernel.afdo" ]; then
-             echo "❌ İşlem başarılı görünüyor ama kernel.afdo dosyası oluşmadı!"
+             echo "❌ Çeviri patladı usta! Alet çalışmadı."
              exit 1
           fi
           
-          echo "✅ PGO Profili (kernel.afdo) Hazir!"
+          echo "✅ PGO Profili (kernel.afdo) Başarıyla Üretildi!"
 
       - name: 🛠️ 4. Kaynakları Çek (Staging Dalı)
         run: |
