@@ -17,12 +17,13 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: 🛠️ 1. Tezgahi Genislet ve Kaynaklari Hazirla
+      - name: 🛠️ 1. Tezgahi Genislet ve SANAL RAM'i Maksimuma Çıkar (Kaba Kuvvet)
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 12
+          # İŞTE BALYOZ BURADA: Sanal RAM tam 24 GB! Toplam 31GB alanla çökme ihtimali bitti.
+          swap-size-gb: 24
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,52 +47,41 @@ jobs:
           rm -f clang.tar.gz
           echo "✅ ZyC Clang Tezgaha Hazir!"
 
-      - name: 🛠️ 3. Orijinal Simpleperf ve AutoFDO ile PGO Çevirisi (Zeka Devrede)
+      - name: 🛠️ 3. Orijinal AutoFDO ile PGO Çevirisi (24GB RAM Devrede)
         run: |
-          echo "🔥 Google Yapay Zekası Asla Pes Etmez! O PGO buraya gelecek..."
-          
-          echo "📦 Ustanin Karnesi ve Haritasi İndiriliyor..."
-          # Dosyanın ismine takılmıyoruz, dükkandaki her şeyi indiriyoruz
-          gh release download Profil-1774880797
-          
-          unzip -o vmlinux-haritasi.zip || true
-          
-          # Ustanın uyarısı: Tar xz ise çıkar, değilse zaten perf.data ortadadır
-          if [ -f "perf.tar.xz" ]; then
-            echo "📦 Tar paketi açılıyor..."
-            tar -xf perf.tar.xz || true
-          fi
-          
-          echo "🔍 perf.data tezgaha alınıyor..."
-          PERF_FILE=$(find . -name "perf.data" | head -n 1)
-          if [ -z "$PERF_FILE" ]; then
-             echo "❌ Usta, perf.data dosyasını bulamadım! İndirilen depoyu bir kontrol et."
-             exit 1
-          fi
-          mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
-          
-          echo "🛠️ Android'in Orijinal Simpleperf Aleti Çekiliyor..."
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/simpleperf $GITHUB_WORKSPACE/simpleperf-tools
-          
-          echo "🧪 Aşama 1: Simpleperf Inject (4.4 GB'ı Hafifletme ve Formatlama)"
-          # İşte RAM'i kurtaracak asıl sihir! O raw veri, RAM'i patlatmayacak şekle (perf.inject) çevriliyor.
-          $GITHUB_WORKSPACE/simpleperf-tools/bin/linux/x86_64/simpleperf inject -i $GITHUB_WORKSPACE/perf.data -o $GITHUB_WORKSPACE/perf.inject --symdir .
-          
-          echo "🔥 Aşama 2: Orijinal AutoFDO Aleti İndiriliyor..."
+          echo "🔥 Orijinal AutoFDO Aleti İndiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/autofdo-bin
           wget -q https://github.com/google/autofdo/releases/download/v0.30.1/create_llvm_prof-x86_64-v0.30.1.zip
           unzip -o create_llvm_prof-x86_64-v0.30.1.zip -d $GITHUB_WORKSPACE/autofdo-bin
           chmod +x $GITHUB_WORKSPACE/autofdo-bin/create_llvm_prof
           
-          echo "⚙️ Aşama 3: Hafifletilmiş Karne Tercüme Ediliyor..."
+          echo "📦 Ustanin Karnesi ve Haritasi İndiriliyor..."
+          gh release download Profil-1774880797
+          
+          echo "🔍 Dosyalar Mutfaga Acılıyor..."
+          unzip -o vmlinux-haritasi.zip || true
+          
+          if [ -f "perf.tar.xz" ]; then
+            echo "📦 Tar paketi açılıyor..."
+            tar -xf perf.tar.xz || true
+          fi
+          
+          PERF_FILE=$(find . -name "perf.data" | head -n 1)
+          if [ -z "$PERF_FILE" ]; then
+             echo "❌ Usta, perf.data dosyasını bulamadım!"
+             exit 1
+          fi
+          mv $PERF_FILE $GITHUB_WORKSPACE/perf.data
+          
+          echo "⚙️ Karne Tercüme Ediliyor... (31GB RAM devrede, bu işlem uzun sürecek, SABIR!)"
           CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
           export PATH="$CLANG_BIN:$PATH"
           
-          # Ağır perf.data yerine, formatlanmış ve hafifletilmiş perf.inject veriyoruz! RAM patlamayacak.
-          $GITHUB_WORKSPACE/autofdo-bin/create_llvm_prof --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.inject --out=$GITHUB_WORKSPACE/kernel.afdo
+          # Hiçbir süzgeç yok, saf okuma! Sanal RAM sayesinde çökmeyecek.
+          $GITHUB_WORKSPACE/autofdo-bin/create_llvm_prof --binary=vmlinux --profile=$GITHUB_WORKSPACE/perf.data --out=$GITHUB_WORKSPACE/kernel.afdo
           
           if [ ! -f "$GITHUB_WORKSPACE/kernel.afdo" ]; then
-             echo "❌ Çeviri patladı usta! Alet çalışmadı."
+             echo "❌ Çeviri patladı usta! Makine RAM duvarını yine aşamadı."
              exit 1
           fi
           
