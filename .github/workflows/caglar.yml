@@ -151,7 +151,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           
           # 🚀 SCHEDULER (Temel İş Yükü Dengesi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -168,14 +168,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # 🚀 BELLEK OPTİMİZASYONLARI (ZRAM + LZ4 + WRITEBACK + MGLRU)
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_BLK_DEV_ZRAM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
-          
           # RAM KURTARICI & SUNUCU KODLARINI İPTAL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
@@ -190,7 +182,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
@@ -216,63 +208,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
-          
-          # ⚙️ Adding Universal Performance Tuning (cat >> defconfig yöntemi)
-          echo "⚙️ Adding Universal Performance Tuning"
-          cat >> $DEFCONFIG <<EOF
-          
-          # Universal Performance Tuning
-          CONFIG_TMPFS_XATTR=y
-          CONFIG_TMPFS_POSIX_ACL=y
-          CONFIG_HZ_300=y
-          CONFIG_HZ=300
-          CONFIG_CPU_FREQ=y
-          CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
-          CONFIG_CPU_FREQ_GOV_ONDEMAND=y
-          # Better I/O & filesystem performance
-          CONFIG_SWAP=y
-          CONFIG_BLK_DEV_ZRAM=y
-          CONFIG_ZRAM_DEF_COMP_LZ4=y
-          CONFIG_ZRAM_WRITEBACK=y
-          CONFIG_ZRAM_MEMORY_TRACKING=y
-          # Modern I/O scheduler
-          CONFIG_MQ_IOSCHED_DEADLINE=y
-          CONFIG_DEFAULT_DEADLINE=y
-          # F2FS optimizations
-          CONFIG_F2FS_FS=y
-          CONFIG_F2FS_FS_XATTR=y
-          CONFIG_F2FS_FS_POSIX_ACL=y
-          CONFIG_F2FS_FS_COMPRESSION=y
-          # Memory management improvements
-          CONFIG_LRU_GEN=y
-          CONFIG_LRU_GEN_ENABLED=y
-          # Networking extras
-          CONFIG_IP_NF_TARGET_TTL=y
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_DEFAULT_BBR=y
-          CONFIG_TCP_CONG_BBR=y
-          CONFIG_TCP_CONG_WESTWOOD=y
-          CONFIG_IP6_NF_TARGET_HL=y
-          CONFIG_IP6_NF_MATCH_HL=y
-          # BBG (baseband-guard)
-          CONFIG_BBG=y
-          EOF
-          
-          # VortexSU = CWKSU değil, debugging configler kapatılacak
-          # KSU tipi kontrol: VortexSU CWKSU olmadığı için debug kapatılır
-          KSU="VortexSU"
-          if [ "$KSU" != "CWKSU" ]; then
-            echo "Disable useless debugging configs for performance and resources"
-            cat >> $DEFCONFIG <<EOF
-          
-          # Disable useless debugging configs for performance and resources
-          CONFIG_UBSAN=n
-          CONFIG_PAGE_OWNER=n
-          CONFIG_RCU_TRACE=n
-          EOF
-          fi
-
+           
       - name: 7. Kernel Derleme
         run: |
           cd common
