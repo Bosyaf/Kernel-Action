@@ -94,28 +94,6 @@ jobs:
           rm -f .ns_inject_tmp
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-
-      - name: 6. Full Kernel Config (Altın Denge ve Usta İşi Ayarlar)
-        run: |
-          cd common
-          
-          # 🔥 300HZ ZORUNLU KILMA (Kconfig Bypass) 🔥
-          HZ_KCONFIG="kernel/Kconfig.hz"
-          if [ -f "$HZ_KCONFIG" ]; then
-            if ! grep -q "CONFIG_HZ_300" "$HZ_KCONFIG"; then
-              echo "📝 HZ_300 Kconfig'e işleniyor..."
-              sed -i '/config HZ_250/,/250 HZ/{ /250 HZ/a\
-          \
-          config HZ_300\
-          \tbool "300 HZ"\
-          \thelp\
-          \t  300 Hz timer tick. Optimized for 120Hz and 60Hz displays.\
-          \t  Provides good balance between latency and overhead for\
-          \t  mobile gaming workloads.
-          }' "$HZ_KCONFIG"
-              sed -i '/default 250 if HZ_250/a\\tdefault 300 if HZ_300' "$HZ_KCONFIG"
-            fi
-          fi
           
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
@@ -134,9 +112,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMEM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU_V3
-          
-          # SVE İPTALİ (Oyun Yükünü Hafifletir)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARM64_SVE
           
           # 🚀 PREEMPT VE HZ (Tam Akıcılık ve Kesinti Yöneticisi)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -187,7 +162,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_UCLAMP_BUCKETS_COUNT 15
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_TUNE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUPS
@@ -264,26 +238,26 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
-          # 🔥 DENGE CFLAGS (-O2) VE LDFLAGS YAMASI İŞLENDİ 🔥
+          # 🔥 DENGE CFLAGS (-O2) KORUNDU, BOOT KİTLEYEN LDFLAGS SİLİNDİ 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -mtune=cortex-x4 -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
-            LDFLAGS="-Wl,--gc-sections -Wl,-O2 -Wl,--as-needed -Wl,--sort-common" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+
 
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
