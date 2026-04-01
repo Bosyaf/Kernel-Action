@@ -135,14 +135,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU_V3
           
-          # 🚀 ARM64 HATA DÜZELTMELERİ (Erratum)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_SPECULATIVE_UNPRIV_LOAD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_2054223
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_2067961
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_PAN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_MTE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_BTI
-          
           # SVE İPTALİ (Oyun Yükünü Hafifletir)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARM64_SVE
           
@@ -195,7 +187,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_UCLAMP_BUCKETS_COUNT 5
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_UCLAMP_BUCKETS_COUNT 15
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_TUNE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUPS
@@ -231,7 +223,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
@@ -304,7 +296,7 @@ jobs:
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-Balanced-Pro.zip" ./*
+          zip -r "../CG-ZyC-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
