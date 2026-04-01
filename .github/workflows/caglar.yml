@@ -95,16 +95,58 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. Full Kernel Config (BUZ GİBİ SERİN AYARLAR)
+      - name: 6. Full Kernel Config (Altın Denge ve Usta İşi Ayarlar)
         run: |
           cd common
+          
+          # 🔥 300HZ ZORUNLU KILMA (Kconfig Bypass) 🔥
+          HZ_KCONFIG="kernel/Kconfig.hz"
+          if [ -f "$HZ_KCONFIG" ]; then
+            if ! grep -q "CONFIG_HZ_300" "$HZ_KCONFIG"; then
+              echo "📝 HZ_300 Kconfig'e işleniyor..."
+              sed -i '/config HZ_250/,/250 HZ/{ /250 HZ/a\
+          \
+          config HZ_300\
+          \tbool "300 HZ"\
+          \thelp\
+          \t  300 Hz timer tick. Optimized for 120Hz and 60Hz displays.\
+          \t  Provides good balance between latency and overhead for\
+          \t  mobile gaming workloads.
+          }' "$HZ_KCONFIG"
+              sed -i '/default 250 if HZ_250/a\\tdefault 300 if HZ_300' "$HZ_KCONFIG"
+            fi
+          fi
+          
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # 🔥 SENİN EFSANE CMDLINE (Performans/Kasan Optimizasyonu) 🔥
+          # 🚀 TEMEL CMDLINE (Performans/Kasan Optimizasyonu)
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
-          # HZ VE PREEMPT (Akıcılık)
+          # 🚀 DONANIM İLETİŞİMİ & QCOM ZIRHLARI (Denge ve İletişim İçin Şart)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_QCOM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SCM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_LLCC # En kritik parça
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_PDC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMEM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU_V3
+          
+          # 🚀 ARM64 HATA DÜZELTMELERİ (Erratum)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_SPECULATIVE_UNPRIV_LOAD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_2054223
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_2067961
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_PAN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_MTE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_BTI
+          
+          # SVE İPTALİ (Oyun Yükünü Hafifletir)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARM64_SVE
+          
+          # 🚀 PREEMPT VE HZ (Tam Akıcılık ve Kesinti Yöneticisi)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -113,26 +155,54 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_DYNAMIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
           
-          # TICK AYARLARI (Batarya ve Isı Dostu)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          # 🚀 TICK AYARLARI (Batarya ve Yüksek Hassasiyet)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_COMMON
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_PERIODIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HIGH_RES_TIMERS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CONTEXT_TRACKING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TICK_CPU_ACCOUNTING
           
-          # 🚀 STANDART ŞANZIMAN (SCHEDUTIL - İsteğin üzerine WALT)
+          # 🚀 ŞANZIMAN VE IDLE (WALT & MENU)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          
-          # DERİN UYKU (CPU Idle + TEO)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DT_IDLE_STATES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_IDLE_GOV_TEO
           
-          # THERMAL: SADECE SENİN İSTEDİKLERİN (Kusursuz Soğutma)
+          # 🚀 THERMAL: KUSURSUZ SOĞUTMA DAĞILIMI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_USER_SPACE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_EMULATION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_THERMAL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_THERMAL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_TSENS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SPMI_TEMP_ALARM
+          
+          # 🚀 SCHEDULER & GÖREV DAĞITICI (İş Yükü Dengesi - X4'e yüklenmez)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_UCLAMP_BUCKETS_COUNT 5
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_TUNE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUPS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUP_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPUSETS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_AUTOGROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT # Arka plan işleri küçük çekirdeğe!
           
           # KPROBES (KernelSU Zorunluluğu)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
@@ -143,23 +213,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # SCHEDULER (SVE İptal)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # 🚀 BELLEK OPTİMİZASYONLARI (ZRAM + MGLRU + THP)
+          # 🚀 BELLEK OPTİMİZASYONLARI (ZRAM + MGLRU)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSMALLOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4HC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRANSPARENT_HUGEPAGE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE
           
-          # RAM KURTARICI & SUNUCU KODLARINI İPTAL (SADECE SENİN LİSTEN)
+          # RAM KURTARICI & SUNUCU KODLARINI İPTAL (Boot Kitleyen Kodlar YOKTUR)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
@@ -224,12 +288,13 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
-          # 🔥 ALTIN DENGE CFLAGS (-O2 + Cortex-X4 Optimizasyonu) 🔥
+          # 🔥 DENGE CFLAGS (-O2) VE LDFLAGS YAMASI İŞLENDİ 🔥
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -mtune=cortex-x4 -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
+            LDFLAGS="-Wl,--gc-sections -Wl,-O2 -Wl,--as-needed -Wl,--sort-common" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -237,18 +302,21 @@ jobs:
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Staging Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
+          # Cihaz uyumluluk kodları eklendi (TWRP Hata Önleyici)
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-Staging-Pro.zip" ./*
+          zip -r "../CG-ZyC-Balanced-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC Clang (Staging Pro - Altın Denge)"
+          name: "CG+ ZyC Clang (Balanced Pro - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
