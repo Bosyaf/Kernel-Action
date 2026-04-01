@@ -102,7 +102,7 @@ jobs:
           # 🔥 300HZ ZORUNLU KILMA (Kconfig Bypass) 🔥
           HZ_KCONFIG="kernel/Kconfig.hz"
           if [ -f "$HZ_KCONFIG" ]; then
-            if ! grep -q "CONFIG_HZ_300" "$HZ_KCONFIG"; then
+            if ! grep -q "^config HZ_300" "$HZ_KCONFIG"; then
               echo "📝 HZ_300 Kconfig'e işleniyor..."
               sed -i '/config HZ_250/,/250 HZ/{ /250 HZ/a\
           \
@@ -118,7 +118,6 @@ jobs:
           fi
           
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-          DEFCONFIG="$CONFIG_FILE"
           
           # 🚀 TEMEL CMDLINE (Performans/Kasan Optimizasyonu)
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
@@ -138,20 +137,25 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           
-          # 🚀 ŞANZIMAN VE IDLE (WALT & MENU)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          # 🚀 CPUFREQ VE IDLE (Houji vendor WALT ile uyumlu)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL || true
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_IDLE_GOV_TEO
           
-          # 🚀 THERMAL: KUSURSUZ SOĞUTMA DAĞILIMI
+          # 🚀 THERMAL: Dengeli Oyun İçin Güvenli Varsayılan
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR || true
           
           # 🚀 SCHEDULER (Temel İş Yükü Dengesi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -180,13 +184,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
           # ÇİNLİ ZIRHLAR & DOSYA SİSTEMİ
@@ -205,10 +208,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+ZyC+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
-           
+
       - name: 7. Kernel Derleme
         run: |
           cd common
@@ -233,23 +236,63 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
+          echo "🔍 WALT / governor config kontrolü:"
+          grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -mtune=cortex-x4 -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: 8. AnyKernel3 + WALT service.d
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          
+          mkdir -p tools
+          
+          cat << 'SVCEOF' > tools/walt_service.sh
+          #!/system/bin/sh
+          # CG+ WALT Balanced PUBG — her boot'ta otomatik
+
+          while [ "$(getprop sys.boot_completed)" != "1" ]; do
+            sleep 1
+          done
+
+          sleep 8
+
+          [ ! -d /proc/sys/walt ] && exit 0
+
+          echo 2 > /proc/sys/walt/sched_boost
+          echo "1 0" > /proc/sys/walt/sched_low_latency
+          echo "1 0" > /proc/sys/walt/sched_pipeline
+          echo 1 > /proc/sys/walt/sched_sbt_enable
+          echo 1 > /proc/sys/walt/sched_force_lb_enable
+          echo 1 > /proc/sys/walt/sched_walt_rotate_big_tasks
+          echo 90 > /proc/sys/walt/walt_rtg_cfs_boost_prio
+          echo 300 > /proc/sys/walt/walt_low_latency_task_threshold
+          echo 48 > /proc/sys/walt/sched_min_task_util_for_uclamp
+          echo "62 62 62" > /proc/sys/walt/sched_upmigrate
+          echo "46 46 46" > /proc/sys/walt/sched_downmigrate
+          SVCEOF
+          chmod +x tools/walt_service.sh
+          
+          cat << 'INSTEOF' >> anykernel.sh
+
+          # CG+ WALT service.d otomatik kurulum
+          if [ -d /data/adb ]; then
+            mkdir -p /data/adb/service.d;
+            cp -f "$home/tools/walt_service.sh" /data/adb/service.d/walt_tuning.sh;
+            chmod 0755 /data/adb/service.d/walt_tuning.sh;
+          fi
+          INSTEOF
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-ZyC-Balanced-Pro.zip" ./*
@@ -262,3 +305,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
