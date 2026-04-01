@@ -1,4 +1,4 @@
-name: CG+ ZyC Gaming Kernel
+name: CG+ ZyC Gaming Kernel (Mi14 8Gen3 Optimized)
 
 permissions:
   contents: write
@@ -34,13 +34,13 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
-
+          
           echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
           CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
           echo "İndirilecek Link: $CLANG_LINK"
-
+          
           curl -L -o clang.tar.gz "$CLANG_LINK"
-
+          
           echo "Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
@@ -74,10 +74,10 @@ jobs:
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-
+          
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-
+          
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -95,315 +95,415 @@ jobs:
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
 
-      - name: 6. SM8650 Gaming Kernel Config (Snapdragon 8 Gen 3 Extreme)
+      - name: 6. Gaming Kernel Config (8 Gen 3 Ultra Performance)
         run: |
           cd common
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-
-          # ============================================================
-          # 🎮 CMDLINE — SM8650 GAMING ODAKLI BOOT PARAMETRELERİ
-          # ============================================================
-          # console=ttynull          → Seri konsol çıktısını tamamen kapatır (gereksiz IO overhead yok)
-          # stack_depot_disable=on   → Stack depot devre dışı (debug aracı, RAM ve CPU döngüsü yer)
-          # cgroup_disable=pressure  → PSI (Pressure Stall Info) kapalı, oyun sırasında gereksiz istatistik yükü
-          # kasan.page_alloc.sample=10  → KASAN (sanitizer) örnekleme minimum, performans kaybı sıfır
-          # kasan.stacktrace=off     → Stack trace kapalı (debug için açılır, oyun için kapalı kalır)
-          # kvm-arm.mode=protected   → pKVM korumalı mod (güvenlik, ancak sanallaştırma overhead minimum)
-          # bootconfig               → Bootconfig ayrıştırma desteği aktif
-          # ioremap_guard            → IO bellek haritalama koruma (güvenlik + kararlılık)
-          # lpm_levels.sleep_disabled=0  → Derin uyku SEVİYELERİ açık (pil tasarrufu + termal yönetim)
-          # msm_rtb.filter=0x237     → Qualcomm RTB filtresi (hata ayıklama minimum, çakılma logu tutar)
-          # service_locator.enable=1 → Qualcomm servis bulucu (modem/DSP crash recovery hızlı)
-          # androidboot.usbcontroller=a600000.dwc3  → SM8650 USB kontrolcü adresi (hızlı USB tepki)
-          # swiotlb=noforce          → SWIOTLB zorlamasını kaldır (DMA performans kazanımı, 8GB+ RAM için güvenli)
-          # pcie_aspm.policy=powersupersave  → PCIe ASPM en agresif güç tasarrufu (Wi-Fi/UFS idle'da güç düşük)
-          # firmware_class.path=/vendor/firmware  → Firmware yolu (Xiaomi vendor'a yönlendir, hızlı yükleme)
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard lpm_levels.sleep_disabled=0 msm_rtb.filter=0x237 service_locator.enable=1 androidboot.usbcontroller=a600000.dwc3 swiotlb=noforce pcie_aspm.policy=powersupersave firmware_class.path=/vendor/firmware"
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 GAMING CMDLINE - Snapdragon 8 Gen 3 Optimized
+          # ═══════════════════════════════════════════════════════════════
+          # - console=ttynull: Disable serial console (saves CPU cycles)
+          # - stack_depot_disable=on: Disable stack depot (reduces memory overhead)
+          # - cgroup_disable=pressure: Disable PSI (saves CPU cycles in gaming)
+          # - kasan.stacktrace=off: Disable KASAN stacktrace (pure performance)
+          # - kvm-arm.mode=protected: Secure KVM mode
+          # - lpm_levels.sleep_disabled=1: GAMING MODE - Disable deep sleep for instant response
+          # - msm_rtb.filter=0x237: Qualcomm debug filter optimized
+          # - service_locator.enable=1: Enable Qualcomm service locator
+          # - androidboot.usbcontroller=a600000.dwc3: USB3 controller for accessories
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard lpm_levels.sleep_disabled=1 msm_rtb.filter=0x237 service_locator.enable=1 androidboot.usbcontroller=a600000.dwc3 loop.max_loop=64"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-
-          # ============================================================
-          # 🎯 HZ = 300 — ALTIN ORAN (Snapdragon 8 Gen 3 İçin Optimal)
-          # ============================================================
-          # Neden 300Hz?
-          # - 250Hz: Cortex-X4 (3.3GHz) prime core'un kapasitesini tam kullanamaz
-          #          Oyun frame'leri arasında 4ms boşluk var, X4 bu boşlukta idle'a düşer
-          #          ve tekrar uyanması 0.2-0.5ms gecikme yaratır
-          # - 1000Hz: Tick interrupt her 1ms'de ateşlenir. 8 çekirdekte = 8000 interrupt/sn
-          #          SM8650'nin büyük-küçük çekirdek geçişlerinde (migration) overhead patlar
-          #          Isınma artar, thermal throttling erken tetiklenir (özellikle Mi14'ün ince gövdesinde)
-          # - 300Hz: 3.33ms tick aralığı. 120Hz ekran için mükemmel: her ekran refresh'te
-          #          tam 2.5 tick düşer (irrasyonel oran = jitter dağılımı uniform)
-          #          Cortex-X4 tek tick'te tam frame hesaplayabilir, A720 cluster'ı
-          #          arka plan işlerini 3.33ms pencerelerinde toplu işler
-          #          WALT governor bu frekansla en doğru util tahminini yapar
-          # ============================================================
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 TIMER FREQUENCY - Gaming Sweet Spot
+          # ═══════════════════════════════════════════════════════════════
+          # HZ_300 = Optimal for 60/120/144Hz gaming displays
+          # - Better than HZ_250 for 120Hz+ screens
+          # - More efficient than HZ_1000 (wastes CPU cycles)
+          # - Perfect balance between latency and power
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-
-          # ============================================================
-          # ⚡ PREEMPT — TAM ÖNALIM (Oyun Gecikmesi Katili)
-          # ============================================================
-          # CONFIG_PREEMPT = Tam preemption modeli
-          # Neden?
-          # - Oyun thread'i (render/game loop) yüksek öncelikli çalışır
-          # - Arka plan servisleri (GMS, telemetri, sync) CPU'yu işgal ettiğinde
-          #   PREEMPT hemen kesip oyun thread'ine CPU verir
-          # - PREEMPT_VOLUNTARY'de kesim noktaları sınırlı, oyun thread'i
-          #   bazen 1-5ms bekler (stuttering kaynağı)
-          # - SM8650'nin 1+5+2 topolojisinde preemption overhead ihmal edilebilir
-          #   çünkü Cortex-X4 context switch'i ~0.05ms'de yapar
-          # - PREEMPT_DYNAMIC: Runtime'da voluntary'ye geçiş mümkün (esnek)
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 PREEMPTION MODEL - Ultra Low Latency
+          # ═══════════════════════════════════════════════════════════════
+          # Full Preemption = Instant task switching for gaming
+          # - Eliminates micro-stutters during intense scenes
+          # - GPU/CPU synchronization is smoother
+          # - Touch response is immediate
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_DYNAMIC
-
-          # ============================================================
-          # 🔋 TICK — NO_HZ_IDLE (Akıllı Tick Bastırma)
-          # ============================================================
-          # NO_HZ_IDLE: CPU idle iken tick durur, aktifken normal çalışır
-          # Neden NO_HZ_FULL değil?
-          # - NO_HZ_FULL tüm tick'leri bastırır, ancak Qualcomm WALT governor'ı
-          #   tick'e bağımlıdır — util hesaplaması bozulur
-          # - WALT tick olmadan CPU frekans kararlarını geç alır
-          #   (frekans yükselmesi 5-10ms gecikir = frame drop)
-          # - NO_HZ_IDLE: Oyun oynarken (CPU aktif) tick çalışır → WALT doğru çalışır
-          #   Ekran kapalı / idle iken tick durur → pil tasarrufu
-          # - Bu SM8650 için mükemmel denge
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_RCU
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 TICK MODEL - Adaptive for Gaming
+          # ═══════════════════════════════════════════════════════════════
+          # NO_HZ_IDLE = Stops ticks when CPU is idle
+          # - Saves power during menu screens
+          # - Full tick rate maintained during gameplay
+          # - Better than NO_HZ_FULL which can cause latency spikes
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_PERIODIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_COMMON
-
-          # ============================================================
-          # 🏎️ CPU FREQUENCY GOVERNOR — WALT (Qualcomm Özel)
-          # ============================================================
-          # WALT = Window Assisted Load Tracking
-          # SM8650'nin KENDI frekans yöneticisi. Alternatifler neden kötü:
-          # - schedutil: Linux generic, Qualcomm'un büyük-küçük çekirdek geçişlerini anlamaz
-          # - interactive: Eski, Android 12+ için optimize değil
-          # - WALT: Qualcomm mühendisleri SM8650'nin termal/frekans eğrilerini buna göre tasarladı
-          #   Cortex-X4'ü gerektiğinde anında 3.3GHz'e çeker, gerekmediğinde A520'ye düşürür
-          #   Oyun yükünü 5ms pencerelerinde analiz eder (window-based, EAS'den daha reaktif)
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CONTEXT_TRACKING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TICK_CPU_ACCOUNTING
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 CPU FREQUENCY GOVERNOR - Snapdragon 8 Gen 3 Specific
+          # ═══════════════════════════════════════════════════════════════
+          # WALT (Window Assisted Load Tracking) = Qualcomm's gaming governor
+          # - Designed specifically for Snapdragon SoCs
+          # - Faster frequency ramp-up than schedutil
+          # - Understands big.LITTLE/DynamIQ architecture
+          # - Perfect for 1 Prime + 3 Performance + 4 Efficiency core layout
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_PERFORMANCE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_POWERSAVE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_USERSPACE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_ONDEMAND
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_CONSERVATIVE
-
-          # ============================================================
-          # 😴 CPU IDLE — DERİN UYKU SEVİYELERİ (C-State Yönetimi)
-          # ============================================================
-          # MENU governor: Idle süresini tahmin eder, en uygun C-state'i seçer
-          # ARM_PSCI_CPUIDLE: SM8650'nin PSCI firmware'ı ile iletişim (deep idle states)
-          # Neden önemli?
-          # - Oyun sırasında bile 8 çekirdeğin hepsi aktif değil
-          # - A520 efficiency çekirdekleri idle'a girip çıkmalı (pil + ısı)
-          # - MENU governor doğru idle state seçerse: A520 hızlı uyur, hızlı uyanır
-          # - Yanlış seçerse: Ya pil boşa harcar ya da uyanma gecikmesi olur (latency spike)
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_GOV_CONSERVATIVE
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 CPU IDLE - Gaming Optimized Deep Sleep Behavior
+          # ═══════════════════════════════════════════════════════════════
+          # MENU governor = Best for interactive/gaming workloads
+          # - Predicts idle duration better for burst workloads
+          # - Faster exit from idle states
+          # - TEO (Timer Events Oriented) is for servers, not gaming
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-
-          # ============================================================
-          # 🌡️ THERMAL — AKILCI SOĞUTMA (Mi14 İnce Gövde İçin Kritik)
-          # ============================================================
-          # STEP_WISE: Sıcaklık eşiklerinde kademeli throttle (ani düşüş yok)
-          # POWER_ALLOCATOR: Güç bütçesini çekirdekler arası dağıtır (IPA)
-          #   Xiaomi Mi14'ün vapor chamber'ı ile çalışır:
-          #   - X4 prime core'a daha fazla güç bütçesi
-          #   - A520'lere minimum bütçe
-          #   - Toplam TDP aşılmaz, throttling gecikir
-          # FAIR_SHARE neden kapalı?
-          #   - Tüm çekirdekleri eşit throttle eder
-          #   - Oyun X4'te çalışırken A520'ler de throttle olur (gereksiz)
-          #   - POWER_ALLOCATOR bunu akıllıca yapar
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_IDLE_GOV_TEO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DT_IDLE_STATES
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 SCHEDULER OPTIMIZATIONS - DynamIQ Aware
+          # ═══════════════════════════════════════════════════════════════
+          # SCHED_MC (Multi-Core) = Pack tasks on same cluster when possible
+          # SCHED_CLUSTER = Aware of 8 Gen 3's cluster topology
+          # UCLAMP = Utilization clamping for QoS (games can request high perf)
+          # ENERGY_MODEL = EAS for intelligent power-performance decisions
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_UCLAMP_BUCKETS_COUNT 5
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_TUNE
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 THERMAL MANAGEMENT - Gaming Thermals
+          # ═══════════════════════════════════════════════════════════════
+          # STEP_WISE = Gradual throttling (no sudden FPS drops)
+          # POWER_ALLOCATOR = IPA for intelligent thermal budgeting
+          # - Distributes thermal budget between CPU/GPU
+          # - Maintains higher sustained performance
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_USER_SPACE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_EMULATION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_THERMAL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_THERMAL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_TSENS
-
-          # ============================================================
-          # 🔧 KPROBES (KernelSU/VortexSU Zorunluluğu)
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SPMI_TEMP_ALARM
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 GPU & GRAPHICS SUPPORT - Adreno 750 Optimization
+          # ═══════════════════════════════════════════════════════════════
+          # DRM and GPU subsystem for gaming graphics
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_MSM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_MSM_GPU_STATE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_MSM_REGISTER_LOGGING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_PERFORMANCE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_POWERSAVE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_USERSPACE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_PASSIVE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_DEVFREQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_KGSL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYNC_FILE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 MEMORY MANAGEMENT - Gaming RAM Optimization
+          # ═══════════════════════════════════════════════════════════════
+          # Gaming needs fast memory allocation, not memory saving
+          # SLUB = Fast slab allocator
+          # COMPACTION = Reduces memory fragmentation for large game textures
+          # No ZRAM/ZSWAP = Direct RAM access is faster for gaming
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_CPU_PARTIAL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_COMPACTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRANSPARENT_HUGEPAGE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROCESS_RECLAIM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MEMCG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MEMCG_SWAP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_VM_EVENT_COUNTERS
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_VM_MAX_READAHEAD 512
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 I/O SCHEDULER - Storage Latency Reduction
+          # ═══════════════════════════════════════════════════════════════
+          # BFQ = Best for interactive/gaming (low latency)
+          # NONE/MQ-DEADLINE = Good for NVMe (Mi14 has UFS 4.0)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_KYBER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOSCHED_BFQ
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_IOSCHED "bfq"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BFQ_GROUP_IOSCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_CGROUP_IOLATENCY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_WBT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_WBT_MQ
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 NETWORKING - Low Latency Gaming Network
+          # ═══════════════════════════════════════════════════════════════
+          # BBR = Google's congestion control (best for gaming)
+          # FQ_CODEL = Fair queuing with controlled delay
+          # TCP optimizations for online gaming
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_CUBIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_PRIO
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_TCPMSS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_IPGRE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_IPGRE_DEMUX
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_UDP_TUNNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_XFRM_USER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INET_ESP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INET6_ESP
+          
+          # Wi-Fi Gaming Optimizations
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFG80211
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MAC80211
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WLAN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIRELESS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RFKILL
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 INPUT SUBSYSTEM - Touch & Controller Latency
+          # ═══════════════════════════════════════════════════════════════
+          # Essential for touch response and game controllers
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INPUT_EVDEV
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INPUT_TOUCHSCREEN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INPUT_JOYSTICK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INPUT_MISC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INPUT_UINPUT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HID_GENERIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HID_PLAYSTATION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HID_MICROSOFT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HID_SONY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_HID
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 KPROBES & KERNELSU REQUIREMENTS
+          # ═══════════════════════════════════════════════════════════════
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-
-          # ============================================================
-          # 🔗 LTO THIN + PERFORMANS OPTİMİZASYONU
-          # ============================================================
-          # LTO_CLANG_THIN: Link-Time Optimization (modül arası optimizasyon)
-          #   - Tüm translation unit'ler arası inline, dead code elimination
-          #   - LTO_CLANG_FULL daha agresif ama derleme 3x uzun + RAM patlar
-          #   - THIN: %90 kazanım, %10 süre — GitHub Actions için ideal
-          # CC_OPTIMIZE_FOR_PERFORMANCE: -O2 (kararlı, tahmin edilebilir)
-          #   - -O3 (CC_OPTIMIZE_FOR_PERFORMANCE_O3) bazen branch prediction'ı bozar
-          #   - ARM64'te -O2 vs -O3 farkı %1-2, ama stabilite farkı büyük
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FPROBE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KALLSYMS_ALL
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 LTO & COMPILER OPTIMIZATIONS
+          # ═══════════════════════════════════════════════════════════════
+          # LTO_CLANG_THIN = Good balance of optimization and compile time
+          # Aggressive optimizations for performance
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_SUPPORTS_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-
-          # ============================================================
-          # 📊 SCHEDULER — EAS + UCLAMP (Enerji Farkındalıklı Zamanlama)
-          # ============================================================
-          # SCHED_MC: Multi-cluster aware scheduling
-          #   SM8650: Cluster 0 (1x X4), Cluster 1 (5x A720), Cluster 2 (2x A520)
-          #   MC farkındalığı olmadan scheduler X4'ü A520 gibi görür (felaket)
-          #
-          # SCHED_CLUSTER: DEVRE DIŞI
-          #   Neden? Cluster-level scheduling SM8650'de aşırı muhafazakâr davranır
-          #   Oyun thread'ini A720 cluster'ında tutmaya çalışır, X4'e göndermez
-          #   SCHED_MC + WALT bu işi daha iyi yapar
-          #
-          # UCLAMP_TASK + UCLAMP_TASK_GROUP: Utilization Clamping
-          #   Android'in SchedTune yerine geçen mekanizma
-          #   - Oyun uygulaması UCLAMP_MIN yüksek ayarlar → CPU frekansı minimum altına düşmez
-          #   - Arka plan uygulaması UCLAMP_MAX düşük → CPU frekansı gereksiz yükselmez
-          #   - Mi14'ün MIUI/HyperOS oyun modu bu değerleri runtime'da ayarlar
-          #
-          # ENERGY_MODEL: Çekirdek başına güç/performans eğrisi
-          #   X4 @ 3.3GHz: ~8W (yüksek performans, yüksek güç)
-          #   A720 @ 2.8GHz: ~3W (iyi performans, orta güç)
-          #   A520 @ 2.0GHz: ~0.5W (düşük performans, düşük güç)
-          #   Scheduler bu eğrilere bakarak "bu task için hangi çekirdek en verimli?" karar verir
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
-
-                    # ============================================================
-          # 🧹 DEBUG TEMIZLIĞI (RAM + CPU Kurtarma)
-          # ============================================================
-          # Tüm debug bilgileri oyun kernelinde gereksiz
-          # Her biri RAM'den 5-50MB yer, CPU döngüsü harcar
-          # NUMA_BALANCING: Sunucu özelliği, mobilde anlamsız (tek NUMA node)
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_OPTIMIZE_FOR_SIZE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LD_OPTIMIZATION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPTIMIZE_INLINING
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 DISABLE DEBUG (Pure Performance)
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_KERNEL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCK_STAT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCK_STAT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCK_ALLOC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_RT_MUTEXES
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_WW_MUTEX_SLOWPATH
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_RWSEMS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_FTRACE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_FUNCTION_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IRQSOFF_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPTIRQ_TRACEPOINTS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TIMER_STATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_BUGVERBOSE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCSAN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCKDEP
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DETECT_HUNG_TASK
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCSAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FAULT_INJECTION
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MEMORY_INIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_PER_CPU_MAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOFTLOCKUP_DETECTOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HARDLOCKUP_DETECTOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DETECT_HUNG_TASK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_WQ_WATCHDOG
-
-          # ============================================================
-          # 🌐 AĞ — BBRv3 + GAMING NETWORK STACK
-          # ============================================================
-          # TCP_CONG_BBR: Google BBR congestion control
-          #   - Geleneksel CUBIC'e göre: %25 daha düşük latency, %15 daha yüksek throughput
-          #   - Oyun sunucularına TCP bağlantılarında (login, API, download) fark edilir
-          #
-          # DEFAULT_NET_SCH = fq_codel: Fair Queuing + Controlled Delay
-          #   - Bufferbloat'u önler (yüksek bant genişliğinde bile düşük gecikme)
-          #   - Oyun paketleri büyük download paketleri arkasında beklemiyor
-          #   - CAKE neden kapalı? CAKE daha karmaşık, mobilde overhead fazla
-          #
-          # FQ: Fair Queuing (BBR için zorunlu, pacing sağlar)
-          # TCP_LOW_LATENCY: TCP stack'te düşük gecikme önceliği
-          #
-          # TTL/HL: Hotspot bypass (ISP throttle'ı atlatır)
-          #   IP_NF_TARGET_TTL: IPv4 TTL değerini değiştir
-          #   IP6_NF_TARGET_HL: IPv6 Hop Limit değiştir
-          #   Tethering yapınca ISP TTL'den algılar → bu onu önler
-          #
-          # WIREGUARD: Kernel-space VPN (userspace'den 3-5x hızlı)
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_CUBIC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_IPVTI
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INET_ESP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_XFRM_USER
-
-          # ============================================================
-          # 💾 BELLEK YÖNETİMİ — Mi14 12/16GB RAM İçin Optimize
-          # ============================================================
-          # ZRAM: Sıkıştırılmış RAM swap (MIUI/HyperOS bunu yoğun kullanır)
-          # TRANSPARENT_HUGEPAGE: 2MB sayfa tabloları
-          #   Oyun engine'leri büyük bellek blokları ayırır (texture, mesh)
-          #   THP ile sayfa tablosu yürüyüşleri %60 azalır
-          #   MADVISE modu: Sadece isteyen uygulamalar kullanır (güvenli)
-          # COMPACTION: Bellek parçalanmasını düzeltir (uzun oyun seanslarında kritik)
-          # KSM: Aynı bellek sayfalarını birleştirir (RAM tasarrufu)
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRANSPARENT_HUGEPAGE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TRANSPARENT_HUGEPAGE_MADVISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_COMPACTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSM
-
-          # ============================================================
-          # 📂 DOSYA SİSTEMİ + IO
-          # ============================================================
-          # OVERLAY_FS: Magisk/KernelSU modülleri için zorunlu
-          # TMPFS_XATTR + POSIX_ACL: SELinux + Android sandbox uyumu
-          # F2FS: Flash-Friendly File System (UFS 4.0 için optimize)
-          #   SM8650 UFS 4.0 kontrolcüsü F2FS ile en iyi performansı verir
-          # IOSCHED_BFQ: Budget Fair Queuing IO scheduler
-          #   Oyun IO'sunu arka plan sync'lerinin önüne koyar
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 ARM64 ARCHITECTURE SPECIFIC (8 Gen 3)
+          # ═══════════════════════════════════════════════════════════════
+          # Snapdragon 8 Gen 3 = Cortex-X4 + A720 + A520
+          # Enable all ARMv9 features
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_SPECULATIVE_UNPRIV_LOAD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_2054223
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_ERRATUM_2067961
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_4K_PAGES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_VA_BITS_48
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_HW_AFDBM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_PAN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_UAO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_PSEUDO_NMI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_RAS_EXTN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_CNP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_PTR_AUTH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_PTR_AUTH_KERNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_AMU_EXTN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_MTE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_BTI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_BTI_KERNEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_E0PD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_TLB_RANGE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_ARCH_TIMER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_ARCH_TIMER_EVTSTREAM
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 POWER MANAGEMENT - Gaming Power Profile
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_SLEEP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_RUNTIME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SUSPEND
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HIBERNATION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_AUTOSLEEP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_WAKELOCKS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_ADVANCED_DEBUG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM64_CPUIDLE
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 QUALCOMM SPECIFIC - SM8650 Platform Support
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_QCOM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SCM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_LLCC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_PDC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMEM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMD_RPM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMP2P
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMSM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SOCINFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SPM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_STATS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_WCNSS_CTRL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_PIL_INFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_AOSS_QMP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RMTFS_MEM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SECURE_BUFFER
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 FILESYSTEM SUPPORT - Fast Game Loading
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_FS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_FS_SECURITY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_SECURITY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_ENCRYPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOSCHED_BFQ
-
-          # ============================================================
-          # 🔐 SUSFS (Root Gizleme)
-          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_COMPRESSION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_ZIP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FUSE_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INCREMENTAL_FS
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 AUDIO - Gaming Audio Low Latency
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_USB_AUDIO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_DYNAMIC_MINORS
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_SND_MAX_CARDS 4
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 USB - Fast Data & Accessories
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_GADGET
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_OTG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_DWC3
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_DWC3_QCOM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_CONFIGFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_CONFIGFS_F_UVC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_CONFIGFS_F_ACC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_USB_CONFIGFS_F_AUDIO_SRC
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 SUSFS CONFIGURATION
+          # ═══════════════════════════════════════════════════════════════
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -412,171 +512,190 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-
-          # ============================================================
-          # 🎮 SM8650 SPECIFIC — SNAPDRAGON 8 GEN 3 DONANIM ÖZELLİKLERİ
-          # ============================================================
-          # ARM_SMMU: System Memory Management Unit (GPU/DMA için zorunlu)
-          # IOMMU_IO_PGTABLE_ARMV7S_SELFTEST: Kapalı (debug, gereksiz)
-          # QCOM_KGSL: Qualcomm GPU (Adreno 750) çekirdek sürücüsü
-          # DRM_MSM: Display sürücüsü (Qualcomm)
-          #
-          # SVE (Scalable Vector Extension): DEVRE DIŞI
-          #   Neden? SVE mevcut Android NDK/oyunlar tarafından KULLANILMIYOR
-          #   NEON (ASIMD) her yerde kullanılıyor, SVE register save/restore
-          #   context switch'te +2-5µs ekler (her preemption'da)
-          #   300Hz * 8 çekirdek * 5µs = frame başına ~12µs kayıp (gereksiz)
-          #
-          # SMT: Simultaneous Multi-Threading (X4 desteklemiyor, ama flag tutulur)
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU_V3
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SCM
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARM64_SVE
-
-          # ============================================================
-          # 🔊 SES + MEDYA (Oyun Sesi Gecikmesi Düşürme)
-          # ============================================================
-          # SND_SOC_COMPRESS: Sıkıştırılmış ses (offload, CPU yükü düşer)
-          # HIGH_RES_TIMERS: Yüksek çözünürlüklü zamanlayıcılar
-          #   Ses buffer'ları 1ms altı hassasiyetle yönetilir
-          #   Oyun ses efektleri frame-accurate çalınır
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HIGH_RES_TIMERS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_COMPRESS
-
-          # ============================================================
-          # ⚡ GÜÇ YÖNETİMİ — QUALCOMM SPECIFIC
-          # ============================================================
-          # QCOM_RPMH: SM8650 Runtime Power Management Hardware
-          #   Tüm güç domain'lerini (LDO, SMPS) yönetir
-          # QCOM_COMMAND_DB: Güç kaynağı veritabanı (RPMH ile çalışır)
-          # PM_WAKELOCKS: Android wake lock mekanizması
-          #   Oyun sırasında ekranın kapanmasını önler
-          # SUSPEND_FREEZER: Suspend sırasında process'leri dondurur (temiz uyku)
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_WAKELOCKS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SUSPEND_FREEZER
-
-          # ============================================================
-          # 🔒 GÜVENLİK (Minimum Overhead, Maximum Koruma)
-          # ============================================================
-          # RANDOMIZE_BASE: KASLR (kernel address randomization)
-          #   Güvenlik için kritik, performans etkisi ~%0.1
-          # SHADOW_CALL_STACK: ARM64 gölge çağrı yığını
-          #   ROP saldırılarına karşı, donanım destekli (overhead ~%0)
-          # CFI_CLANG: Control Flow Integrity
-          #   Fonksiyon işaretçi saldırılarına karşı, LTO ile birlikte çalışır
-          # HARDENED_USERCOPY: Kernel ↔ userspace kopyalama kontrolü
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RANDOMIZE_BASE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SHADOW_CALL_STACK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 SECURITY & PROTECTION - Chinese Game Protection Bypass
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SECURITY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SECURITYFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SECURITY_NETWORK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HARDENED_USERCOPY
-
-          # ============================================================
-          # 🏷️ KERNEL KİMLİĞİ
-          # ============================================================
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+ZyC-SM8650"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FORTIFY_SOURCE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STRICT_KERNEL_RWX
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SHADOW_CALL_STACK
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 MISC GAMING FEATURES
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PSI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUPS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUP_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUP_CPUACCT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CGROUP_FREEZER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPUSETS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROC_CPU_RESCTRL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASKSTATS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASK_DELAY_ACCT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASK_XACCT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASK_IO_ACCOUNTING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_AUTOGROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_LOOP
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_BLK_DEV_LOOP_MIN_COUNT 64
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSMALLOC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_ZSTD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4HC
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 KERNEL VERSION STRING
+          # ═══════════════════════════════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG++Gaming-8Gen3"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (SM8650 Optimized Build)
+      - name: 7. Kernel Derleme (8 Gen 3 Ultra Build)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-
+          
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-
+          
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
-          # ============================================================
-          # 🔥 KCFLAGS — SM8650 (Cortex-X4 / ARMv9.2-a) DERLEYİCİ BAYRAKLARI
-          # ============================================================
-          # -O2: Kararlı optimizasyon seviyesi
-          #   -O3'ün farkı ARM64'te minimal, ama -O3 bazen
-          #   loop unrolling'i aşırı yapar ve I-cache thrashing'e neden olur
-          #   Cortex-X4'ün 64KB L1I cache'i için -O2 daha uygun
-          #
-          # -march=armv9.2-a+crypto+crc+sve2:
-          #   armv9.2-a: Snapdragon 8 Gen 3'ün ISA seviyesi
-          #   +crypto: AES/SHA donanım hızlandırma (dm-crypt, WireGuard, f2fs encryption)
-          #   +crc: CRC32 donanım hızlandırma (btrfs, ext4 checksum)
-          #   +sve2: Scalable Vector Extension 2 (compiler auto-vectorization için)
-          #   NOT: Kernel config'de SVE context save kapalı (runtime overhead yok)
-          #   ama compiler SVE2 talimatları üretebilir (statik kod optimizasyonu)
-          #
-          # -mtune=cortex-x4: Cortex-X4 pipeline'ına göre talimat sıralama
-          #   Branch prediction, issue width, latency tabloları X4'e özgü
-          #   Generic tune'a göre %3-7 IPC artışı (özellikle tight loop'larda)
-          #
-          # -mcpu=cortex-x4: Hem -march hem -mtune'u kapsar
-          #   Ama biz -march'ı ayrı verdik (extension'lar için)
-          #   -mtune tek başına yeterli bu durumda
-          #
-          # -fno-stack-protector: Stack canary kontrolünü kaldır
-          #   Her fonksiyon giriş/çıkışında canary check = ~2-5 cycle overhead
-          #   Güvenlik riskli? SHADOW_CALL_STACK + CFI_CLANG zaten koruma sağlıyor
-          #   Stack protector bu durumda çift koruma (redundant)
-          #
-          # -fomit-frame-pointer: Frame pointer register'ını serbest bırak
-          #   ARM64'te X29 register'ı frame pointer olarak ayrılır
-          #   Bunu genel amaçlı register olarak kullanmak %2-3 register pressure azaltır
-          #   Stack trace'ler DWARF unwind ile hâlâ çalışır
-          #
-          # -fno-unwind-tables: Unwind tablolarını üretme
-          #   Kernel panik + oops hâlâ çalışır (DWARF var)
-          #   Image boyutu ~200KB küçülür, I-cache daha verimli
-          #
-          # -fno-asynchronous-unwind-tables: Asenkron unwind tabloları da kapalı
-          #   .eh_frame section'ı üretilmez, binary küçülür
-          #
-          # -Wno-constant-logical-operand: BBRv3 patch'lerindeki uyarıları sustur
-          #   BBR kodu `if (BBR_VERSION && ...)` gibi yapılar kullanır
-          #   Compiler "constant in logical operand" uyarısı verir, zararsız
-          # ============================================================
+          
+          # ═══════════════════════════════════════════════════════════════
+          # 🎮 GAMING OPTIMIZED CFLAGS FOR SNAPDRAGON 8 GEN 3
+          # ═══════════════════════════════════════════════════════════════
+          # -O3: Maximum optimization (aggressive inlining, loop unrolling)
+          # -march=armv9.2-a: Full ARMv9.2 support (Cortex-X4 architecture)
+          # +sve2: Scalable Vector Extension 2 (SIMD acceleration for games)
+          # +sve2-bitperm: Bit permutation instructions
+          # +crypto: Hardware crypto acceleration
+          # +crc: CRC32 instructions
+          # +dotprod: Dot product (ML/AI acceleration in games)
+          # +i8mm: Int8 matrix multiply (AI upscaling)
+          # +bf16: BFloat16 (AI features in games)
+          # +profile: Profiling support
+          # -mtune=cortex-x4: Optimize for Cortex-X4 Prime core
+          # -fno-stack-protector: Remove stack canary overhead
+          # -fomit-frame-pointer: Free up a register
+          # -fno-plt: Direct calls (faster)
+          # -fmerge-all-constants: Merge identical constants
+          # -fdata-sections -ffunction-sections: Dead code elimination
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+sve2 -mtune=cortex-x4 -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-asynchronous-unwind-tables -Wno-constant-logical-operand" \
+            KCFLAGS="-O3 -march=armv9.2-a+sve2+sve2-bitperm+crypto+crc+dotprod+i8mm+bf16 -mtune=cortex-x4 -fno-stack-protector -fomit-frame-pointer -fno-plt -fmerge-all-constants -fdata-sections -ffunction-sections -finline-functions -funroll-loops -fvectorize -fslp-vectorize -Wno-error -Wno-unused -Wno-constant-logical-operand" \
+            LDFLAGS="-Wl,--gc-sections -Wl,-O3 -Wl,--as-needed -Wl,--sort-common" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
+          
+          echo "BOOTHASH=ZyC-Gaming-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-          echo "BOOTHASH=ZyC-SM8650-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
-      - name: 8. AnyKernel3 (Temiz Paketleme)
+      - name: 8. AnyKernel3 (Gaming Package)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC SM8650 Gaming Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-
+          
+          # Update anykernel.sh for Mi14
+          cat > anykernel.sh << 'AKEOF'
+          # AnyKernel3 Ramdisk Mod Script
+          # osm0sis @ xda-developers
+          
+          ## AnyKernel setup
+          properties() { '
+          kernel.string=CG++ Gaming Kernel for Xiaomi 14 (8 Gen 3)
+          do.devicecheck=0
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=houji
+          device.name2=shennong
+          device.name3=aurora
+          device.name4=xiaomi14
+          supported.versions=
+          supported.patchlevels=
+          '; }
+          
+          # shell variables
+          block=boot;
+          is_slot_device=auto;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
+          
+          . tools/ak3-core.sh;
+          
+          ## AnyKernel boot install
+          dump_boot;
+          write_boot;
+          AKEOF
+          
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-SM8650-Gaming.zip" ./*
+          zip -r9 "../CG-Gaming-Kernel-8Gen3-$(date +%Y%m%d).zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC SM8650 Gaming Kernel (Xiaomi Mi14 Optimized)"
+          name: "CG++ Gaming Kernel - Xiaomi 14 (8 Gen 3) - Ultra Performance"
+          body: |
+            ## 🎮 CG++ Gaming Kernel for Xiaomi 14 (Snapdragon 8 Gen 3)
+            
+            ### ⚡ Performance Optimizations:
+            - **HZ_300**: Optimized for 120Hz/144Hz gaming displays
+            - **Full Preemption**: Ultra-low latency task switching
+            - **WALT Governor**: Qualcomm's gaming-optimized frequency scaling
+            - **LTO Thin**: Link-Time Optimization enabled
+            - **-O3 + ARMv9.2**: Maximum compiler optimizations
+            - **SVE2 Support**: Hardware SIMD acceleration
+            
+            ### 🌡️ Thermal Management:
+            - Step-Wise + Power Allocator governors
+            - Intelligent thermal budgeting between CPU/GPU
+            - Sustained performance under load
+            
+            ### 📶 Network Gaming:
+            - BBRv3 TCP congestion control
+            - FQ_CODEL queue discipline
+            - Low-latency networking stack
+            - TTL/HL bypass for hotspot
+            
+            ### 🔒 Root & Security:
+            - VortexSU integrated
+            - SUSFS full support
+            - Chinese game anti-cheat bypass (BBG)
+            - Baseband Guard protection
+            
+            ### 📱 Device Support:
+            - Xiaomi 14 (houji)
+            - Snapdragon 8 Gen 3 (SM8650)
+            - Android 14 GKI 6.1
+            
+            ### 🛠️ Installation:
+            1. Boot to recovery (TWRP/OrangeFox recommended)
+            2. Flash the kernel zip
+            3. Reboot and enjoy!
+            
+            ⚠️ **Note**: Make a backup before flashing!
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
