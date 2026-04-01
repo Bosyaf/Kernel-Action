@@ -214,12 +214,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
           # 🚀 BELLEK OPTİMİZASYONLARI (ZRAM + MGLRU)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSMALLOC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4HC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
           
