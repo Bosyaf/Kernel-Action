@@ -14,6 +14,7 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
+      CONFIG_FILE: "out/.config"
 
     steps:
       - name: Maximize Space
@@ -42,8 +43,8 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           
           echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
           rm -f clang.tar.gz
 
       - name: 2. Kaynakları Çek (Yeni Staging Dalı)
@@ -63,7 +64,11 @@ jobs:
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+
+          if [ -f "$GITHUB_WORKSPACE/patches/bbrv3.patch" ]; then
+            patch -p1 --fuzz=3 < "$GITHUB_WORKSPACE/patches/bbrv3.patch" || true
+          fi
+
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
@@ -92,126 +97,8 @@ jobs:
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-          
-          # 🚀 TEMEL CMDLINE (Performans/Kasan Optimizasyonu)
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
-          # 🚀 PREEMPT VE HZ (Temel Kesinti Yöneticisi)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          # 🚀 TICK AYARLARI (Batarya)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          
-          # 🚀 ŞANZIMAN VE IDLE (WALT, SCHEDUTIL, ONDEMAND)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_ONDEMAND
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_IDLE_GOV_TEO
-          
-          # 🚀 I/O ŞANZIMANI VE DOSYA SİSTEMİ (Deadline & F2FS)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_DEADLINE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_COMPRESSION
-          
-          # 🚀 THERMAL: KUSURSUZ SOĞUTMA DAĞILIMI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-
-          
-          # 🚀 SCHEDULER (Temel İş Yükü Dengesi)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # KPROBES (KernelSU Zorunluluğu)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-         
-          # LTO THIN (Güvenli Optimizasyon)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-          
-          # 🚀 BELLEK OPTİMİZASYONLARI (ZRAM + LZ4 + WRITEBACK + TRACKING + MGLRU)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BLK_DEV_ZRAM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_MEMORY_TRACKING
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LRU_GEN_ENABLED
-          
-          # RAM KURTARICI & SUNUCU KODLARINI İPTAL (UBSAN vb. Çöpler Kapatıldı)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_TRACE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # AĞ & HOTSPOT KORUMASI (TCP Westwood + BBR)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_BBR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_LOW_LATENCY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          
-          # ÇİNLİ ZIRHLAR & DOSYA SİSTEMİ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-          # SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
           sed -i 's/check_defconfig//' build.config.gki || true
 
       - name: 7. Kernel Derleme
@@ -233,19 +120,122 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
+          
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_HZ_100
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_HZ_250
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_HZ_300
+          ./scripts/config --file "$CONFIG_FILE" --set-val CONFIG_HZ 300
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_HZ_1000
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_PREEMPT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_PREEMPT_BUILD
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_NO_HZ_FULL
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CPU_FREQ
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CPU_FREQ_GOV_ONDEMAND
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CPU_IDLE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ARM_PSCI_CPUIDLE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ARM_CPUIDLE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CPU_IDLE_GOV_MENU
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_CPU_IDLE_GOV_TEO
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MQ_IOSCHED_DEADLINE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DEFAULT_DEADLINE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_F2FS_FS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_F2FS_FS_XATTR
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_F2FS_FS_POSIX_ACL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_F2FS_FS_COMPRESSION
+          
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_THERMAL_GOV_STEP_WISE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_SCHED_MC
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ENERGY_MODEL
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KPROBES
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_HAVE_KPROBES
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KPROBE_EVENTS
+         
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_SWAP
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_BLK_DEV_ZRAM
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CRYPTO_LZ4
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM_WRITEBACK
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM_MEMORY_TRACKING
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LRU_GEN
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LRU_GEN_ENABLED
+          
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_UBSAN
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_PAGE_OWNER
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_RCU_TRACE
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_NUMA_BALANCING
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_DWARF5
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_IP_NF_TARGET_TTL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TCP_CONG_ADVANCED
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_DEFAULT_BBR
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TCP_CONG_WESTWOOD
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_NET_SCH_CAKE
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TCP_LOW_LATENCY
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_WIREGUARD
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_BBG
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TMPFS_POSIX_ACL
+          
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-C-G++"
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -mtune=cortex-x4 -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> "$GITHUB_ENV"
 
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
@@ -254,7 +244,6 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           
-          # Cihaz uyumluluk kodları eklendi (TWRP Hata Önleyici)
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
@@ -268,4 +257,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
