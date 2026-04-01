@@ -94,6 +94,10 @@ jobs:
           rm -f .ns_inject_tmp
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+
+      - name: 6. Full Kernel Config (Altın Denge ve Usta İşi Ayarlar)
+        run: |
+          cd common
           
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
@@ -238,12 +242,12 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
-            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
-            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
@@ -257,7 +261,6 @@ jobs:
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
 
       - name: 8. AnyKernel3 (Temiz Paketleme)
         run: |
