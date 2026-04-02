@@ -1,4 +1,4 @@
-name: CG+ ZyC Gaming Kernel (Full LTO)
+name: CG+ Full LTO Boot Test (Temiz)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve ZYC CLANG Çekimi
+      - name: 1. Paketler ve ZYC CLANG
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -36,12 +36,12 @@ jobs:
             lld llvm pkg-config zstd
 
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL patlak!"; exit 1; }
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA!"; exit 1; }
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
 
-      - name: 1.5. Full LTO Bellek Optimizasyonu
+      - name: 1.5. Bellek Optimizasyonu
         run: |
           sudo modprobe zram num_devices=1 2>/dev/null || true
           if [ -e /sys/block/zram0/disksize ]; then
@@ -71,50 +71,11 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları
-        run: |
-          cd common
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
-      - name: 5. SUSFS Master Formülü
-        run: |
-          cd common
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-
-          cat << 'EOF' > .ns_inject_tmp
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
-          rm -f .ns_inject_tmp
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-
-      - name: 6. Full Kernel Config (Full LTO + KMI ABI Koruma)
+      - name: 4. Config (Temiz Full LTO + KMI Safe)
         run: |
           cd common
 
-          # Kconfig select zorlamalarını kaldır (KCFI geri açılmasın)
+          # Kconfig select zorlamalarını kaldır
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
             xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
@@ -122,61 +83,10 @@ jobs:
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
             xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
 
-          HZ_KCONFIG="kernel/Kconfig.hz"
-          if [ -f "$HZ_KCONFIG" ]; then
-            if ! grep -q "^config HZ_300" "$HZ_KCONFIG"; then
-              sed -i '/config HZ_250/,/250 HZ/{ /250 HZ/a\
-          \
-          config HZ_300\
-          \tbool "300 HZ"\
-          \thelp\
-          \t  300 Hz timer tick. Optimized for 120Hz and 60Hz displays.\
-          \t  Provides good balance between latency and overhead for\
-          \t  mobile gaming workloads.
-          }' "$HZ_KCONFIG"
-              sed -i '/default 250 if HZ_250/a\\tdefault 300 if HZ_300' "$HZ_KCONFIG"
-            fi
-          fi
-
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull bootconfig"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL || true
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_IDLE_GOV_TEO
-
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR || true
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
@@ -197,49 +107,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
 
-          # KMI ABI Koruma (vendor modüller boot'ta yüklensin)
+          # KMI ABI Koruma
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_FORCE
 
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-BootTest"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (Full LTO)
+      - name: 5. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -264,20 +142,18 @@ jobs:
             olddefconfig
 
           echo ""
-          echo "⚡ FULL LTO DOĞRULAMA:"
-          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_LTO_CLANG=|CONFIG_LTO_NONE" out/.config || true
+          echo "⚡ FULL LTO:"
+          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_LTO_NONE" out/.config || true
           echo ""
-          echo "🛡️ CFI/KCFI DOĞRULAMA:"
-          grep -E "CONFIG_CFI_CLANG|CONFIG_CFI=|CONFIG_KCFI|CONFIG_SHADOW_CALL_STACK" out/.config || true
+          echo "🛡️ CFI/KCFI:"
+          grep -E "CONFIG_CFI_CLANG|CONFIG_KCFI|CONFIG_SHADOW_CALL_STACK" out/.config || true
           echo ""
-          echo "🔑 KMI ABI DOĞRULAMA:"
+          echo "🔑 KMI:"
           grep -E "CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD" out/.config || true
           echo ""
 
           free -h
           sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
-
-          echo "🔨 Full LTO derleme başlıyor..."
 
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -285,59 +161,27 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-sanitize=kcfi -Wno-constant-logical-operand" \
             LDFLAGS_vmlinux="--export-dynamic" \
-            Image || { echo "❌ Derleme HATASI!"; free -h; exit 1; }
+            Image || { echo "❌ HATA!"; free -h; exit 1; }
 
-          echo "✅ Full LTO derleme BAŞARILI!"
-          echo "BOOTHASH=ZyC-FullLTO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "✅ Full LTO BAŞARILI!"
+          echo "BOOTHASH=FullLTO-BootTest-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 + WALT service.d
+      - name: 6. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Full LTO Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO Boot Test/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
-          mkdir -p tools
-
-          cat << 'SVCEOF' > tools/walt_service.sh
-          #!/system/bin/sh
-          while [ "$(getprop sys.boot_completed)" != "1" ]; do
-            sleep 1
-          done
-          sleep 8
-          [ ! -d /proc/sys/walt ] && exit 0
-          echo 2 > /proc/sys/walt/sched_boost
-          echo "1 0" > /proc/sys/walt/sched_low_latency
-          echo "1 0" > /proc/sys/walt/sched_pipeline
-          echo 1 > /proc/sys/walt/sched_sbt_enable
-          echo 1 > /proc/sys/walt/sched_force_lb_enable
-          echo 1 > /proc/sys/walt/sched_walt_rotate_big_tasks
-          echo 90 > /proc/sys/walt/walt_rtg_cfs_boost_prio
-          echo 300 > /proc/sys/walt/walt_low_latency_task_threshold
-          echo 48 > /proc/sys/walt/sched_min_task_util_for_uclamp
-          echo "62 62 62" > /proc/sys/walt/sched_upmigrate
-          echo "46 46 46" > /proc/sys/walt/sched_downmigrate
-          SVCEOF
-          chmod +x tools/walt_service.sh
-
-          cat << 'INSTEOF' >> anykernel.sh
-
-          if [ -d /data/adb ]; then
-            mkdir -p /data/adb/service.d;
-            cp -f "$home/tools/walt_service.sh" /data/adb/service.d/walt_tuning.sh;
-            chmod 0755 /data/adb/service.d/walt_tuning.sh;
-          fi
-          INSTEOF
-
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-FullLTO-Balanced-Pro.zip" ./*
+          zip -r "../CG-FullLTO-BootTest.zip" ./*
 
-      - name: 9. Release Yükle
+      - name: 7. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC Clang (Full LTO - Balanced Pro)"
+          name: "CG+ Full LTO Boot Test (Temiz)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
