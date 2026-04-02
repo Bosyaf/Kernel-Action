@@ -39,25 +39,7 @@ jobs:
         run: |
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: Try Build Host Perf
-        run: |
-          cd common/tools/perf
-          make -j"$(nproc)" \
-            CC=clang \
-            LD=ld.lld \
-            NO_LIBPYTHON=1 \
-            NO_JEVENTS=1 \
-            NO_LIBBPF=1 \
-            NO_AUXTRACE=1 \
-            NO_SDT=1 \
-            perf V=1 || true
-
-          echo "=== Host perf check ==="
-          file perf || true
-          ldd perf || true
-          ls -lah perf || true
-
-      - name: Try Build AArch64 Perf
+      - name: Build AArch64 Perf (Non-static)
         run: |
           cd common/tools/perf
           make clean || true
@@ -72,7 +54,12 @@ jobs:
             NO_LIBBPF=1 \
             NO_AUXTRACE=1 \
             NO_SDT=1 \
-            LDFLAGS="-static" \
+            NO_LIBCRYPTO=1 \
+            NO_LIBPERL=1 \
+            NO_LIBNUMA=1 \
+            NO_GTK2=1 \
+            NO_GTK=1 \
+            NO_SLANG=1 \
             perf V=1 || true
 
           echo "=== AArch64 perf check ==="
@@ -83,23 +70,29 @@ jobs:
       - name: Collect Outputs
         run: |
           mkdir -p out
-          [ -f common/tools/perf/perf ] && cp common/tools/perf/perf out/perf || true
+          if [ -f common/tools/perf/perf ]; then
+            cp common/tools/perf/perf out/perf
+            echo "✅ perf binary bulundu"
+          else
+            echo "❌ perf binary oluşmadı"
+            exit 1
+          fi
+
           file out/perf || true
-          ls -lah out || true
+          ls -lah out
 
       - name: Upload Perf Artifact
         uses: actions/upload-artifact@v4
         with:
           name: perf-binary
-          path: out/*
-          if-no-files-found: warn
+          path: out/perf
+          if-no-files-found: error
 
       - name: Release Perf Binary
         uses: softprops/action-gh-release@v2
-        if: always()
         with:
           tag_name: perf-bin-${{ github.run_id }}
           name: "perf binary build"
-          files: out/*
+          files: out/perf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
