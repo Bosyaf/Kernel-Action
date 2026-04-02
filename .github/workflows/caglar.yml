@@ -114,11 +114,7 @@ jobs:
         run: |
           cd common
 
-          # ═══════════════════════════════════════════════════
-          # KCFI/CFI Kconfig select zorlamalarını kaldır
-          # Bu satırlar olddefconfig'in CFI'yi geri açmasını engeller
-          # ═══════════════════════════════════════════════════
-          echo "🔧 Kconfig'den CFI select zorunlulukları kaldırılıyor..."
+          # Kconfig select zorlamalarını kaldır (KCFI geri açılmasın)
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
             xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
@@ -186,7 +182,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
 
-          # ⚡ FULL LTO ⚡
+          # Full LTO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THINLTO
@@ -194,14 +190,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
-          # 🛡️ KCFI / CFI / SCS kapat (derleme hatası düzeltmesi)
+          # CFI/KCFI/SCS kapat
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
 
-          # 🔑 KMI ABI KORUMA (vendor modüller boot'ta yüklensin)
+          # KMI ABI Koruma (vendor modüller boot'ta yüklensin)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
@@ -239,7 +235,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+ZyC+FullLTO"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -275,14 +271,12 @@ jobs:
           grep -E "CONFIG_CFI_CLANG|CONFIG_CFI=|CONFIG_KCFI|CONFIG_SHADOW_CALL_STACK" out/.config || true
           echo ""
           echo "🔑 KMI ABI DOĞRULAMA:"
-          grep -E "CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD|CONFIG_MODULE_SIG_FORCE" out/.config || true
+          grep -E "CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD" out/.config || true
           echo ""
 
-          echo "📊 Derleme öncesi bellek:"
           free -h
           sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
 
-          echo ""
           echo "🔨 Full LTO derleme başlıyor..."
 
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -290,9 +284,9 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-sanitize=kcfi -Wno-constant-logical-operand" \
+            LDFLAGS_vmlinux="--export-dynamic" \
             Image || { echo "❌ Derleme HATASI!"; free -h; exit 1; }
 
-          echo ""
           echo "✅ Full LTO derleme BAŞARILI!"
           echo "BOOTHASH=ZyC-FullLTO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
@@ -347,4 +341,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
