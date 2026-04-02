@@ -1,4 +1,4 @@
-name: CG+ Full LTO Boot Test (Hardened)
+name: CG+ Full LTO Boot Test (Final)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve ZYC CLANG
+      - name: 1. Install packages and ZyC Clang
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -36,51 +36,57 @@ jobs:
             lld llvm pkg-config zstd
 
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA!"; exit 1; }
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang indirilemedi"; exit 1; }
+
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
           rm -f clang.tar.gz
 
-      - name: 1.5. Bellek Optimizasyonu
+      - name: 1.5. Hardened memory setup for Full LTO
         run: |
           sudo modprobe zram num_devices=1 2>/dev/null || true
+
           if [ -e /sys/block/zram0/disksize ]; then
             sudo swapoff /dev/zram0 2>/dev/null || true
             echo 1 | sudo tee /sys/block/zram0/reset > /dev/null 2>&1 || true
-            echo lz4 | sudo tee /sys/block/zram0/comp_algorithm 2>/dev/null || true
-            echo 16G | sudo tee /sys/block/zram0/disksize
+            echo lz4 | sudo tee /sys/block/zram0/comp_algorithm > /dev/null 2>&1 || true
+            echo 16G | sudo tee /sys/block/zram0/disksize > /dev/null
             sudo mkswap /dev/zram0
             sudo swapon -p 100 /dev/zram0
           fi
 
           sudo sysctl -w vm.overcommit_memory=1
-          sudo sysctl -w vm.overcommit_ratio=200
-          sudo sysctl -w vm.swappiness=250
+          sudo sysctl -w vm.swappiness=200
           sudo sysctl -w vm.vfs_cache_pressure=500
           sudo sysctl -w vm.dirty_ratio=10
           sudo sysctl -w vm.dirty_background_ratio=5
           sudo sysctl -w vm.max_map_count=2097152
           sudo sysctl -w vm.page-cluster=0
-          sudo sysctl -w vm.watermark_scale_factor=250
-          sudo sysctl -w vm.min_free_kbytes=32768
+          sudo sysctl -w vm.watermark_scale_factor=200 || true
+          sudo sysctl -w vm.min_free_kbytes=65536 || true
 
+          echo ""
+          echo "=== MEMORY STATUS ==="
           free -h
+          echo ""
+          echo "=== SWAP STATUS ==="
           swapon --show
 
-      - name: 2. Kaynakları Çek
+      - name: 2. Clone sources
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. VortexSU Kurulumu
+      - name: 3. Setup VortexSU
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Config
+      - name: 4. Configure clean Full LTO + KMI safe kernel
         run: |
           cd common
 
+          # Prevent olddefconfig from force-enabling CFI/KCFI
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
             xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
@@ -92,10 +98,12 @@ jobs:
 
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull bootconfig"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
 
+          # Full LTO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THINLTO
@@ -103,12 +111,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
+          # Disable CFI/KCFI/SCS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
 
+          # KMI / ABI safety
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
@@ -116,15 +126,17 @@ jobs:
 
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-BootTest"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 5. Derleme
+      - name: 5. Build kernel
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
+          ulimit -n 65535 || true
 
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
@@ -142,9 +154,24 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
+          echo ""
+          echo "=== FULL LTO CHECK ==="
+          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_LTO_NONE" out/.config || true
+          echo ""
+          echo "=== CFI/KCFI CHECK ==="
+          grep -E "CONFIG_CFI_CLANG|CONFIG_KCFI|CONFIG_SHADOW_CALL_STACK" out/.config || true
+          echo ""
+          echo "=== KMI CHECK ==="
+          grep -E "CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD" out/.config || true
+          echo ""
+
           sync
           echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
           free -h
+
+          echo ""
+          echo "🔨 Building Full LTO kernel with -j2 ..."
+          echo ""
 
           make -j2 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -152,27 +179,28 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-sanitize=kcfi -Wno-constant-logical-operand" \
             LDFLAGS_vmlinux="--export-dynamic" \
-            Image || { echo "HATA!"; exit 1; }
+            Image || { echo "❌ BUILD FAILED"; free -h; exit 1; }
 
-          echo "OK"
-          echo "BOOTHASH=FullLTO-$(date +%s)" >> $GITHUB_ENV
+          echo ""
+          echo "✅ Full LTO build successful"
+          echo "BOOTHASH=FullLTO-BootTest-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 6. AnyKernel3
+      - name: 6. Pack AnyKernel3
         run: |
-          cd ./AnyKernel3
+          cd AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO Boot Test/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-FullLTO-BootTest.zip" ./*
+          zip -r ../CG-FullLTO-BootTest.zip ./*
 
       - name: 7. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Full LTO Boot Test"
+          name: "CG+ Full LTO Boot Test (Final)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
