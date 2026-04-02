@@ -1,4 +1,4 @@
-name: Yuki Toolchain Feature Check
+name: Google Clang r584948 Exact Binary Scan
 
 permissions:
   contents: read
@@ -7,70 +7,80 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-yuki-toolchain:
+  scan-google-clang:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Paketleri Kur
         run: |
           sudo apt update -qq
-          sudo apt install -y --no-install-recommends \
-            curl wget xz-utils zstd tar findutils coreutils
+          sudo apt install -y --no-install-recommends curl xz-utils tar findutils
 
-      - name: Yuki Clang İndir ve Aç
+      - name: Google Clang r584948 İndir ve Aç
         run: |
-          echo "🔥 Yuki Clang + BOLT indiriliyor..."
-          YUKI_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
 
-          mkdir -p $GITHUB_WORKSPACE/clang-yuki
-          curl -fL "$YUKI_URL" -o yuki-clang.tar.zst || { echo "❌ Yuki indirilemedi"; exit 1; }
+          mkdir -p $GITHUB_WORKSPACE/clang-google
+          echo "📥 Google Clang indiriliyor..."
+          curl -fL "$CLANG_URL" -o clang-google.tar.gz || { echo "❌ Google Clang indirilemedi"; exit 1; }
 
           echo "📦 Arşiv açılıyor..."
-          tar --use-compress-program=unzstd -xf yuki-clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki || { echo "❌ Yuki arşivi açılamadı"; exit 1; }
-          rm -f yuki-clang.tar.zst
+          tar -xzf clang-google.tar.gz -C $GITHUB_WORKSPACE/clang-google || { echo "❌ Arşiv açılamadı"; exit 1; }
+          rm -f clang-google.tar.gz
 
-      - name: Yuki Tree Scan
+      - name: Exact Binary Scan
         run: |
-          echo "=== Yuki directory scan (top) ==="
-          find $GITHUB_WORKSPACE/clang-yuki -maxdepth 4 -type d | sort | head -300 || true
+          echo "=== clang ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name clang | sort || true
 
           echo
-          echo "=== Yuki file scan (clang/prof/bolt/opt) ==="
-          find $GITHUB_WORKSPACE/clang-yuki -maxdepth 6 -type f | grep -E '/clang$|/clang\+\+$|/llvm-prof|/llvm-bolt|/merge-fdata|/opt$' | sort || true
+          echo "=== clang++ ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name clang++ | sort || true
 
-      - name: Yuki Toolchain Feature Check
+          echo
+          echo "=== llvm-profdata ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name llvm-profdata | sort || true
+
+          echo
+          echo "=== llvm-profgen ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name llvm-profgen | sort || true
+
+          echo
+          echo "=== llvm-bolt ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name llvm-bolt | sort || true
+
+          echo
+          echo "=== merge-fdata ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name merge-fdata | sort || true
+
+          echo
+          echo "=== opt ==="
+          find $GITHUB_WORKSPACE/clang-google -type f -name opt | sort || true
+
+      - name: Version Check
         run: |
-          YUKI_CLANG="$(find $GITHUB_WORKSPACE/clang-yuki -type f -name clang | grep -v 'aarch64-linux-gnu/bin/clang' | head -n 1)"
+          GOOGLE_CLANG="$(find $GITHUB_WORKSPACE/clang-google -type f -name clang | head -n 1)"
 
-          if [ -z "$YUKI_CLANG" ]; then
-            echo "❌ Yuki ana clang bulunamadı"
-            echo "=== Full fallback scan ==="
-            find $GITHUB_WORKSPACE/clang-yuki -maxdepth 8 -type f | sort | head -500
+          if [ -z "$GOOGLE_CLANG" ]; then
+            echo "❌ clang bulunamadı"
             exit 1
           fi
 
-          YUKI_BIN="$(dirname "$YUKI_CLANG")"
+          GOOGLE_BIN="$(dirname "$GOOGLE_CLANG")"
 
-          echo "=== Yuki clang path ==="
-          echo "$YUKI_CLANG"
-
-          echo
-          echo "=== Yuki bin path ==="
-          echo "$YUKI_BIN"
+          echo "=== Google clang path ==="
+          echo "$GOOGLE_CLANG"
 
           echo
-          echo "=== Yuki Toolchain binaries ==="
-          ls "$YUKI_BIN" | grep -E 'clang$|clang\+\+$|llvm-prof|llvm-bolt|merge-fdata|opt$' || true
+          echo "=== Google bin path ==="
+          echo "$GOOGLE_BIN"
 
           echo
-          echo "=== Yuki Version checks ==="
-          "$YUKI_BIN/clang" --version || true
-          "$YUKI_BIN/llvm-profdata" --version || true
-          "$YUKI_BIN/llvm-profgen" --version || true
-          "$YUKI_BIN/llvm-bolt" --version || true
-          "$YUKI_BIN/merge-fdata" --version || true
-          "$YUKI_BIN/opt" --version || true
+          echo "=== Version checks ==="
+          "$GOOGLE_BIN/clang" --version || true
+          "$GOOGLE_BIN/llvm-profdata" --version || true
+          "$GOOGLE_BIN/llvm-profgen" --version || true
+          "$GOOGLE_BIN/llvm-bolt" --version || true
+          "$GOOGLE_BIN/merge-fdata" --version || true
+          "$GOOGLE_BIN/opt" --version || true
