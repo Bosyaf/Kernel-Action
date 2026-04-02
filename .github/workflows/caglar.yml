@@ -112,8 +112,30 @@ jobs:
             exit 1
           fi
 
+          echo "🔍 perf.data aranıyor..."
+          PERF_DATA="$(find . -type f -path '*/sdcard/perf.data' | head -n 1)"
+
+          if [ -z "$PERF_DATA" ]; then
+            PERF_DATA="$(find . -type f -name 'perf.data' | head -n 1)"
+          fi
+
+          if [ -z "$PERF_DATA" ]; then
+            echo "❌ perf.data bulunamadı"
+            echo "📁 Bulunan dosyalar:"
+            find . -maxdepth 5 -type f | sort | head -200
+            exit 1
+          fi
+
+          echo "✅ perf.data bulundu: $PERF_DATA"
+
+          if [ ! -f vmlinux ]; then
+            echo "❌ vmlinux bulunamadı"
+            find . -maxdepth 3 -type f | sort | head -200
+            exit 1
+          fi
+
           echo "📝 perf.script üretiliyor..."
-          perf script -i perf.data > perf.script || { echo "❌ perf script üretilemedi"; exit 1; }
+          perf script -i "$PERF_DATA" > perf.script || { echo "❌ perf script üretilemedi"; exit 1; }
 
           echo "🧠 kernel.prof üretiliyor..."
           "$LLVM_PROFGEN" \
