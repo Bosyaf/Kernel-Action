@@ -19,9 +19,9 @@ jobs:
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 6144
+          root-reserve-mb: 4096
           temp-reserve-mb: 1024
-          swap-size-gb: 20
+          swap-size-gb: 32
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,25 +41,40 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
 
-      - name: 1.5. Bellek Optimizasyonu
+      - name: 1.5. Bellek Optimizasyonu (Hardened)
         run: |
+          # zram 12GB
           sudo modprobe zram num_devices=1 2>/dev/null || true
           if [ -e /sys/block/zram0/disksize ]; then
             sudo swapoff /dev/zram0 2>/dev/null || true
             echo 1 | sudo tee /sys/block/zram0/reset > /dev/null 2>&1 || true
             echo lz4 | sudo tee /sys/block/zram0/comp_algorithm 2>/dev/null || true
-            echo 8G | sudo tee /sys/block/zram0/disksize
+            echo 12G | sudo tee /sys/block/zram0/disksize
             sudo mkswap /dev/zram0
             sudo swapon -p 100 /dev/zram0
           fi
+
+          # agresif bellek ayarları
           sudo sysctl -w vm.overcommit_memory=1
-          sudo sysctl -w vm.swappiness=180
+          sudo sysctl -w vm.overcommit_ratio=100
+          sudo sysctl -w vm.swappiness=200
           sudo sysctl -w vm.vfs_cache_pressure=500
           sudo sysctl -w vm.dirty_ratio=5
           sudo sysctl -w vm.dirty_background_ratio=2
           sudo sysctl -w vm.max_map_count=2097152
           sudo sysctl -w vm.page-cluster=0
+          sudo sysctl -w vm.watermark_scale_factor=200
+          sudo sysctl -w vm.min_free_kbytes=65536
+
+          # oom killer'a direnmesini söyle
+          echo -17 | sudo tee /proc/$$/oom_adj 2>/dev/null || true
+
+          echo ""
+          echo "📊 Bellek Durumu:"
           free -h
+          echo ""
+          echo "📊 Swap Alanları:"
+          swapon --show
 
       - name: 2. Kaynakları Çek
         run: |
@@ -75,7 +90,6 @@ jobs:
         run: |
           cd common
 
-          # Kconfig select zorlamalarını kaldır
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
             xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | \
@@ -92,7 +106,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
 
-          # Full LTO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THINLTO
@@ -100,14 +113,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
-          # CFI/KCFI/SCS kapat
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
 
-          # KMI ABI Koruma
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
@@ -117,7 +128,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 5. Kernel Derleme
+      - name: 5. Kernel Derleme (Hardened)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -152,10 +163,17 @@ jobs:
           grep -E "CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD" out/.config || true
           echo ""
 
+          # Link öncesi son temizlik
+          sync
+          echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
           free -h
-          sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
 
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          echo ""
+          echo "🔨 Full LTO derleme başlıyor (-j4 ile)..."
+          echo ""
+
+          # -j4 ile derleme (OOM koruması)
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -163,7 +181,9 @@ jobs:
             LDFLAGS_vmlinux="--export-dynamic" \
             Image || { echo "❌ HATA!"; free -h; exit 1; }
 
+          echo ""
           echo "✅ Full LTO BAŞARILI!"
+          free -h
           echo "BOOTHASH=FullLTO-BootTest-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 6. AnyKernel3
