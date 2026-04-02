@@ -1,4 +1,4 @@
-name: CG+ ZyC PGO Kernel
+name: CG+ ZyC PGO Debug Kernel
 
 permissions:
   contents: write
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  pgo-debug:
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve ZYC CLANG Çekimi
+      - name: 1. Paketler ve ZyC Clang
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -68,12 +68,7 @@ jobs:
           echo "❌ perf aracı bulunamadı"
           exit 1
 
-      - name: 2. Kaynakları Çek
-        run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-
-      - name: 3. PGO Assetlerini İndir
+      - name: 2. PGO Assetlerini İndir
         run: |
           mkdir -p $GITHUB_WORKSPACE/pgo
           cd $GITHUB_WORKSPACE/pgo
@@ -93,7 +88,7 @@ jobs:
           echo "📊 Boyutlar:"
           du -sh ./*
 
-      - name: 4. PGO Profile Üret
+      - name: 3. perf.script Üret ve Debugla
         run: |
           cd $GITHUB_WORKSPACE/pgo
           mkdir -p out
@@ -102,26 +97,14 @@ jobs:
           command -v perf
           perf --version || true
 
-          LLVM_PROFGEN="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-profgen"
-          if [ ! -x "$LLVM_PROFGEN" ]; then
-            LLVM_PROFGEN="$(command -v llvm-profgen || true)"
-          fi
-
-          if [ -z "$LLVM_PROFGEN" ]; then
-            echo "❌ llvm-profgen bulunamadı"
-            exit 1
-          fi
-
           echo "🔍 perf.data aranıyor..."
           PERF_DATA="$(find . -type f -path '*/sdcard/perf.data' | head -n 1)"
-
           if [ -z "$PERF_DATA" ]; then
             PERF_DATA="$(find . -type f -name 'perf.data' | head -n 1)"
           fi
 
           if [ -z "$PERF_DATA" ]; then
             echo "❌ perf.data bulunamadı"
-            echo "📁 Bulunan dosyalar:"
             find . -maxdepth 5 -type f | sort | head -200
             exit 1
           fi
@@ -134,77 +117,74 @@ jobs:
             exit 1
           fi
 
+          echo "✅ vmlinux bulundu"
+
           echo "📝 perf.script üretiliyor..."
           perf script -i "$PERF_DATA" > perf.script || { echo "❌ perf script üretilemedi"; exit 1; }
 
+          echo "📏 perf.script boyutu:"
+          ls -lh perf.script
+          du -sh perf.script || true
+
+          echo "===== perf.script first 100 lines ====="
+          head -100 perf.script || true
+
+          echo "===== perf.script first 300 non-empty lines ====="
+          grep -n . perf.script | head -300 || true
+
+      - name: 4. llvm-profgen Denemesi
+        run: |
+          cd $GITHUB_WORKSPACE/pgo
+          mkdir -p out
+
+          LLVM_PROFGEN="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-profgen"
+          if [ ! -x "$LLVM_PROFGEN" ]; then
+            LLVM_PROFGEN="$(command -v llvm-profgen || true)"
+          fi
+
+          if [ -z "$LLVM_PROFGEN" ]; then
+            echo "❌ llvm-profgen bulunamadı"
+            exit 1
+          fi
+
+          echo "🔍 llvm-profgen:"
+          "$LLVM_PROFGEN" --version || true
+
           echo "🧠 kernel.prof üretiliyor..."
+          set +e
           "$LLVM_PROFGEN" \
             --perfscript=perf.script \
             --binary=vmlinux \
-            --output=out/kernel.prof || { echo "❌ kernel.prof üretilemedi"; exit 1; }
+            --output=out/kernel.prof > out/llvm-profgen.stdout 2> out/llvm-profgen.stderr
+          RET=$?
+          set -e
 
-          echo "✅ kernel.prof oluştu"
-          ls -lah out
-          du -sh out/*
+          echo "llvm-profgen exit code: $RET"
 
-      - name: 5. Kernel Config
-        run: |
-          cd common
-          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          echo "===== llvm-profgen stdout ====="
+          cat out/llvm-profgen.stdout || true
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++-PGO"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          sed -i 's/check_defconfig//' build.config.gki || true
+          echo "===== llvm-profgen stderr ====="
+          cat out/llvm-profgen.stderr || true
 
-      - name: 6. Kernel Derleme (PGO)
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          if [ -f out/kernel.prof ]; then
+            echo "✅ kernel.prof oluştu"
+            ls -lah out/kernel.prof
+            du -sh out/kernel.prof || true
+          else
+            echo "⚠️ kernel.prof oluşmadı"
+          fi
 
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          touch .scmversion
-
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
           exit 0
-          EOF
-          chmod +x scripts/check-local-export
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -Wno-constant-logical-operand -fprofile-sample-use=$GITHUB_WORKSPACE/pgo/out/kernel.prof" \
-            Image || { echo "❌ PGO Derleme HATASI!"; exit 1; }
-
-          echo "BOOTHASH=PGO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
-      - name: 7. AnyKernel3 Paketleme
-        run: |
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC PGO Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-PGO.zip" ./*
-
-      - name: 8. Release Yükle
-        uses: softprops/action-gh-release@v2
+      - name: 5. Debug Dosyalarını Upload Et
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC PGO Kernel"
-          files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: pgo-debug-artifacts
+          path: |
+            ${{ github.workspace }}/pgo/perf.script
+            ${{ github.workspace }}/pgo/out/llvm-profgen.stdout
+            ${{ github.workspace }}/pgo/out/llvm-profgen.stderr
+            ${{ github.workspace }}/pgo/out/kernel.prof
+          if-no-files-found: warn
