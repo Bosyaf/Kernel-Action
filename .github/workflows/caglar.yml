@@ -46,6 +46,18 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
 
+      - name: 1.5 Yuki Clang + BOLT Çekimi
+        run: |
+          echo "🔥 Yuki Clang + BOLT indiriliyor"
+          YUKI_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "Yuki indiriliyor: $YUKI_URL"
+
+          curl -fL "$YUKI_URL" -o yuki-clang.tar.zst || { echo "HATA: Yuki indirilemedi"; exit 1; }
+
+          mkdir -p $GITHUB_WORKSPACE/clang-yuki
+          tar --use-compress-program=unzstd -xf yuki-clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki || { echo "HATA: Yuki arşivi açılamadı"; exit 1; }
+          rm -f yuki-clang.tar.zst
+
       - name: 1.6 ZyC Toolchain Feature Check
         run: |
           TOOLCHAIN_BIN="$GITHUB_WORKSPACE/clang-zyc/bin"
@@ -54,13 +66,39 @@ jobs:
           ls "$TOOLCHAIN_BIN" | grep -E 'clang$|clang\+\+$|llvm-prof|llvm-bolt|merge-fdata|opt$' || true
 
           echo
-          echo "=== Version checks ==="
+          echo "=== ZyC Version checks ==="
           "$TOOLCHAIN_BIN/clang" --version || true
           "$TOOLCHAIN_BIN/llvm-profdata" --version || true
           "$TOOLCHAIN_BIN/llvm-profgen" --version || true
           "$TOOLCHAIN_BIN/llvm-bolt" --version || true
           "$TOOLCHAIN_BIN/merge-fdata" --version || true
           "$TOOLCHAIN_BIN/opt" --version || true
+
+      - name: 1.7 Yuki Toolchain Feature Check
+        run: |
+          YUKI_BIN="$(find $GITHUB_WORKSPACE/clang-yuki -type d -path '*/bin' | head -n 1)"
+
+          if [ -z "$YUKI_BIN" ]; then
+            echo "❌ Yuki bin klasörü bulunamadı"
+            find $GITHUB_WORKSPACE/clang-yuki -maxdepth 3 -type d | sort | head -200
+            exit 1
+          fi
+
+          echo "=== Yuki bin path ==="
+          echo "$YUKI_BIN"
+
+          echo
+          echo "=== Yuki Toolchain binaries ==="
+          ls "$YUKI_BIN" | grep -E 'clang$|clang\+\+$|llvm-prof|llvm-bolt|merge-fdata|opt$' || true
+
+          echo
+          echo "=== Yuki Version checks ==="
+          "$YUKI_BIN/clang" --version || true
+          "$YUKI_BIN/llvm-profdata" --version || true
+          "$YUKI_BIN/llvm-profgen" --version || true
+          "$YUKI_BIN/llvm-bolt" --version || true
+          "$YUKI_BIN/merge-fdata" --version || true
+          "$YUKI_BIN/opt" --version || true
 
       - name: 2. Kaynakları Çek (Yeni Staging Dalı)
         run: |
@@ -115,7 +153,6 @@ jobs:
         run: |
           cd common
           
-          # 🔥 300HZ ZORUNLU KILMA (Kconfig Bypass) 🔥
           HZ_KCONFIG="kernel/Kconfig.hz"
           if [ -f "$HZ_KCONFIG" ]; then
             if ! grep -q "^config HZ_300" "$HZ_KCONFIG"; then
@@ -135,11 +172,9 @@ jobs:
           
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # 🚀 TEMEL CMDLINE (Performans/Kasan Optimizasyonu)
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
-          # 🚀 PREEMPT VE HZ (Temel Kesinti Yöneticisi)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -149,11 +184,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
-          # 🚀 TICK AYARLARI (Batarya)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           
-          # 🚀 CPUFREQ VE IDLE (Houji vendor WALT ile uyumlu)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL || true
@@ -166,29 +199,24 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_IDLE_GOV_TEO
           
-          # 🚀 THERMAL: Dengeli Oyun İçin Güvenli Varsayılan
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR || true
           
-          # 🚀 SCHEDULER (Temel İş Yükü Dengesi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # KPROBES (KernelSU Zorunluluğu)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
          
-          # LTO THIN (Güvenli Optimizasyon)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # RAM KURTARICI & SUNUCU KODLARINI İPTAL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
@@ -196,7 +224,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           
-          # AĞ & HOTSPOT KORUMASI (TTL/HL Bypass)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -208,13 +235,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
-          # ÇİNLİ ZIRHLAR & DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -275,40 +300,40 @@ jobs:
           mkdir -p tools
           
           cat << 'SVCEOF' > tools/walt_service.sh
-          #!/system/bin/sh
-          # CG+ WALT Balanced PUBG — her boot'ta otomatik
+#!/system/bin/sh
+# CG+ WALT Balanced PUBG — her boot'ta otomatik
 
-          while [ "$(getprop sys.boot_completed)" != "1" ]; do
-            sleep 1
-          done
+while [ "$(getprop sys.boot_completed)" != "1" ]; do
+  sleep 1
+done
 
-          sleep 8
+sleep 8
 
-          [ ! -d /proc/sys/walt ] && exit 0
+[ ! -d /proc/sys/walt ] && exit 0
 
-          echo 2 > /proc/sys/walt/sched_boost
-          echo "1 0" > /proc/sys/walt/sched_low_latency
-          echo "1 0" > /proc/sys/walt/sched_pipeline
-          echo 1 > /proc/sys/walt/sched_sbt_enable
-          echo 1 > /proc/sys/walt/sched_force_lb_enable
-          echo 1 > /proc/sys/walt/sched_walt_rotate_big_tasks
-          echo 90 > /proc/sys/walt/walt_rtg_cfs_boost_prio
-          echo 300 > /proc/sys/walt/walt_low_latency_task_threshold
-          echo 48 > /proc/sys/walt/sched_min_task_util_for_uclamp
-          echo "62 62 62" > /proc/sys/walt/sched_upmigrate
-          echo "46 46 46" > /proc/sys/walt/sched_downmigrate
-          SVCEOF
+echo 2 > /proc/sys/walt/sched_boost
+echo "1 0" > /proc/sys/walt/sched_low_latency
+echo "1 0" > /proc/sys/walt/sched_pipeline
+echo 1 > /proc/sys/walt/sched_sbt_enable
+echo 1 > /proc/sys/walt/sched_force_lb_enable
+echo 1 > /proc/sys/walt/sched_walt_rotate_big_tasks
+echo 90 > /proc/sys/walt/walt_rtg_cfs_boost_prio
+echo 300 > /proc/sys/walt/walt_low_latency_task_threshold
+echo 48 > /proc/sys/walt/sched_min_task_util_for_uclamp
+echo "62 62 62" > /proc/sys/walt/sched_upmigrate
+echo "46 46 46" > /proc/sys/walt/sched_downmigrate
+SVCEOF
           chmod +x tools/walt_service.sh
           
           cat << 'INSTEOF' >> anykernel.sh
 
-          # CG+ WALT service.d otomatik kurulum
-          if [ -d /data/adb ]; then
-            mkdir -p /data/adb/service.d;
-            cp -f "$home/tools/walt_service.sh" /data/adb/service.d/walt_tuning.sh;
-            chmod 0755 /data/adb/service.d/walt_tuning.sh;
-          fi
-          INSTEOF
+# CG+ WALT service.d otomatik kurulum
+if [ -d /data/adb ]; then
+  mkdir -p /data/adb/service.d;
+  cp -f "$home/tools/walt_service.sh" /data/adb/service.d/walt_tuning.sh;
+  chmod 0755 /data/adb/service.d/walt_tuning.sh;
+fi
+INSTEOF
           
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-ZyC-Balanced-Pro.zip" ./*
