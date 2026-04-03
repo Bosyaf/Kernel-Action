@@ -53,76 +53,76 @@ jobs:
       - name: Download Google Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/toolchain/google-clang"
-          cd "$GITHUB_WORKSPACE/toolchain/google-clang"
+          mkdir -p "${GITHUB_WORKSPACE}/toolchain/google-clang"
+          cd "${GITHUB_WORKSPACE}/toolchain/google-clang"
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
-          echo "Downloading $CLANG_URL"
-          curl -L "$CLANG_URL" | tar -xz
+          echo "Downloading ${CLANG_URL}"
+          curl -L "${CLANG_URL}" | tar -xz
 
       - name: Prepare workspace skeleton
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/build"
-          mkdir -p "$GITHUB_WORKSPACE/tools"
-          mkdir -p "$GITHUB_WORKSPACE/bootable/bootloader/edk2"
-          touch "$GITHUB_WORKSPACE/bootable/bootloader/edk2/abl_extensions.bzl"
+          mkdir -p "${GITHUB_WORKSPACE}/build"
+          mkdir -p "${GITHUB_WORKSPACE}/tools"
+          mkdir -p "${GITHUB_WORKSPACE}/bootable/bootloader/edk2"
+          touch "${GITHUB_WORKSPACE}/bootable/bootloader/edk2/abl_extensions.bzl"
 
-          cat > "$GITHUB_WORKSPACE/tools/bazel" <<'EOF'
-          #!/usr/bin/env bash
-          exec /usr/local/bin/bazel "$@"
-          EOF
-          chmod +x "$GITHUB_WORKSPACE/tools/bazel"
+          cat > "${GITHUB_WORKSPACE}/tools/bazel" <<'BASHEOF'
+#!/usr/bin/env bash
+exec /usr/local/bin/bazel "$@"
+BASHEOF
+          chmod +x "${GITHUB_WORKSPACE}/tools/bazel"
 
       - name: Clone source
         run: |
-          git clone --depth=1 "$REPO_URL" "$GITHUB_WORKSPACE/$REPO_DIR"
-          cd "$GITHUB_WORKSPACE/$REPO_DIR"
+          git clone --depth=1 "${REPO_URL}" "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
           git log --oneline -1
 
       - name: Setup Bazel workspace files
         run: |
-          cd "$GITHUB_WORKSPACE/$REPO_DIR"
+          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
 
           if [ -f "bazel.WORKSPACE" ]; then
-            cp "bazel.WORKSPACE" "$GITHUB_WORKSPACE/WORKSPACE"
+            cp "bazel.WORKSPACE" "${GITHUB_WORKSPACE}/WORKSPACE"
           else
-            touch "$GITHUB_WORKSPACE/WORKSPACE"
+            touch "${GITHUB_WORKSPACE}/WORKSPACE"
           fi
 
-          touch "$GITHUB_WORKSPACE/MODULE.bazel"
+          touch "${GITHUB_WORKSPACE}/MODULE.bazel"
 
       - name: Fix missing build bazel_common_rules tree
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/build/bazel_common_rules/dist"
+          mkdir -p "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist"
 
-          touch "$GITHUB_WORKSPACE/build/BUILD.bazel"
-          touch "$GITHUB_WORKSPACE/build/bazel_common_rules/BUILD.bazel"
-          touch "$GITHUB_WORKSPACE/build/bazel_common_rules/dist/BUILD.bazel"
+          touch "${GITHUB_WORKSPACE}/build/BUILD.bazel"
+          touch "${GITHUB_WORKSPACE}/build/bazel_common_rules/BUILD.bazel"
+          touch "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/BUILD.bazel"
 
-          REAL_DIST_BZL="$(find "$GITHUB_WORKSPACE/$REPO_DIR" -path '*/bazel_common_rules/dist/dist.bzl' | head -n 1 || true)"
+          REAL_DIST_BZL="$(find "${GITHUB_WORKSPACE}/${REPO_DIR}" -path '*/bazel_common_rules/dist/dist.bzl' | head -n 1 || true)"
 
-          if [ -n "$REAL_DIST_BZL" ] && [ -f "$REAL_DIST_BZL" ]; then
-            echo "Using real dist.bzl from: $REAL_DIST_BZL"
-            cp "$REAL_DIST_BZL" "$GITHUB_WORKSPACE/build/bazel_common_rules/dist/dist.bzl"
+          if [ -n "${REAL_DIST_BZL}" ] && [ -f "${REAL_DIST_BZL}" ]; then
+            echo "Using real dist.bzl from: ${REAL_DIST_BZL}"
+            cp "${REAL_DIST_BZL}" "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl"
           else
             echo "Real dist.bzl not found, creating stub"
-            cat > "$GITHUB_WORKSPACE/build/bazel_common_rules/dist/dist.bzl" <<'EOF'
+            cat > "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl" <<'BZLEOF'
 def copy_to_dist_dir(**kwargs):
     pass
 
 def _noop(**kwargs):
     pass
-EOF
+BZLEOF
           fi
 
       - name: Fix extension symlinks manually
         run: |
-          ln -sf ../msm-kernel/msm_kernel_extensions.bzl "$GITHUB_WORKSPACE/build/msm_kernel_extensions.bzl" || true
-          ln -sf ../bootable/bootloader/edk2/abl_extensions.bzl "$GITHUB_WORKSPACE/build/abl_extensions.bzl" || true
-          ls -lah "$GITHUB_WORKSPACE/build" || true
+          ln -sf ../msm-kernel/msm_kernel_extensions.bzl "${GITHUB_WORKSPACE}/build/msm_kernel_extensions.bzl" || true
+          ln -sf ../bootable/bootloader/edk2/abl_extensions.bzl "${GITHUB_WORKSPACE}/build/abl_extensions.bzl" || true
+          ls -lah "${GITHUB_WORKSPACE}/build" || true
 
       - name: Export LLVM tools
         run: |
-          echo "$GITHUB_WORKSPACE/toolchain/google-clang/bin" >> "$GITHUB_PATH"
+          echo "${GITHUB_WORKSPACE}/toolchain/google-clang/bin" >> "${GITHUB_PATH}"
           {
             echo "CC=clang"
             echo "CXX=clang++"
@@ -135,21 +135,21 @@ EOF
             echo "READELF=llvm-readelf"
             echo "LLVM=1"
             echo "LLVM_IAS=1"
-          } >> "$GITHUB_ENV"
+          } >> "${GITHUB_ENV}"
 
       - name: Debug workspace layout
         run: |
           echo "==== Workspace root ===="
-          find "$GITHUB_WORKSPACE" -maxdepth 3 \( -name "WORKSPACE" -o -name "MODULE.bazel" -o -name "BUILD.bazel" -o -name "dist.bzl" \) | sort
+          find "${GITHUB_WORKSPACE}" -maxdepth 3 \( -name "WORKSPACE" -o -name "MODULE.bazel" -o -name "BUILD.bazel" -o -name "dist.bzl" \) | sort
           echo "==== build tree ===="
-          find "$GITHUB_WORKSPACE/build" -maxdepth 4 -type f | sort || true
+          find "${GITHUB_WORKSPACE}/build" -maxdepth 4 -type f | sort || true
 
       - name: Build kernel - houji gki
         id: build_houji_gki
         continue-on-error: true
         run: |
-          cd "$GITHUB_WORKSPACE/$REPO_DIR"
-          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
           echo "Deneniyor: houji gki"
           python3 build_with_bazel.py -t houji gki
@@ -159,8 +159,8 @@ EOF
         id: build_shennong_gki
         continue-on-error: true
         run: |
-          cd "$GITHUB_WORKSPACE/$REPO_DIR"
-          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
           echo "Deneniyor: shennong gki"
           python3 build_with_bazel.py -t shennong gki
@@ -170,8 +170,8 @@ EOF
         id: build_pineapple_gki
         continue-on-error: true
         run: |
-          cd "$GITHUB_WORKSPACE/$REPO_DIR"
-          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
           echo "Deneniyor: pineapple gki"
           python3 build_with_bazel.py -t pineapple gki
@@ -185,8 +185,8 @@ EOF
       - name: Collect outputs
         if: always()
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/artifacts"
-          cd "$GITHUB_WORKSPACE"
+          mkdir -p "${GITHUB_WORKSPACE}/artifacts"
+          cd "${GITHUB_WORKSPACE}"
 
           find out/ -type f \( \
             -name "Image" -o \
@@ -198,19 +198,19 @@ EOF
             -name "*.ko" -o \
             -name "vmlinux" -o \
             -name "System.map" \
-          \) | tee "$GITHUB_WORKSPACE/found_files.txt" || true
+          \) | tee "${GITHUB_WORKSPACE}/found_files.txt" || true
 
           while IFS= read -r file; do
-            [ -n "$file" ] && cp --parents "$file" "$GITHUB_WORKSPACE/artifacts/" || true
-          done < "$GITHUB_WORKSPACE/found_files.txt"
+            [ -n "${file}" ] && cp --parents "${file}" "${GITHUB_WORKSPACE}/artifacts/" || true
+          done < "${GITHUB_WORKSPACE}/found_files.txt"
 
       - name: Pack outputs
         if: always()
         run: |
-          cd "$GITHUB_WORKSPACE"
+          cd "${GITHUB_WORKSPACE}"
           ZIP_NAME="houji-kernel-build-$(date +%Y%m%d-%H%M).zip"
-          zip -r9 "$ZIP_NAME" artifacts found_files.txt || true
-          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+          zip -r9 "${ZIP_NAME}" artifacts found_files.txt || true
+          echo "ZIP_NAME=${ZIP_NAME}" >> "${GITHUB_ENV}"
 
       - name: Upload packed build
         if: always()
