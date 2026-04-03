@@ -1,4 +1,4 @@
-name: Build Xiaomi Houji/Shennong Kernel
+name: Build Xiaomi Houji Shennong Kernel
 
 on:
   workflow_dispatch:
@@ -66,10 +66,7 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/bootable/bootloader/edk2"
           touch "${GITHUB_WORKSPACE}/bootable/bootloader/edk2/abl_extensions.bzl"
 
-          cat > "${GITHUB_WORKSPACE}/tools/bazel" <<'BASHEOF'
-#!/usr/bin/env bash
-exec /usr/local/bin/bazel "$@"
-BASHEOF
+          printf '%s\n' '#!/usr/bin/env bash' 'exec /usr/local/bin/bazel "$@"' > "${GITHUB_WORKSPACE}/tools/bazel"
           chmod +x "${GITHUB_WORKSPACE}/tools/bazel"
 
       - name: Clone source
@@ -90,7 +87,7 @@ BASHEOF
 
           touch "${GITHUB_WORKSPACE}/MODULE.bazel"
 
-      - name: Fix missing build bazel_common_rules tree
+      - name: Fix missing build bazel common rules tree
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist"
 
@@ -105,13 +102,13 @@ BASHEOF
             cp "${REAL_DIST_BZL}" "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl"
           else
             echo "Real dist.bzl not found, creating stub"
-            cat > "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl" <<'BZLEOF'
-def copy_to_dist_dir(**kwargs):
-    pass
-
-def _noop(**kwargs):
-    pass
-BZLEOF
+            printf '%s\n' \
+              'def copy_to_dist_dir(**kwargs):' \
+              '    pass' \
+              '' \
+              'def _noop(**kwargs):' \
+              '    pass' \
+              > "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl"
           fi
 
       - name: Fix extension symlinks manually
@@ -144,7 +141,7 @@ BZLEOF
           echo "==== build tree ===="
           find "${GITHUB_WORKSPACE}/build" -maxdepth 4 -type f | sort || true
 
-      - name: Build kernel - houji gki
+      - name: Build kernel houji gki
         id: build_houji_gki
         continue-on-error: true
         run: |
@@ -154,7 +151,7 @@ BZLEOF
           echo "Deneniyor: houji gki"
           python3 build_with_bazel.py -t houji gki
 
-      - name: Build kernel - shennong gki
+      - name: Build kernel shennong gki
         if: steps.build_houji_gki.outcome == 'failure'
         id: build_shennong_gki
         continue-on-error: true
@@ -165,7 +162,7 @@ BZLEOF
           echo "Deneniyor: shennong gki"
           python3 build_with_bazel.py -t shennong gki
 
-      - name: Build kernel - pineapple gki
+      - name: Build kernel pineapple gki
         if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure'
         id: build_pineapple_gki
         continue-on-error: true
@@ -179,7 +176,7 @@ BZLEOF
       - name: Stop if all builds failed
         if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure' && steps.build_pineapple_gki.outcome == 'failure'
         run: |
-          echo "HİÇBİR HEDEF DERLENEMEDİ!"
+          echo "HICBIR HEDEF DERLENEMEDI!"
           exit 1
 
       - name: Collect outputs
@@ -216,6 +213,8 @@ BZLEOF
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: ${{ github.workspace }}/${{ env.ZIP_NAME }}
+          name: houji-kernel-build
+          path: |
+            ${{ github.workspace }}/${{ env.ZIP_NAME }}
+            ${{ github.workspace }}/artifacts
           if-no-files-found: warn
