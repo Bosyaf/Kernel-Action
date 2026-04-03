@@ -10,8 +10,7 @@ jobs:
 
     env:
       REPO_URL: https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git
-      REPO_DIR: kernel
-      OUT_DIR: out
+      REPO_DIR: msm-kernel   # Scriptin mecburi kıldığı klasör adı
       GOOGLE_CLANG_REV: r530567
 
     steps:
@@ -44,10 +43,24 @@ jobs:
           sudo mv bazelisk /usr/local/bin/bazel
           /usr/local/bin/bazel version
 
+      - name: Workspace Hazirlik (Scriptin Istedigi Yapi)
+        run: |
+          # Script'in bir ust dizinde aradigi 'build' ve 'tools' klasorlerini onceden aciyoruz.
+          mkdir -p $GITHUB_WORKSPACE/build
+          mkdir -p $GITHUB_WORKSPACE/tools
+
+          # Scriptin illa da tools/bazel diye aradigi dosyayi yaratiyoruz
+          cat > $GITHUB_WORKSPACE/tools/bazel << 'EOF'
+          #!/usr/bin/env bash
+          exec /usr/local/bin/bazel "$@"
+          EOF
+          chmod +x $GITHUB_WORKSPACE/tools/bazel
+
       - name: Clone source
         run: |
-          git clone --depth=1 $REPO_URL $REPO_DIR
-          cd $REPO_DIR
+          # Repoyu tam scriptin istedigi 'msm-kernel' adiyla klonluyoruz
+          git clone --depth=1 $REPO_URL $GITHUB_WORKSPACE/$REPO_DIR
+          cd $GITHUB_WORKSPACE/$REPO_DIR
           echo "Last commit:"
           git log --oneline -1
 
@@ -59,24 +72,6 @@ jobs:
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
           echo "Downloading $CLANG_URL"
           curl -L "$CLANG_URL" | tar -xz
-
-      - name: KESİN ÇÖZÜM - tools/bazel oluştur
-        run: |
-          # Script nerede arıyorsa oraya sahte bazel koyuyoruz, bu sayede sistemdekini tetikleyecek.
-          mkdir -p $GITHUB_WORKSPACE/tools
-          mkdir -p $GITHUB_WORKSPACE/$REPO_DIR/tools
-
-          cat > $GITHUB_WORKSPACE/tools/bazel << 'EOF'
-          #!/usr/bin/env bash
-          exec /usr/local/bin/bazel "$@"
-          EOF
-          
-          chmod +x $GITHUB_WORKSPACE/tools/bazel
-          cp $GITHUB_WORKSPACE/tools/bazel $GITHUB_WORKSPACE/$REPO_DIR/tools/bazel
-
-          echo "Sahte bazel dosyaları oluşturuldu:"
-          ls -la $GITHUB_WORKSPACE/tools/bazel
-          ls -la $GITHUB_WORKSPACE/$REPO_DIR/tools/bazel
 
       - name: Export LLVM tools
         run: |
@@ -99,37 +94,36 @@ jobs:
         id: build_houji_gki
         continue-on-error: true
         run: |
-          cd $REPO_DIR
-          mkdir -p $OUT_DIR
+          cd $GITHUB_WORKSPACE/$REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
 
           echo "Deneniyor: houji gki"
-          python3 build_with_bazel.py -t houji gki -o $OUT_DIR
+          python3 build_with_bazel.py -t houji gki
 
       - name: Build kernel - shennong gki
         if: steps.build_houji_gki.outcome == 'failure'
         id: build_shennong_gki
         continue-on-error: true
         run: |
-          cd $REPO_DIR
+          cd $GITHUB_WORKSPACE/$REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
 
           echo "Deneniyor: shennong gki"
-          python3 build_with_bazel.py -t shennong gki -o $OUT_DIR
+          python3 build_with_bazel.py -t shennong gki
 
       - name: Build kernel - pineapple gki
         if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure'
         id: build_pineapple_gki
         continue-on-error: true
         run: |
-          cd $REPO_DIR
+          cd $GITHUB_WORKSPACE/$REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
 
           echo "Deneniyor: pineapple gki"
-          python3 build_with_bazel.py -t pineapple gki -o $OUT_DIR
+          python3 build_with_bazel.py -t pineapple gki
 
       - name: Stop if all builds failed
         if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure' && steps.build_pineapple_gki.outcome == 'failure'
@@ -141,9 +135,11 @@ jobs:
         if: always()
         run: |
           mkdir -p $GITHUB_WORKSPACE/artifacts
-          cd $REPO_DIR
-
-          find . -type f \( \
+          
+          # Script varsayilan olarak ciktilari ust dizindeki out/msm-kernel-X-Y icine atiyor
+          cd $GITHUB_WORKSPACE
+          
+          find out/ -type f \( \
             -name "Image" -o \
             -name "Image.gz" -o \
             -name "Image.lz4" -o \
