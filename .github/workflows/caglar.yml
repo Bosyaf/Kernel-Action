@@ -1,7 +1,20 @@
-name: Build Xiaomi Houji Shennong Kernel
+name: Build Xiaomi MI14 Kernel
 
 on:
   workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Source branch
+        required: true
+        default: main
+      target:
+        description: Build target
+        required: true
+        default: houji
+      variant:
+        description: Build variant
+        required: true
+        default: gki
 
 jobs:
   build:
@@ -9,8 +22,7 @@ jobs:
     timeout-minutes: 180
 
     env:
-      REPO_URL: https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git
-      REPO_DIR: msm-kernel
+      SOURCE_REPO: https://github.com/Xiaomi-SM8650-houji/Xiaomi_Kernel_OpenSource.git
       GOOGLE_CLANG_REV: r530567
 
     steps:
@@ -33,7 +45,7 @@ jobs:
             openjdk-17-jdk \
             build-essential bc bison flex cpio rsync kmod \
             libssl-dev libelf-dev dwarves lz4 zstd zip unzip \
-            ca-certificates xz-utils jq file \
+            ca-certificates xz-utils jq file findutils \
             device-tree-compiler perl sed make
 
       - name: Install Bazelisk
@@ -41,7 +53,7 @@ jobs:
           wget -O bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
           chmod +x bazelisk
           sudo mv bazelisk /usr/local/bin/bazel
-          /usr/local/bin/bazel version
+          /usr/local/bin/bazel version || true
 
       - name: Cache Google Clang
         id: cache-clang
@@ -58,64 +70,100 @@ jobs:
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
           echo "Downloading ${CLANG_URL}"
           curl -L "${CLANG_URL}" | tar -xz
+          test -f "${GITHUB_WORKSPACE}/toolchain/google-clang/bin/clang"
+          "${GITHUB_WORKSPACE}/toolchain/google-clang/bin/clang" --version
 
-      - name: Prepare workspace skeleton
+      - name: Clone source repo
         run: |
-          mkdir -p "${GITHUB_WORKSPACE}/build"
-          mkdir -p "${GITHUB_WORKSPACE}/tools"
-          mkdir -p "${GITHUB_WORKSPACE}/bootable/bootloader/edk2"
-          touch "${GITHUB_WORKSPACE}/bootable/bootloader/edk2/abl_extensions.bzl"
-
-          printf '%s\n' '#!/usr/bin/env bash' 'exec /usr/local/bin/bazel "$@"' > "${GITHUB_WORKSPACE}/tools/bazel"
-          chmod +x "${GITHUB_WORKSPACE}/tools/bazel"
-
-      - name: Clone source
-        run: |
-          git clone --depth=1 "${REPO_URL}" "${GITHUB_WORKSPACE}/${REPO_DIR}"
-          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          git clone --depth=1 --branch "${{ inputs.source_branch }}" "${SOURCE_REPO}" "${GITHUB_WORKSPACE}/src"
+          cd "${GITHUB_WORKSPACE}/src"
           git log --oneline -1
 
-      - name: Setup Bazel workspace files
+      - name: Detect workspace layout
+        id: layout
         run: |
-          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
-
-          if [ -f "bazel.WORKSPACE" ]; then
-            cp "bazel.WORKSPACE" "${GITHUB_WORKSPACE}/WORKSPACE"
-          else
-            touch "${GITHUB_WORKSPACE}/WORKSPACE"
+          BUILD_SCRIPT="$(find "${GITHUB_WORKSPACE}/src" -type f -name build_with_bazel.py | head -n 1)"
+          if [ -z "${BUILD_SCRIPT}" ]; then
+            echo "build_with_bazel.py not found"
+            exit 1
           fi
 
-          touch "${GITHUB_WORKSPACE}/MODULE.bazel"
+          SCRIPT_DIR="$(dirname "${BUILD_SCRIPT}")"
 
-      - name: Fix missing build bazel common rules tree
-        run: |
-          mkdir -p "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist"
-
-          touch "${GITHUB_WORKSPACE}/build/BUILD.bazel"
-          touch "${GITHUB_WORKSPACE}/build/bazel_common_rules/BUILD.bazel"
-          touch "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/BUILD.bazel"
-
-          REAL_DIST_BZL="$(find "${GITHUB_WORKSPACE}/${REPO_DIR}" -path '*/bazel_common_rules/dist/dist.bzl' | head -n 1 || true)"
-
-          if [ -n "${REAL_DIST_BZL}" ] && [ -f "${REAL_DIST_BZL}" ]; then
-            echo "Using real dist.bzl from: ${REAL_DIST_BZL}"
-            cp "${REAL_DIST_BZL}" "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl"
+          if [ "${SCRIPT_DIR}" = "${GITHUB_WORKSPACE}/src" ]; then
+            mkdir -p "${GITHUB_WORKSPACE}/workspace"
+            mv "${GITHUB_WORKSPACE}/src" "${GITHUB_WORKSPACE}/workspace/msm-kernel"
+            WORKSPACE_ROOT="${GITHUB_WORKSPACE}/workspace"
+            KERNEL_DIR="${GITHUB_WORKSPACE}/workspace/msm-kernel"
           else
-            echo "Real dist.bzl not found, creating stub"
-            printf '%s\n' \
-              'def copy_to_dist_dir(**kwargs):' \
-              '    pass' \
-              '' \
-              'def _noop(**kwargs):' \
-              '    pass' \
-              > "${GITHUB_WORKSPACE}/build/bazel_common_rules/dist/dist.bzl"
+            WORKSPACE_ROOT="$(realpath "${SCRIPT_DIR}/..")"
+            KERNEL_DIR="${SCRIPT_DIR}"
           fi
 
-      - name: Fix extension symlinks manually
+          echo "build_script=${BUILD_SCRIPT}" >> "${GITHUB_OUTPUT}"
+          echo "workspace_root=${WORKSPACE_ROOT}" >> "${GITHUB_OUTPUT}"
+          echo "kernel_dir=${KERNEL_DIR}" >> "${GITHUB_OUTPUT}"
+
+          echo "WORKSPACE_ROOT=${WORKSPACE_ROOT}"
+          echo "KERNEL_DIR=${KERNEL_DIR}"
+
+      - name: Prepare workspace
         run: |
-          ln -sf ../msm-kernel/msm_kernel_extensions.bzl "${GITHUB_WORKSPACE}/build/msm_kernel_extensions.bzl" || true
-          ln -sf ../bootable/bootloader/edk2/abl_extensions.bzl "${GITHUB_WORKSPACE}/build/abl_extensions.bzl" || true
-          ls -lah "${GITHUB_WORKSPACE}/build" || true
+          WORKSPACE_ROOT="${{ steps.layout.outputs.workspace_root }}"
+          KERNEL_DIR="${{ steps.layout.outputs.kernel_dir }}"
+
+          mkdir -p "${WORKSPACE_ROOT}/tools"
+          mkdir -p "${WORKSPACE_ROOT}/build"
+          mkdir -p "${WORKSPACE_ROOT}/bootable/bootloader/edk2"
+
+          if [ ! -x "${WORKSPACE_ROOT}/tools/bazel" ]; then
+            printf '%s\n' '#!/usr/bin/env bash' 'exec /usr/local/bin/bazel "$@"' > "${WORKSPACE_ROOT}/tools/bazel"
+            chmod +x "${WORKSPACE_ROOT}/tools/bazel"
+          fi
+
+          if [ ! -f "${WORKSPACE_ROOT}/WORKSPACE" ]; then
+            if [ -f "${WORKSPACE_ROOT}/bazel.WORKSPACE" ]; then
+              cp "${WORKSPACE_ROOT}/bazel.WORKSPACE" "${WORKSPACE_ROOT}/WORKSPACE"
+            elif [ -f "${KERNEL_DIR}/bazel.WORKSPACE" ]; then
+              cp "${KERNEL_DIR}/bazel.WORKSPACE" "${WORKSPACE_ROOT}/WORKSPACE"
+            else
+              touch "${WORKSPACE_ROOT}/WORKSPACE"
+            fi
+          fi
+
+          if [ ! -f "${WORKSPACE_ROOT}/MODULE.bazel" ]; then
+            touch "${WORKSPACE_ROOT}/MODULE.bazel"
+          fi
+
+          if [ ! -f "${WORKSPACE_ROOT}/build/msm_kernel_extensions.bzl" ] && [ -f "${KERNEL_DIR}/msm_kernel_extensions.bzl" ]; then
+            cp "${KERNEL_DIR}/msm_kernel_extensions.bzl" "${WORKSPACE_ROOT}/build/msm_kernel_extensions.bzl"
+          fi
+
+          if [ ! -f "${WORKSPACE_ROOT}/bootable/bootloader/edk2/abl_extensions.bzl" ]; then
+            touch "${WORKSPACE_ROOT}/bootable/bootloader/edk2/abl_extensions.bzl"
+          fi
+
+          if [ ! -f "${WORKSPACE_ROOT}/build/abl_extensions.bzl" ]; then
+            cp "${WORKSPACE_ROOT}/bootable/bootloader/edk2/abl_extensions.bzl" "${WORKSPACE_ROOT}/build/abl_extensions.bzl" || true
+          fi
+
+          if [ -d "${WORKSPACE_ROOT}/build/bazel_common_rules" ]; then
+            mkdir -p "${WORKSPACE_ROOT}/build/bazel_common_rules/dist"
+            touch "${WORKSPACE_ROOT}/build/BUILD.bazel"
+            touch "${WORKSPACE_ROOT}/build/bazel_common_rules/BUILD.bazel"
+            touch "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/BUILD.bazel"
+          fi
+
+          if [ ! -f "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/dist.bzl" ]; then
+            REAL_DIST_BZL="$(find "${WORKSPACE_ROOT}" -type f -path '*/bazel_common_rules/dist/dist.bzl' | head -n 1 || true)"
+            if [ -n "${REAL_DIST_BZL}" ] && [ -f "${REAL_DIST_BZL}" ]; then
+              mkdir -p "${WORKSPACE_ROOT}/build/bazel_common_rules/dist"
+              cp "${REAL_DIST_BZL}" "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/dist.bzl"
+              touch "${WORKSPACE_ROOT}/build/BUILD.bazel"
+              touch "${WORKSPACE_ROOT}/build/bazel_common_rules/BUILD.bazel"
+              touch "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/BUILD.bazel"
+            fi
+          fi
 
       - name: Export LLVM tools
         run: |
@@ -134,63 +182,72 @@ jobs:
             echo "LLVM_IAS=1"
           } >> "${GITHUB_ENV}"
 
-      - name: Debug workspace layout
+      - name: Debug layout
         run: |
-          echo "==== Workspace root ===="
-          find "${GITHUB_WORKSPACE}" -maxdepth 3 \( -name "WORKSPACE" -o -name "MODULE.bazel" -o -name "BUILD.bazel" -o -name "dist.bzl" \) | sort
-          echo "==== build tree ===="
-          find "${GITHUB_WORKSPACE}/build" -maxdepth 4 -type f | sort || true
+          echo "===== workspace root ====="
+          echo "${{ steps.layout.outputs.workspace_root }}"
+          echo "===== kernel dir ====="
+          echo "${{ steps.layout.outputs.kernel_dir }}"
+          echo "===== build script ====="
+          find "${{ steps.layout.outputs.workspace_root }}" -maxdepth 4 -name build_with_bazel.py | sort || true
+          echo "===== workspace files ====="
+          find "${{ steps.layout.outputs.workspace_root }}" -maxdepth 3 \( -name WORKSPACE -o -name MODULE.bazel -o -name BUILD.bazel -o -name bazel.WORKSPACE \) | sort || true
+          echo "===== tools ====="
+          ls -lah "${{ steps.layout.outputs.workspace_root }}/tools" || true
+          echo "===== build dir ====="
+          find "${{ steps.layout.outputs.workspace_root }}/build" -maxdepth 4 -type f | sort || true
 
-      - name: Build kernel houji gki
-        id: build_houji_gki
+      - name: Build target
+        id: build_primary
         continue-on-error: true
         run: |
-          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          cd "${{ steps.layout.outputs.kernel_dir }}"
           export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-          echo "Deneniyor: houji gki"
-          python3 build_with_bazel.py -t houji gki
+          echo "Building: ${{ inputs.target }} ${{ inputs.variant }}"
+          python3 build_with_bazel.py -t "${{ inputs.target }}" "${{ inputs.variant }}"
 
-      - name: Build kernel shennong gki
-        if: steps.build_houji_gki.outcome == 'failure'
-        id: build_shennong_gki
+      - name: Fallback build shennong gki
+        if: steps.build_primary.outcome == 'failure' && inputs.target == 'houji'
+        id: build_shennong
         continue-on-error: true
         run: |
-          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          cd "${{ steps.layout.outputs.kernel_dir }}"
           export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-          echo "Deneniyor: shennong gki"
+          echo "Fallback: shennong gki"
           python3 build_with_bazel.py -t shennong gki
 
-      - name: Build kernel pineapple gki
-        if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure'
-        id: build_pineapple_gki
+      - name: Fallback build pineapple gki
+        if: steps.build_primary.outcome == 'failure' && steps.build_shennong.outcome == 'failure'
+        id: build_pineapple
         continue-on-error: true
         run: |
-          cd "${GITHUB_WORKSPACE}/${REPO_DIR}"
+          cd "${{ steps.layout.outputs.kernel_dir }}"
           export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-          echo "Deneniyor: pineapple gki"
+          echo "Fallback: pineapple gki"
           python3 build_with_bazel.py -t pineapple gki
 
       - name: Stop if all builds failed
-        if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure' && steps.build_pineapple_gki.outcome == 'failure'
+        if: steps.build_primary.outcome == 'failure' && (steps.build_shennong.outcome == 'failure' || steps.build_shennong.outcome == '') && (steps.build_pineapple.outcome == 'failure' || steps.build_pineapple.outcome == '')
         run: |
-          echo "HICBIR HEDEF DERLENEMEDI!"
+          echo "All build attempts failed"
           exit 1
 
       - name: Collect outputs
         if: always()
         run: |
+          WORKSPACE_ROOT="${{ steps.layout.outputs.workspace_root }}"
           mkdir -p "${GITHUB_WORKSPACE}/artifacts"
-          cd "${GITHUB_WORKSPACE}"
 
-          find out/ -type f \( \
+          find "${WORKSPACE_ROOT}/out" -type f \( \
             -name "Image" -o \
             -name "Image.gz" -o \
             -name "Image.lz4" -o \
             -name "dtbo.img" -o \
             -name "boot.img" -o \
+            -name "vendor_boot.img" -o \
             -name "*.dtb" -o \
             -name "*.ko" -o \
             -name "vmlinux" -o \
@@ -205,15 +262,15 @@ jobs:
         if: always()
         run: |
           cd "${GITHUB_WORKSPACE}"
-          ZIP_NAME="houji-kernel-build-$(date +%Y%m%d-%H%M).zip"
+          ZIP_NAME="mi14-kernel-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "${ZIP_NAME}" artifacts found_files.txt || true
           echo "ZIP_NAME=${ZIP_NAME}" >> "${GITHUB_ENV}"
 
-      - name: Upload packed build
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: houji-kernel-build
+          name: mi14-kernel-build
           path: |
             ${{ github.workspace }}/${{ env.ZIP_NAME }}
             ${{ github.workspace }}/artifacts
