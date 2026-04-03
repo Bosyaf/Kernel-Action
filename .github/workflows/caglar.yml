@@ -1,4 +1,4 @@
-name: CG+ Full LTO Boot Test (Final Anti-OOM)
+name: CG+ Full LTO Boot Test (Final Anti-OOM + KMI Fix)
 
 permissions:
   contents: write
@@ -76,11 +76,11 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: Configure (Clean Full LTO + KMI safe + NO debug info)
+      - name: Configure (Full LTO + KMI Symbol Protection)
         run: |
           cd common
 
-          # olddefconfig CFI/KCFI select geri açmasın
+          # CFI/KCFI Select'leri temizle (Boot için kritik)
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select KCFI/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
@@ -94,7 +94,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
 
-          # Full LTO
+          # Full LTO Aktif
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THINLTO
@@ -102,31 +102,31 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
-          # CFI/KCFI/SCS kapat
+          # CFI/KCFI/SCS Kapat
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
 
-          # KMI/ABI safe (vendor modüller için)
+          # 🛡️ KMI ABI KORUMA (Mi logosunda takılmayı çözen kısım)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UNUSED_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_FORCE
 
-          # OOM azaltmak için debug info KAPAT (çok önemli)
+          # Debug info kapat (RAM tasarrufu)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4 || true
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5 || true
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_GDB_SCRIPTS || true
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-BootTest"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-KMI-Safe"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
 
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: Build kernel (LLD threads off + -j1)
+      - name: Build kernel (KMI Guard + -j1)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -135,6 +135,10 @@ jobs:
           touch .scmversion
           ulimit -n 65535 || true
 
+          # 🛡️ Linker'a tüm sembolleri dışarı açmasını söyle (Vendor modüller için)
+          # Modül yükleyiciyi LTO'dan muaf tut
+          echo "CFLAGS_module.o += -fno-lto" >> kernel/Makefile
+          
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
@@ -151,50 +155,43 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
-          echo "=== CONFIG CHECK ==="
-          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_DEBUG_INFO|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD" out/.config || true
-
-          # LLD thread flag otomatik seç (hangisi varsa onu kullan)
+          # LLD thread seçimi
           THREAD_FLAG=""
           if ld.lld --help | grep -q -- '--no-threads'; then
             THREAD_FLAG="--no-threads"
           elif ld.lld --help | grep -q -- '--threads='; then
             THREAD_FLAG="--threads=1"
           fi
-          echo "LLD thread flag: ${THREAD_FLAG}"
 
-          sync
-          echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
-          free -h
-          swapon --show
+          sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
 
-          # -j1: en düşük RAM riski
+          # 🚀 --export-dynamic: Tüm sembolleri tabloya ekler, vendor modülleri boot ettirir.
           make -j1 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             KCFLAGS="-O2 -fno-sanitize=kcfi -Wno-constant-logical-operand" \
             LDFLAGS_vmlinux="--export-dynamic ${THREAD_FLAG}" \
-            Image || { echo "❌ BUILD FAILED"; free -h; exit 1; }
+            Image || { echo "❌ BUILD FAILED"; exit 1; }
 
-          echo "BOOTHASH=FullLTO-BootTest-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=LTO-KMI-FIX-$(date +%s)" >> $GITHUB_ENV
 
       - name: Pack AnyKernel3
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO Boot Test (Final)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO KMI Safe/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r ../CG-FullLTO-BootTest.zip ./*
+          zip -r "../CG-FullLTO-KMISafe.zip" ./*
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Full LTO Boot Test (Final Anti-OOM)"
-          files: "CG-FullLTO-BootTest.zip"
+          name: "CG+ Full LTO Boot Test (KMI ABI Fix)"
+          files: "CG-FullLTO-KMISafe.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
