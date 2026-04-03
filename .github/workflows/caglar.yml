@@ -36,7 +36,7 @@ jobs:
             ca-certificates xz-utils jq file \
             device-tree-compiler perl sed make
 
-      - name: Install Bazelisk (Sistem Bazel)
+      - name: Install Bazelisk
         run: |
           wget -O bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
           chmod +x bazelisk
@@ -48,24 +48,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/toolchain/google-clang
-          key: clang-${{ env.GOOGLE_CLANG_REV }}
+          key: google-clang-${{ env.GOOGLE_CLANG_REV }}
 
-      - name: Download Google Clang (Hafizada Yoksa İndirir)
+      - name: Download Google Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p $GITHUB_WORKSPACE/toolchain/google-clang
           cd $GITHUB_WORKSPACE/toolchain/google-clang
-
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
           echo "Downloading $CLANG_URL"
           curl -L "$CLANG_URL" | tar -xz
 
-      - name: Workspace Hazirlik (Scriptin Istedigi Yapi)
+      - name: Prepare workspace skeleton
         run: |
           mkdir -p $GITHUB_WORKSPACE/build
           mkdir -p $GITHUB_WORKSPACE/tools
-          
-          # Hata veren kirik bootloader symlinkini engellemek icin sahte dosya aciyoruz
           mkdir -p $GITHUB_WORKSPACE/bootable/bootloader/edk2
           touch $GITHUB_WORKSPACE/bootable/bootloader/edk2/abl_extensions.bzl
 
@@ -75,18 +72,55 @@ jobs:
           EOF
           chmod +x $GITHUB_WORKSPACE/tools/bazel
 
-      - name: Clone source & Setup WORKSPACE
+      - name: Clone source
         run: |
           git clone --depth=1 $REPO_URL $GITHUB_WORKSPACE/$REPO_DIR
           cd $GITHUB_WORKSPACE/$REPO_DIR
-          
-          # Bazel'in hata vermemesi icin gerekli WORKSPACE dosyasini ust dizine kopyaliyoruz
+          git log --oneline -1
+
+      - name: Setup Bazel workspace files
+        run: |
+          cd $GITHUB_WORKSPACE/$REPO_DIR
+
           if [ -f "bazel.WORKSPACE" ]; then
             cp bazel.WORKSPACE $GITHUB_WORKSPACE/WORKSPACE
-            echo "WORKSPACE dosyasi kopyalandi."
           else
             touch $GITHUB_WORKSPACE/WORKSPACE
           fi
+
+          # Bazel bazen MODULE.bazel de ister
+          touch $GITHUB_WORKSPACE/MODULE.bazel
+
+      - name: Fix missing build/bazel_common_rules tree
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/build/bazel_common_rules/dist
+
+          # Her parent package için BUILD.bazel oluştur
+          touch $GITHUB_WORKSPACE/build/BUILD.bazel
+          touch $GITHUB_WORKSPACE/build/bazel_common_rules/BUILD.bazel
+          touch $GITHUB_WORKSPACE/build/bazel_common_rules/dist/BUILD.bazel
+
+          # Eğer repo içinde gerçek dist.bzl varsa onu workspace köküne kopyala
+          REAL_DIST_BZL="$(find $GITHUB_WORKSPACE/$REPO_DIR -path '*/bazel_common_rules/dist/dist.bzl' | head -n 1 || true)"
+          if [ -n "$REAL_DIST_BZL" ] && [ -f "$REAL_DIST_BZL" ]; then
+            echo "Using real dist.bzl from: $REAL_DIST_BZL"
+            cp "$REAL_DIST_BZL" $GITHUB_WORKSPACE/build/bazel_common_rules/dist/dist.bzl
+          else
+            echo "Real dist.bzl not found, creating stub"
+            cat > $GITHUB_WORKSPACE/build/bazel_common_rules/dist/dist.bzl << 'EOF'
+def copy_to_dist_dir(**kwargs):
+    pass
+
+def _noop(**kwargs):
+    pass
+EOF
+          fi
+
+      - name: Fix extension symlinks manually
+        run: |
+          ln -sf ../msm-kernel/msm_kernel_extensions.bzl $GITHUB_WORKSPACE/build/msm_kernel_extensions.bzl || true
+          ln -sf ../bootable/bootloader/edk2/abl_extensions.bzl $GITHUB_WORKSPACE/build/abl_extensions.bzl || true
+          ls -lah $GITHUB_WORKSPACE/build || true
 
       - name: Export LLVM tools
         run: |
@@ -105,6 +139,13 @@ jobs:
             echo "LLVM_IAS=1"
           } >> $GITHUB_ENV
 
+      - name: Debug workspace layout
+        run: |
+          echo "==== Workspace root ===="
+          find $GITHUB_WORKSPACE -maxdepth 3 \( -name "WORKSPACE" -o -name "MODULE.bazel" -o -name "BUILD.bazel" -o -name "dist.bzl" \) | sort
+          echo "==== build tree ===="
+          find $GITHUB_WORKSPACE/build -maxdepth 4 -type f | sort || true
+
       - name: Build kernel - houji gki
         id: build_houji_gki
         continue-on-error: true
@@ -112,7 +153,6 @@ jobs:
           cd $GITHUB_WORKSPACE/$REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-
           echo "Deneniyor: houji gki"
           python3 build_with_bazel.py -t houji gki
 
@@ -124,7 +164,6 @@ jobs:
           cd $GITHUB_WORKSPACE/$REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-
           echo "Deneniyor: shennong gki"
           python3 build_with_bazel.py -t shennong gki
 
@@ -136,7 +175,6 @@ jobs:
           cd $GITHUB_WORKSPACE/$REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-
           echo "Deneniyor: pineapple gki"
           python3 build_with_bazel.py -t pineapple gki
 
@@ -151,7 +189,6 @@ jobs:
         run: |
           mkdir -p $GITHUB_WORKSPACE/artifacts
           cd $GITHUB_WORKSPACE
-          
           find out/ -type f \( \
             -name "Image" -o \
             -name "Image.gz" -o \
@@ -159,7 +196,9 @@ jobs:
             -name "dtbo.img" -o \
             -name "boot.img" -o \
             -name "*.dtb" -o \
-            -name "*.ko" \
+            -name "*.ko" -o \
+            -name "vmlinux" -o \
+            -name "System.map" \
           \) | tee $GITHUB_WORKSPACE/found_files.txt || true
 
           while IFS= read -r file; do
