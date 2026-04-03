@@ -37,12 +37,12 @@ jobs:
             ca-certificates xz-utils jq file \
             device-tree-compiler perl sed make
 
-      - name: Install Bazelisk
+      - name: Install Bazelisk (Sistem Bazel)
         run: |
           wget -O bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
           chmod +x bazelisk
           sudo mv bazelisk /usr/local/bin/bazel
-          bazel version
+          /usr/local/bin/bazel version
 
       - name: Clone source
         run: |
@@ -50,9 +50,6 @@ jobs:
           cd $REPO_DIR
           echo "Last commit:"
           git log --oneline -1
-          echo
-          echo "Relevant files:"
-          ls -lah | grep -E 'build_with_bazel|build.config|bazel|BUILD|WORKSPACE|houji|shennong|pineapple' || true
 
       - name: Download Google Clang
         run: |
@@ -63,9 +60,23 @@ jobs:
           echo "Downloading $CLANG_URL"
           curl -L "$CLANG_URL" | tar -xz
 
-          test -f bin/clang
-          ./bin/clang --version
-          ./bin/ld.lld --version || true
+      - name: KESİN ÇÖZÜM - tools/bazel oluştur
+        run: |
+          # Script nerede arıyorsa oraya sahte bazel koyuyoruz, bu sayede sistemdekini tetikleyecek.
+          mkdir -p $GITHUB_WORKSPACE/tools
+          mkdir -p $GITHUB_WORKSPACE/$REPO_DIR/tools
+
+          cat > $GITHUB_WORKSPACE/tools/bazel << 'EOF'
+          #!/usr/bin/env bash
+          exec /usr/local/bin/bazel "$@"
+          EOF
+          
+          chmod +x $GITHUB_WORKSPACE/tools/bazel
+          cp $GITHUB_WORKSPACE/tools/bazel $GITHUB_WORKSPACE/$REPO_DIR/tools/bazel
+
+          echo "Sahte bazel dosyaları oluşturuldu:"
+          ls -la $GITHUB_WORKSPACE/tools/bazel
+          ls -la $GITHUB_WORKSPACE/$REPO_DIR/tools/bazel
 
       - name: Export LLVM tools
         run: |
@@ -84,64 +95,47 @@ jobs:
             echo "LLVM_IAS=1"
           } >> $GITHUB_ENV
 
-      - name: Inspect build script help
-        run: |
-          cd $REPO_DIR
-          echo "===== build_with_bazel.py --help ====="
-          python3 build_with_bazel.py --help || true
-          echo
-          echo "===== grep argparse hints ====="
-          grep -nE "add_argument|target|variant|BUILD_CONFIG|build_rule" build_with_bazel.py | sed -n '1,200p' || true
-          echo
-          echo "===== root bzl/config files ====="
-          ls -1 | grep -E 'houji|shennong|pineapple|build.config' | sed -n '1,200p' || true
-
-      - name: Build kernel
+      - name: Build kernel - houji gki
+        id: build_houji_gki
+        continue-on-error: true
         run: |
           cd $REPO_DIR
           mkdir -p $OUT_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
-          export CC=clang
-          export CXX=clang++
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
-          export READELF=llvm-readelf
-          export LLVM=1
-          export LLVM_IAS=1
+          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
 
-          set -x
+          echo "Deneniyor: houji gki"
+          python3 build_with_bazel.py -t houji gki -o $OUT_DIR
 
-          echo "Trying: houji user"
-          python3 build_with_bazel.py -t houji user -o $OUT_DIR \
-          || { echo "houji user failed"; false; }
-
-      - name: Fallback build - houji userdebug
-        if: failure()
+      - name: Build kernel - shennong gki
+        if: steps.build_houji_gki.outcome == 'failure'
+        id: build_shennong_gki
+        continue-on-error: true
         run: |
           cd $REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
-          set -x
-          python3 build_with_bazel.py -t houji userdebug -o $OUT_DIR
+          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
 
-      - name: Fallback build - shennong user
-        if: failure()
+          echo "Deneniyor: shennong gki"
+          python3 build_with_bazel.py -t shennong gki -o $OUT_DIR
+
+      - name: Build kernel - pineapple gki
+        if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure'
+        id: build_pineapple_gki
+        continue-on-error: true
         run: |
           cd $REPO_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
-          set -x
-          python3 build_with_bazel.py -t shennong user -o $OUT_DIR
+          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
 
-      - name: Fallback build - shennong userdebug
-        if: failure()
+          echo "Deneniyor: pineapple gki"
+          python3 build_with_bazel.py -t pineapple gki -o $OUT_DIR
+
+      - name: Stop if all builds failed
+        if: steps.build_houji_gki.outcome == 'failure' && steps.build_shennong_gki.outcome == 'failure' && steps.build_pineapple_gki.outcome == 'failure'
         run: |
-          cd $REPO_DIR
-          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
-          set -x
-          python3 build_with_bazel.py -t shennong userdebug -o $OUT_DIR
+          echo "HİÇBİR HEDEF DERLENEMEDİ!"
+          exit 1
 
       - name: Collect outputs
         if: always()
@@ -149,29 +143,19 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/artifacts
           cd $REPO_DIR
 
-          echo "==== Find generated files ===="
           find . -type f \( \
             -name "Image" -o \
             -name "Image.gz" -o \
             -name "Image.lz4" -o \
-            -name "Image.*" -o \
             -name "dtbo.img" -o \
             -name "boot.img" -o \
-            -name "vendor_boot.img" -o \
             -name "*.dtb" -o \
-            -name "*.ko" -o \
-            -name "vmlinux" -o \
-            -name "System.map" -o \
-            -name "*.zip" -o \
-            -name "*.tar.gz" \
+            -name "*.ko" \
           \) | tee $GITHUB_WORKSPACE/found_files.txt
 
           while IFS= read -r file; do
             [ -n "$file" ] && cp --parents "$file" $GITHUB_WORKSPACE/artifacts/ || true
           done < $GITHUB_WORKSPACE/found_files.txt
-
-          echo "==== Artifact tree ===="
-          find $GITHUB_WORKSPACE/artifacts -type f | sed -n '1,400p' || true
 
       - name: Pack outputs
         if: always()
@@ -180,7 +164,6 @@ jobs:
           ZIP_NAME="houji-kernel-build-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "$ZIP_NAME" artifacts found_files.txt || true
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
-          ls -lh "$ZIP_NAME" || true
 
       - name: Upload packed build
         if: always()
@@ -188,12 +171,4 @@ jobs:
         with:
           name: ${{ env.ZIP_NAME }}
           path: ${{ github.workspace }}/${{ env.ZIP_NAME }}
-          if-no-files-found: warn
-
-      - name: Upload raw artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: houji-kernel-raw-artifacts
-          path: ${{ github.workspace }}/artifacts
           if-no-files-found: warn
