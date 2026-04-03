@@ -1,4 +1,4 @@
-name: CG+ Full LTO (Google r584948 + Exact Config)
+name: CG+ Full LTO CFI Permissive
 
 permissions:
   contents: write
@@ -19,9 +19,9 @@ jobs:
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 2048
+          root-reserve-mb: 1024
           temp-reserve-mb: 512
-          swap-size-gb: 48
+          swap-size-gb: 64
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,28 +35,39 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd zip
 
-          # Senin istediğin Google Clang r584948
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
-          curl -fL "$CLANG_URL" -o clang.tar.gz || { echo "HATA"; exit 1; }
+          curl -fL "$CLANG_URL" -o clang.tar.gz
           mkdir -p "$GITHUB_WORKSPACE/clang"
           tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
           rm -f clang.tar.gz
 
-      - name: Hardened Memory
+      - name: Extreme Memory Setup
         run: |
+          # zram 20GB
           sudo modprobe zram num_devices=1 2>/dev/null || true
           if [ -e /sys/block/zram0/disksize ]; then
             sudo swapoff /dev/zram0 2>/dev/null || true
             echo 1 | sudo tee /sys/block/zram0/reset >/dev/null 2>&1 || true
             echo lz4 | sudo tee /sys/block/zram0/comp_algorithm >/dev/null 2>&1 || true
-            echo 16G | sudo tee /sys/block/zram0/disksize >/dev/null
+            echo 20G | sudo tee /sys/block/zram0/disksize >/dev/null
             sudo mkswap /dev/zram0
             sudo swapon -p 100 /dev/zram0
           fi
+
+          # Agresif bellek
           sudo sysctl -w vm.overcommit_memory=1
+          sudo sysctl -w vm.overcommit_ratio=200
           sudo sysctl -w vm.swappiness=200
           sudo sysctl -w vm.vfs_cache_pressure=500
+          sudo sysctl -w vm.dirty_ratio=3
+          sudo sysctl -w vm.dirty_background_ratio=1
+          sudo sysctl -w vm.max_map_count=2097152
+          sudo sysctl -w vm.page-cluster=0
+
+          echo "📊 Bellek:"
           free -h
+          echo "📊 Swap:"
+          swapon --show
 
       - name: Clone sources
         run: |
@@ -68,126 +79,81 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: Configure (Senin Çalışan Kerneldeki Gibi)
+      - name: Configure
         run: |
           cd common
 
-          # KCFI temizle (CFI kalacak)
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select KCFI/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
 
-          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          C="arch/arm64/configs/gki_defconfig"
 
-          # Tam cmdline (senin çalışan kerneldeki)
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard kpti=0 swiotlb=noforce kernel.panic_on_rcu_stall=1 fw_devlink.strict=1 service_locator.enable=1 rcupdate.rcu_expedited=1 rcu_nocbs=0-7 irqaffinity=0-1 cpufreq.default_governor=performance sysctl.kernel.sched_pelt_multiplier=4 no-steal-acc cgroup.memory=nokmem,nosocket printk.console_no_auto_verbose=0 kasan=off loop.max_part=7 slub_debug=-"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+          ./scripts/config --file $C --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard kpti=0 swiotlb=noforce kernel.panic_on_rcu_stall=1 rcupdate.rcu_expedited=1 cpufreq.default_governor=performance sysctl.kernel.sched_pelt_multiplier=4 kasan=off slub_debug=-"
+          ./scripts/config --file $C --enable CONFIG_CMDLINE_EXTEND
 
-          # Scheduler (HZ=250, PREEMPT, SCHEDUTIL)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_INFO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHEDSTATS
+          ./scripts/config --file $C --enable CONFIG_NO_HZ
+          ./scripts/config --file $C --disable CONFIG_HZ_100
+          ./scripts/config --file $C --enable CONFIG_HZ_250
+          ./scripts/config --file $C --disable CONFIG_HZ_300
+          ./scripts/config --file $C --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $C --enable CONFIG_PREEMPT
+          ./scripts/config --file $C --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $C --enable CONFIG_SCHED_MC
 
-          # Memory/SLUB (seninkiyle aynı)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLAB
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG_ON
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLAB_FREELIST_RANDOM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLAB_FREELIST_HARDENED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLUB_CPU_PARTIAL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMA
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DMA_CMA
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMA_DEBUGFS
+          ./scripts/config --file $C --enable CONFIG_SLUB
+          ./scripts/config --file $C --enable CONFIG_SLUB_DEBUG
+          ./scripts/config --file $C --disable CONFIG_SLUB_DEBUG_ON
+          ./scripts/config --file $C --enable CONFIG_SLAB_FREELIST_RANDOM
+          ./scripts/config --file $C --enable CONFIG_SLAB_FREELIST_HARDENED
+          ./scripts/config --file $C --enable CONFIG_CMA
+          ./scripts/config --file $C --enable CONFIG_DMA_CMA
 
-          # Security/INIT (seninkiyle aynı)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INIT_STACK_ALL_ZERO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INIT_ON_ALLOC_DEFAULT_ON
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_INIT_ON_FREE_DEFAULT_ON
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_STACKDEPOT_ALWAYS_INIT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_MEMORY_INIT
+          ./scripts/config --file $C --enable CONFIG_INIT_STACK_ALL_ZERO
+          ./scripts/config --file $C --enable CONFIG_INIT_ON_ALLOC_DEFAULT_ON
+          ./scripts/config --file $C --enable CONFIG_SECURITY_SELINUX
+          ./scripts/config --file $C --enable CONFIG_DEFAULT_SECURITY_SELINUX
 
-          # SELinux (seninkiyle aynı)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SECURITY_SELINUX
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SECURITY_SELINUX_DEVELOP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SECURITY_SELINUX_AVC_STATS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_SECURITY_SELINUX
+          ./scripts/config --file $C --enable CONFIG_EXT4_FS
+          ./scripts/config --file $C --enable CONFIG_F2FS_FS
+          ./scripts/config --file $C --enable CONFIG_EROFS_FS
+          ./scripts/config --file $C --enable CONFIG_OVERLAY_FS
 
-          # Filesystems (seninkiyle aynı)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_USE_FOR_EXT2
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_FS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT4_FS_SECURITY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_STAT_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_SECURITY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_FS_COMPRESSION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_IOSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_F2FS_UNFAIR_RWSEM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_SECURITY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_ZIP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_PCPU_KTHREAD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW
+          ./scripts/config --file $C --enable CONFIG_KPROBES
+          ./scripts/config --file $C --enable CONFIG_KPROBE_EVENTS
 
-          # I/O Schedulers (seninkiyle aynı)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_KYBER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOSCHED_BFQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BFQ_GROUP_IOSCHED
+          # FULL LTO
+          ./scripts/config --file $C --disable CONFIG_LTO_NONE
+          ./scripts/config --file $C --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $C --enable CONFIG_LTO_CLANG
+          ./scripts/config --file $C --enable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $C --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+          # CFI PERMISSIVE
+          ./scripts/config --file $C --enable CONFIG_CFI_CLANG
+          ./scripts/config --file $C --enable CONFIG_CFI_PERMISSIVE
+          ./scripts/config --file $C --disable CONFIG_KCFI
+          ./scripts/config --file $C --disable CONFIG_SHADOW_CALL_STACK
 
-          # Full LTO
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          # KMI
+          ./scripts/config --file $C --enable CONFIG_UNUSED_SYMBOLS
+          ./scripts/config --file $C --disable CONFIG_TRIM_UNUSED_KSYMS
+          ./scripts/config --file $C --disable CONFIG_MODVERSIONS
+          ./scripts/config --file $C --enable CONFIG_MODULE_FORCE_LOAD
 
-          # CFI açık, KCFI kapalı (seninkiyle aynı)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
+          # Debug kapat
+          ./scripts/config --file $C --disable CONFIG_DEBUG_INFO
 
-          # KMI ABI koruma
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UNUSED_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
-
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-r584948"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          ./scripts/config --file $C --set-str CONFIG_LOCALVERSION "-FullLTO-CFI-Perm"
+          ./scripts/config --file $C --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: Build (Google r584948 + Full LTO + CFI)
+      - name: Build
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
 
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-          ulimit -n 65535 || true
 
           echo "CFLAGS_module.o += -fno-lto" >> kernel/Makefile
 
@@ -207,36 +173,38 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
-          echo "=== CONFIG CHECK ==="
-          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_CFI_CLANG|CONFIG_KCFI|CONFIG_HZ=|CONFIG_SLUB_DEBUG=|CONFIG_INIT_STACK_ALL_ZERO" out/.config
+          echo "=== CONFIG ==="
+          grep -E "LTO_CLANG_FULL|CFI_PERMISSIVE|KCFI" out/.config
 
-          sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
+          sync && echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+          free -h
 
-          make -j2 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          # -j1: CFI RAM ihtiyacı yüksek
+          make -j1 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -Wno-constant-logical-operand" \
             LDFLAGS_vmlinux="--export-dynamic" \
-            Image || { echo "❌ FAIL"; exit 1; }
+            Image || { echo "❌ FAIL"; free -h; exit 1; }
 
-          echo "BOOTHASH=FullLTO-r584948-$(date +%s)" >> $GITHUB_ENV
+          echo "BOOTHASH=FullLTO-CFI-Perm-$(date +%s)" >> $GITHUB_ENV
 
       - name: Pack
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO r584948/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO CFI Permissive/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r ../CG-FullLTO-r584948.zip ./*
+          zip -r ../CG-FullLTO-CFI-Perm.zip ./*
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Full LTO (Google r584948 + Exact Config)"
-          files: "CG-FullLTO-r584948.zip"
+          name: "CG+ Full LTO CFI Permissive"
+          files: "CG-FullLTO-CFI-Perm.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
