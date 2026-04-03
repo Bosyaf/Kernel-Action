@@ -10,7 +10,7 @@ jobs:
 
     env:
       REPO_URL: https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git
-      REPO_DIR: msm-kernel   # Scriptin mecburi kıldığı klasör adı
+      REPO_DIR: msm-kernel
       GOOGLE_CLANG_REV: r530567
 
     steps:
@@ -43,28 +43,15 @@ jobs:
           sudo mv bazelisk /usr/local/bin/bazel
           /usr/local/bin/bazel version
 
-      - name: Workspace Hazirlik (Scriptin Istedigi Yapi)
-        run: |
-          # Script'in bir ust dizinde aradigi 'build' ve 'tools' klasorlerini onceden aciyoruz.
-          mkdir -p $GITHUB_WORKSPACE/build
-          mkdir -p $GITHUB_WORKSPACE/tools
+      - name: Cache Google Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/toolchain/google-clang
+          key: clang-${{ env.GOOGLE_CLANG_REV }}
 
-          # Scriptin illa da tools/bazel diye aradigi dosyayi yaratiyoruz
-          cat > $GITHUB_WORKSPACE/tools/bazel << 'EOF'
-          #!/usr/bin/env bash
-          exec /usr/local/bin/bazel "$@"
-          EOF
-          chmod +x $GITHUB_WORKSPACE/tools/bazel
-
-      - name: Clone source
-        run: |
-          # Repoyu tam scriptin istedigi 'msm-kernel' adiyla klonluyoruz
-          git clone --depth=1 $REPO_URL $GITHUB_WORKSPACE/$REPO_DIR
-          cd $GITHUB_WORKSPACE/$REPO_DIR
-          echo "Last commit:"
-          git log --oneline -1
-
-      - name: Download Google Clang
+      - name: Download Google Clang (Hafizada Yoksa İndirir)
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p $GITHUB_WORKSPACE/toolchain/google-clang
           cd $GITHUB_WORKSPACE/toolchain/google-clang
@@ -72,6 +59,34 @@ jobs:
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
           echo "Downloading $CLANG_URL"
           curl -L "$CLANG_URL" | tar -xz
+
+      - name: Workspace Hazirlik (Scriptin Istedigi Yapi)
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/build
+          mkdir -p $GITHUB_WORKSPACE/tools
+          
+          # Hata veren kirik bootloader symlinkini engellemek icin sahte dosya aciyoruz
+          mkdir -p $GITHUB_WORKSPACE/bootable/bootloader/edk2
+          touch $GITHUB_WORKSPACE/bootable/bootloader/edk2/abl_extensions.bzl
+
+          cat > $GITHUB_WORKSPACE/tools/bazel << 'EOF'
+          #!/usr/bin/env bash
+          exec /usr/local/bin/bazel "$@"
+          EOF
+          chmod +x $GITHUB_WORKSPACE/tools/bazel
+
+      - name: Clone source & Setup WORKSPACE
+        run: |
+          git clone --depth=1 $REPO_URL $GITHUB_WORKSPACE/$REPO_DIR
+          cd $GITHUB_WORKSPACE/$REPO_DIR
+          
+          # Bazel'in hata vermemesi icin gerekli WORKSPACE dosyasini ust dizine kopyaliyoruz
+          if [ -f "bazel.WORKSPACE" ]; then
+            cp bazel.WORKSPACE $GITHUB_WORKSPACE/WORKSPACE
+            echo "WORKSPACE dosyasi kopyalandi."
+          else
+            touch $GITHUB_WORKSPACE/WORKSPACE
+          fi
 
       - name: Export LLVM tools
         run: |
@@ -135,8 +150,6 @@ jobs:
         if: always()
         run: |
           mkdir -p $GITHUB_WORKSPACE/artifacts
-          
-          # Script varsayilan olarak ciktilari ust dizindeki out/msm-kernel-X-Y icine atiyor
           cd $GITHUB_WORKSPACE
           
           find out/ -type f \( \
@@ -147,7 +160,7 @@ jobs:
             -name "boot.img" -o \
             -name "*.dtb" -o \
             -name "*.ko" \
-          \) | tee $GITHUB_WORKSPACE/found_files.txt
+          \) | tee $GITHUB_WORKSPACE/found_files.txt || true
 
           while IFS= read -r file; do
             [ -n "$file" ] && cp --parents "$file" $GITHUB_WORKSPACE/artifacts/ || true
