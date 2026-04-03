@@ -1,4 +1,4 @@
-name: CG+ Full LTO Boot Test (Final Anti-OOM + KMI Fix)
+name: CG+ Full LTO (Google Clang + CFI)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install packages + ZyC Clang
+      - name: Install packages + Google Clang r584948
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,13 +35,14 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd zip
 
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: clang indirilemedi"; exit 1; }
-          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          # Google Clang r584948 (senin çalışan kerneldeki gibi)
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
+          curl -fL "$CLANG_URL" -o clang.tar.gz || { echo "HATA: clang indirilemedi"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/clang"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
           rm -f clang.tar.gz
 
-      - name: Hardened Memory (zram + sysctl)
+      - name: Hardened Memory
         run: |
           sudo modprobe zram num_devices=1 2>/dev/null || true
           if [ -e /sys/block/zram0/disksize ]; then
@@ -56,15 +57,7 @@ jobs:
           sudo sysctl -w vm.overcommit_memory=1
           sudo sysctl -w vm.swappiness=200
           sudo sysctl -w vm.vfs_cache_pressure=500
-          sudo sysctl -w vm.dirty_ratio=10
-          sudo sysctl -w vm.dirty_background_ratio=5
-          sudo sysctl -w vm.max_map_count=2097152
-          sudo sysctl -w vm.page-cluster=0
-
-          echo "=== free -h ==="
           free -h
-          echo "=== swapon --show ==="
-          swapon --show
 
       - name: Clone sources
         run: |
@@ -76,69 +69,64 @@ jobs:
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: Configure (Full LTO + KMI Symbol Protection)
+      - name: Configure (Full LTO + CFI + Performance Cmdline)
         run: |
           cd common
 
-          # CFI/KCFI Select'leri temizle (Boot için kritik)
-          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
+          # KCFI select'leri kaldır (ama CFI_CLANG kalacak)
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select KCFI/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
 
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull bootconfig"
+          # Senin çalışan kerneldeki cmdline (performance + güvenlik)
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard kpti=0 swiotlb=noforce rcupdate.rcu_expedited=1 cpufreq.default_governor=performance sysctl.kernel.sched_pelt_multiplier=4 kasan=off printk.console_no_auto_verbose=0 slub_debug=-"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
 
-          # Full LTO Aktif
+          # Full LTO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THINLTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
 
-          # CFI/KCFI/SCS Kapat
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
+          # CFI AÇIK (senin çalışan kerneldeki gibi), KCFI kapalı
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
 
-          # 🛡️ KMI ABI KORUMA (Mi logosunda takılmayı çözen kısım)
+          # KMI ABI KORUMA
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UNUSED_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_FORCE
 
-          # Debug info kapat (RAM tasarrufu)
+          # Debug info kapat
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4 || true
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5 || true
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-KMI-Safe"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-CFI"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
 
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: Build kernel (KMI Guard + -j1)
+      - name: Build kernel (Google Clang + Full LTO + CFI)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
 
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           ulimit -n 65535 || true
 
-          # 🛡️ Linker'a tüm sembolleri dışarı açmasını söyle (Vendor modüller için)
-          # Modül yükleyiciyi LTO'dan muaf tut
+          # Modül yükleyiciyi koruma
           echo "CFLAGS_module.o += -fno-lto" >> kernel/Makefile
-          
+
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
@@ -155,43 +143,38 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
-          # LLD thread seçimi
-          THREAD_FLAG=""
-          if ld.lld --help | grep -q -- '--no-threads'; then
-            THREAD_FLAG="--no-threads"
-          elif ld.lld --help | grep -q -- '--threads='; then
-            THREAD_FLAG="--threads=1"
-          fi
+          echo "=== CONFIG CHECK ==="
+          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_CFI_CLANG|CONFIG_KCFI" out/.config || true
 
           sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
 
-          # 🚀 --export-dynamic: Tüm sembolleri tabloya ekler, vendor modülleri boot ettirir.
-          make -j1 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          # Google Clang ile Full LTO + CFI derleme
+          make -j2 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            KCFLAGS="-O2 -fno-sanitize=kcfi -Wno-constant-logical-operand" \
-            LDFLAGS_vmlinux="--export-dynamic ${THREAD_FLAG}" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -Wno-constant-logical-operand" \
+            LDFLAGS_vmlinux="--export-dynamic" \
             Image || { echo "❌ BUILD FAILED"; exit 1; }
 
-          echo "BOOTHASH=LTO-KMI-FIX-$(date +%s)" >> $GITHUB_ENV
+          echo "BOOTHASH=FullLTO-CFI-$(date +%s)" >> $GITHUB_ENV
 
       - name: Pack AnyKernel3
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO KMI Safe/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO CFI/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-FullLTO-KMISafe.zip" ./*
+          zip -r ../CG-FullLTO-CFI.zip ./*
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Full LTO Boot Test (KMI ABI Fix)"
-          files: "CG-FullLTO-KMISafe.zip"
+          name: "CG+ Full LTO + CFI (Google Clang)"
+          files: "CG-FullLTO-CFI.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
