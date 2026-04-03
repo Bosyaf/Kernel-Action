@@ -1,398 +1,202 @@
-name: Build Kernel - SM8650 (MI 14)
+name: Build Xiaomi Houji Kernel
 
 on:
   workflow_dispatch:
-    inputs:
-      KERNEL_TAG:
-        description: 'Kernel branch/tag'
-        required: true
-        default: 'main'
-      ENABLE_KERNELSU:
-        description: 'Enable KernelSU'
-        required: true
-        default: 'true'
-        type: boolean
-      ENABLE_LTO:
-        description: 'Enable LTO (thin)'
-        required: true
-        default: 'true'
-        type: boolean
 
 jobs:
   build:
-    name: Build Kernel
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
 
     env:
-      KERNEL_REPO: https://github.com/Kyuofox-Studio/android_kernel_xiaomi_sm8650
-      KERNEL_BRANCH: ${{ github.event.inputs.KERNEL_TAG || 'main' }}
-      DEVICE: houji
-      DEVICE_CODENAME: houji
-      ARCH: arm64
-      KERNEL_DEFCONFIG: vendor/pineapple-qgki_defconfig vendor/xiaomi_GKI.config vendor/houji_GKI.config
-      CLANG_VERSION: r530567
-      ANDROID_VERSION: android14
-      KERNEL_VERSION: 6.1
+      REPO_URL: https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git
+      REPO_DIR: kernel
+      OUT_DIR: out
+      DIST_DIR: out/dist
+      PRIMARY_BUILD_CONFIG: build.config.msm.houji
+      FALLBACK_BUILD_CONFIG: build.config.msm.pineapple
+      GOOGLE_CLANG_REV: r530567
 
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
         with:
-          root-reserve-mb: 8192
-          swap-size-mb: 8192
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
-      - name: Setup build environment
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            git \
-            make \
-            bc \
-            bison \
-            flex \
-            libssl-dev \
-            libelf-dev \
-            python3 \
-            python3-pip \
-            curl \
-            wget \
-            zip \
-            unzip \
-            cpio \
-            kmod \
-            binutils-aarch64-linux-gnu \
-            gcc-aarch64-linux-gnu \
-            lld \
-            llvm \
-            pahole \
-            device-tree-compiler
+          sudo apt-get install -y \
+            git curl wget python3 python3-pip python-is-python3 \
+            openjdk-17-jdk \
+            build-essential bc bison flex cpio rsync kmod \
+            libssl-dev libelf-dev dwarves lz4 zstd zip unzip \
+            ca-certificates xz-utils jq file \
+            device-tree-compiler perl sed make
 
-      - name: Clone Google Clang Toolchain
+      - name: Install Bazelisk
         run: |
-          mkdir -p $GITHUB_WORKSPACE/toolchain/clang
-          cd $GITHUB_WORKSPACE/toolchain
+          wget -O bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x bazelisk
+          sudo mv bazelisk /usr/local/bin/bazel
+          bazel version
 
-          # Google Prebuilt Clang
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${CLANG_VERSION}.tar.gz"
+      - name: Clone source
+        run: |
+          git clone --depth=1 $REPO_URL $REPO_DIR
+          cd $REPO_DIR
+          echo "Last commit:"
+          git log --oneline -1
+          echo "Important files:"
+          ls -lah | grep -E 'build.config|bazel|BUILD|WORKSPACE|houji|pineapple' || true
 
-          echo "Downloading Clang from: $CLANG_URL"
-          curl -LSs "$CLANG_URL" | tar -xz -C clang/ || {
-            echo "Google Clang download failed, trying aosp-clang..."
-            rm -rf clang/*
-            git clone --depth=1 https://gitlab.com/ThankYouMario/android_prebuilts_clang-standalone.git -b 18 clang
+      - name: Download latest Google Clang
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/toolchain/google-clang
+          cd $GITHUB_WORKSPACE/toolchain/google-clang
+
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
+          echo "Downloading Google Clang from:"
+          echo "$CLANG_URL"
+
+          curl -L "$CLANG_URL" | tar -xz
+
+          test -f bin/clang
+          ./bin/clang --version
+          ./bin/ld.lld --version || true
+
+      - name: Export toolchain
+        run: |
+          echo "$GITHUB_WORKSPACE/toolchain/google-clang/bin" >> $GITHUB_PATH
+          {
+            echo "CC=clang"
+            echo "CXX=clang++"
+            echo "LD=ld.lld"
+            echo "AR=llvm-ar"
+            echo "NM=llvm-nm"
+            echo "OBJCOPY=llvm-objcopy"
+            echo "OBJDUMP=llvm-objdump"
+            echo "STRIP=llvm-strip"
+            echo "READELF=llvm-readelf"
+            echo "LLVM=1"
+            echo "LLVM_IAS=1"
+          } >> $GITHUB_ENV
+
+      - name: Inspect build configs
+        run: |
+          cd $REPO_DIR
+          echo "===== PRIMARY BUILD CONFIG ====="
+          sed -n '1,200p' $PRIMARY_BUILD_CONFIG || true
+          echo
+          echo "===== FALLBACK BUILD CONFIG ====="
+          sed -n '1,200p' $FALLBACK_BUILD_CONFIG || true
+          echo
+          echo "===== HOUJI GKI CONFIG ====="
+          sed -n '1,200p' houji_GKI.config || true
+          echo
+          echo "===== build_with_bazel.py help ====="
+          python3 build_with_bazel.py --help || true
+
+      - name: Build kernel
+        run: |
+          cd $REPO_DIR
+          mkdir -p $OUT_DIR $DIST_DIR
+
+          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          export CC=clang
+          export CXX=clang++
+          export LD=ld.lld
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+          export READELF=llvm-readelf
+          export LLVM=1
+          export LLVM_IAS=1
+          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
+
+          echo "Trying primary config: $PRIMARY_BUILD_CONFIG"
+
+          set -x
+          python3 build_with_bazel.py \
+            --build_config=$PRIMARY_BUILD_CONFIG \
+            --out_dir=$OUT_DIR \
+            --dist_dir=$DIST_DIR \
+          || python3 build_with_bazel.py -b $PRIMARY_BUILD_CONFIG \
+          || BUILD_CONFIG=$PRIMARY_BUILD_CONFIG OUT_DIR=$OUT_DIR DIST_DIR=$DIST_DIR python3 build_with_bazel.py \
+          || {
+            echo "Primary failed, trying fallback config: $FALLBACK_BUILD_CONFIG"
+            python3 build_with_bazel.py \
+              --build_config=$FALLBACK_BUILD_CONFIG \
+              --out_dir=$OUT_DIR \
+              --dist_dir=$DIST_DIR \
+            || python3 build_with_bazel.py -b $FALLBACK_BUILD_CONFIG \
+            || BUILD_CONFIG=$FALLBACK_BUILD_CONFIG OUT_DIR=$OUT_DIR DIST_DIR=$DIST_DIR python3 build_with_bazel.py
           }
 
-          # Verify clang
-          ls -la clang/
-          if [ -f "clang/bin/clang" ]; then
-            clang/bin/clang --version
-          else
-            echo "ERROR: clang binary not found!"
-            find clang/ -name "clang" -type f 2>/dev/null || true
-            exit 1
-          fi
-
-      - name: Clone Prebuilt GCC (arm64 + arm)
+      - name: Collect outputs
+        if: always()
         run: |
-          cd $GITHUB_WORKSPACE/toolchain
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android-13.0.0_r1 gcc-arm64
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android-13.0.0_r1 gcc-arm32
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          cd $REPO_DIR
 
-      - name: Clone Build Tools
-        run: |
-          cd $GITHUB_WORKSPACE/toolchain
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/build-tools -b master-kernel-build-2024 build-tools || \
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/build-tools build-tools
-          git clone --depth=1 https://android.googlesource.com/kernel/prebuilts/build-tools -b master-kernel-build-2024 kernel-build-tools || \
-          git clone --depth=1 https://android.googlesource.com/kernel/prebuilts/build-tools kernel-build-tools
+          echo "==== Searching outputs ===="
+          find . -type f \( \
+            -name "Image" -o \
+            -name "Image.gz" -o \
+            -name "Image.lz4" -o \
+            -name "Image.*" -o \
+            -name "dtbo.img" -o \
+            -name "boot.img" -o \
+            -name "vendor_boot.img" -o \
+            -name "*.dtb" -o \
+            -name "*.ko" -o \
+            -name "vmlinux" -o \
+            -name "System.map" -o \
+            -name "*.zip" -o \
+            -name "*.tar.gz" \
+          \) | tee $GITHUB_WORKSPACE/found_files.txt
 
-      - name: Clone Kernel Source
-        run: |
-          cd $GITHUB_WORKSPACE
-          git clone --depth=1 --branch $KERNEL_BRANCH $KERNEL_REPO kernel_source
-          cd kernel_source
-          echo "Kernel commit: $(git rev-parse HEAD)"
-          echo "Kernel branch: $(git branch --show-current)"
-          ls -la
+          while IFS= read -r file; do
+            cp --parents "$file" $GITHUB_WORKSPACE/artifacts/ || true
+          done < $GITHUB_WORKSPACE/found_files.txt
 
-      - name: Setup KernelSU
-        if: ${{ github.event.inputs.ENABLE_KERNELSU == 'true' }}
-        run: |
-          cd $GITHUB_WORKSPACE/kernel_source
-
-          # KernelSU kurulumu
-          if [ -f "KernelSU/kernel/setup.sh" ]; then
-            echo "KernelSU already exists in source tree"
-          else
-            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          if [ -d "$DIST_DIR" ]; then
+            mkdir -p $GITHUB_WORKSPACE/artifacts/dist
+            cp -r $DIST_DIR/* $GITHUB_WORKSPACE/artifacts/dist/ 2>/dev/null || true
           fi
 
-          # KernelSU versiyonu
-          if [ -d "KernelSU" ]; then
-            cd KernelSU
-            KSU_VERSION=$(git describe --abbrev=0 --tags 2>/dev/null || echo "dev")
-            echo "KernelSU version: $KSU_VERSION"
-            cd ..
-          fi
+          echo "==== Final artifacts ===="
+          find $GITHUB_WORKSPACE/artifacts -type f | sed -n '1,400p'
 
-          echo "KERNELSU_ENABLED=true" >> $GITHUB_ENV
-
-      - name: Generate defconfig
-        run: |
-          cd $GITHUB_WORKSPACE/kernel_source
-
-          export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc-arm64/bin:$GITHUB_WORKSPACE/toolchain/gcc-arm32/bin:$GITHUB_WORKSPACE/toolchain/build-tools/path/linux-x86:$GITHUB_WORKSPACE/toolchain/kernel-build-tools/linux-x86/bin:$PATH"
-
-          MAKE_ARGS="
-            ARCH=$ARCH
-            SUBARCH=$ARCH
-            CROSS_COMPILE=aarch64-linux-android-
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
-            CROSS_COMPILE_COMPAT=arm-linux-androideabi-
-            CC=clang
-            LD=ld.lld
-            AR=llvm-ar
-            NM=llvm-nm
-            OBJCOPY=llvm-objcopy
-            OBJDUMP=llvm-objdump
-            STRIP=llvm-strip
-            READELF=llvm-readelf
-            OBJSIZE=llvm-size
-            LLVM=1
-            LLVM_IAS=1
-          "
-
-          # Defconfig oluştur
-          echo "Generating defconfig..."
-
-          # Önce base defconfig
-          if [ -f "arch/$ARCH/configs/gki_defconfig" ]; then
-            echo "Using gki_defconfig as base..."
-            make $MAKE_ARGS gki_defconfig
-          elif [ -f "arch/$ARCH/configs/pineapple-qgki_defconfig" ]; then
-            echo "Using pineapple-qgki_defconfig..."
-            make $MAKE_ARGS pineapple-qgki_defconfig
-          elif [ -f "arch/$ARCH/configs/vendor/pineapple-qgki_defconfig" ]; then
-            echo "Using vendor/pineapple-qgki_defconfig..."
-            make $MAKE_ARGS vendor/pineapple-qgki_defconfig
-          fi
-
-          # Vendor configs overlay
-          for config in vendor/xiaomi_GKI.config vendor/houji_GKI.config; do
-            if [ -f "arch/$ARCH/configs/$config" ]; then
-              echo "Merging $config..."
-              scripts/kconfig/merge_config.sh -m .config "arch/$ARCH/configs/$config" 2>/dev/null || \
-              cat "arch/$ARCH/configs/$config" >> .config
-            fi
-          done
-
-          # KernelSU config
-          if [ "${{ github.event.inputs.ENABLE_KERNELSU }}" = "true" ]; then
-            echo "CONFIG_KPROBES=y" >> .config
-            echo "CONFIG_HAVE_KPROBES=y" >> .config
-            echo "CONFIG_KPROBE_EVENTS=y" >> .config
-          fi
-
-          make $MAKE_ARGS olddefconfig
-
-          echo "Defconfig generated successfully"
-          grep -i "config_localversion" .config || true
-
-      - name: Build Kernel
-        run: |
-          cd $GITHUB_WORKSPACE/kernel_source
-
-          export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc-arm64/bin:$GITHUB_WORKSPACE/toolchain/gcc-arm32/bin:$GITHUB_WORKSPACE/toolchain/build-tools/path/linux-x86:$GITHUB_WORKSPACE/toolchain/kernel-build-tools/linux-x86/bin:$PATH"
-
-          MAKE_ARGS="
-            ARCH=$ARCH
-            SUBARCH=$ARCH
-            CROSS_COMPILE=aarch64-linux-android-
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
-            CROSS_COMPILE_COMPAT=arm-linux-androideabi-
-            CC=clang
-            LD=ld.lld
-            AR=llvm-ar
-            NM=llvm-nm
-            OBJCOPY=llvm-objcopy
-            OBJDUMP=llvm-objdump
-            STRIP=llvm-strip
-            READELF=llvm-readelf
-            OBJSIZE=llvm-size
-            LLVM=1
-            LLVM_IAS=1
-            O=out
-          "
-
-          # Defconfig
-          echo "Setting up defconfig..."
-          mkdir -p out
-          cp .config out/.config
-
-          THREADS=$(nproc --all)
-          echo "Building with $THREADS threads..."
-
-          # Build
-          make $MAKE_ARGS -j$THREADS 2>&1 | tee build.log
-
-          # Check output
-          echo "Checking build output..."
-          if [ -f "out/arch/$ARCH/boot/Image" ]; then
-            echo "✅ Image found!"
-            ls -la out/arch/$ARCH/boot/Image
-          fi
-          if [ -f "out/arch/$ARCH/boot/Image.gz" ]; then
-            echo "✅ Image.gz found!"
-            ls -la out/arch/$ARCH/boot/Image.gz
-          fi
-
-          # DTBs
-          find out/arch/$ARCH/boot/dts -name "*.dtb" 2>/dev/null | head -20 || true
-          find out/arch/$ARCH/boot -name "dtbo.img" 2>/dev/null || true
-
-      - name: Prepare AnyKernel3
+      - name: Pack outputs
+        if: always()
         run: |
           cd $GITHUB_WORKSPACE
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-
-          cd anykernel
-
-          # AnyKernel3 config
-          cat > anykernel.sh << 'AKEOF'
-          # AnyKernel3 Ramdisk Mod Script
-          # osm0sis @ xda-developers
-
-          properties() { '
-          kernel.string=Kyuofox Kernel for Xiaomi MI 14 (houji) SM8650
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=houji
-          device.name2=Houji
-          device.name3=MI 14
-          device.name4=mi14
-          supported.versions=14 - 15
-          supported.patchlevels=
-          '; }
-
-          # shell variables
-          block=/dev/block/bootdevice/by-name/boot;
-          is_slot_device=1;
-          ramdisk_compression=auto;
-          patch_vbmeta_flag=auto;
-
-          . tools/ak3-core.sh;
-
-          set_perm_recursive 0 0 755 644 $ramdisk/*;
-          set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
-
-          dump_boot;
-
-          write_boot;
-          AKEOF
-
-          # Kernel image kopyala
-          KERNEL_IMAGE=""
-          if [ -f "$GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/Image.gz" ]; then
-            cp $GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/Image.gz .
-            KERNEL_IMAGE="Image.gz"
-          elif [ -f "$GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/Image" ]; then
-            cp $GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/Image .
-            KERNEL_IMAGE="Image"
-          fi
-
-          echo "Kernel image: $KERNEL_IMAGE"
-
-          # DTB dosyaları
-          mkdir -p dtbs
-          find $GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} dtbs/ \; 2>/dev/null || true
-
-          if [ -d "dtbs" ] && [ "$(ls -A dtbs 2>/dev/null)" ]; then
-            echo "DTBs found:"
-            ls -la dtbs/
-            # Concatenate DTBs
-            cat dtbs/*.dtb > dtb 2>/dev/null || true
-          fi
-
-          # DTBO
-          if [ -f "$GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/dtbo.img" ]; then
-            cp $GITHUB_WORKSPACE/kernel_source/out/arch/arm64/boot/dtbo.img .
-            echo "DTBO found"
-          fi
-
-          # Gereksiz dosyaları temizle
-          rm -rf .git README.md
-          rm -rf ramdisk patch
-
-      - name: Create flashable zip
-        run: |
-          cd $GITHUB_WORKSPACE/anykernel
-
-          # Zip adı oluştur
-          DATE=$(date +"%Y%m%d_%H%M")
-          KSU_TAG=""
-          if [ "${{ github.event.inputs.ENABLE_KERNELSU }}" = "true" ]; then
-            KSU_TAG="_KernelSU"
-          fi
-
-          ZIP_NAME="Kyuofox_Kernel_MI14_houji_SM8650${KSU_TAG}_${DATE}.zip"
-
-          zip -r9 "$GITHUB_WORKSPACE/$ZIP_NAME" . -x '*.git*' 'LICENSE' 'README.md'
-
+          ZIP_NAME="houji-kernel-build-$(date +%Y%m%d-%H%M).zip"
+          zip -r9 "$ZIP_NAME" artifacts found_files.txt || true
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
-          echo "📦 Created: $ZIP_NAME"
-          ls -lh "$GITHUB_WORKSPACE/$ZIP_NAME"
+          ls -lh "$ZIP_NAME" || true
 
-      - name: Upload Kernel Image
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-image-houji
-          path: |
-            kernel_source/out/arch/arm64/boot/Image*
-          if-no-files-found: warn
-
-      - name: Upload AnyKernel3 Flashable Zip
+      - name: Upload build zip
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
           path: ${{ github.workspace }}/${{ env.ZIP_NAME }}
-          if-no-files-found: error
+          if-no-files-found: warn
 
-      - name: Upload Build Log
+      - name: Upload raw artifacts folder
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: kernel_source/build.log
+          name: houji-kernel-raw-artifacts
+          path: ${{ github.workspace }}/artifacts
           if-no-files-found: warn
-
-      - name: Build Summary
-        if: always()
-        run: |
-          echo "## 📋 Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 📱 Device | Xiaomi MI 14 (houji) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📟 SoC | Snapdragon 8 Gen 3 (SM8650/Pineapple) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🌿 Branch | ${{ env.KERNEL_BRANCH }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔧 Clang | ${{ env.CLANG_VERSION }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🛡️ KernelSU | ${{ github.event.inputs.ENABLE_KERNELSU }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📅 Date | $(date) |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -f "$GITHUB_WORKSPACE/${{ env.ZIP_NAME }}" ]; then
-            echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
-            echo "Flashable zip: \`${{ env.ZIP_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ❌ Build may have failed" >> $GITHUB_STEP_SUMMARY
-            echo "Check build log for details." >> $GITHUB_STEP_SUMMARY
-          fi
