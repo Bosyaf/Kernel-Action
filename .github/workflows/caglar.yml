@@ -1,4 +1,4 @@
-name: Build Xiaomi Houji Kernel
+name: Build Xiaomi Houji/Shennong Kernel
 
 on:
   workflow_dispatch:
@@ -12,9 +12,6 @@ jobs:
       REPO_URL: https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git
       REPO_DIR: kernel
       OUT_DIR: out
-      DIST_DIR: out/dist
-      PRIMARY_BUILD_CONFIG: build.config.msm.houji
-      FALLBACK_BUILD_CONFIG: build.config.msm.pineapple
       GOOGLE_CLANG_REV: r530567
 
     steps:
@@ -53,25 +50,24 @@ jobs:
           cd $REPO_DIR
           echo "Last commit:"
           git log --oneline -1
-          echo "Important files:"
-          ls -lah | grep -E 'build.config|bazel|BUILD|WORKSPACE|houji|pineapple' || true
+          echo
+          echo "Relevant files:"
+          ls -lah | grep -E 'build_with_bazel|build.config|bazel|BUILD|WORKSPACE|houji|shennong|pineapple' || true
 
-      - name: Download latest Google Clang
+      - name: Download Google Clang
         run: |
           mkdir -p $GITHUB_WORKSPACE/toolchain/google-clang
           cd $GITHUB_WORKSPACE/toolchain/google-clang
 
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
-          echo "Downloading Google Clang from:"
-          echo "$CLANG_URL"
-
+          echo "Downloading $CLANG_URL"
           curl -L "$CLANG_URL" | tar -xz
 
           test -f bin/clang
           ./bin/clang --version
           ./bin/ld.lld --version || true
 
-      - name: Export toolchain
+      - name: Export LLVM tools
         run: |
           echo "$GITHUB_WORKSPACE/toolchain/google-clang/bin" >> $GITHUB_PATH
           {
@@ -88,26 +84,22 @@ jobs:
             echo "LLVM_IAS=1"
           } >> $GITHUB_ENV
 
-      - name: Inspect build configs
+      - name: Inspect build script help
         run: |
           cd $REPO_DIR
-          echo "===== PRIMARY BUILD CONFIG ====="
-          sed -n '1,200p' $PRIMARY_BUILD_CONFIG || true
-          echo
-          echo "===== FALLBACK BUILD CONFIG ====="
-          sed -n '1,200p' $FALLBACK_BUILD_CONFIG || true
-          echo
-          echo "===== HOUJI GKI CONFIG ====="
-          sed -n '1,200p' houji_GKI.config || true
-          echo
-          echo "===== build_with_bazel.py help ====="
+          echo "===== build_with_bazel.py --help ====="
           python3 build_with_bazel.py --help || true
+          echo
+          echo "===== grep argparse hints ====="
+          grep -nE "add_argument|target|variant|BUILD_CONFIG|build_rule" build_with_bazel.py | sed -n '1,200p' || true
+          echo
+          echo "===== root bzl/config files ====="
+          ls -1 | grep -E 'houji|shennong|pineapple|build.config' | sed -n '1,200p' || true
 
       - name: Build kernel
         run: |
           cd $REPO_DIR
-          mkdir -p $OUT_DIR $DIST_DIR
-
+          mkdir -p $OUT_DIR
           export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
           export CC=clang
           export CXX=clang++
@@ -120,26 +112,36 @@ jobs:
           export READELF=llvm-readelf
           export LLVM=1
           export LLVM_IAS=1
-          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-
-          echo "Trying primary config: $PRIMARY_BUILD_CONFIG"
 
           set -x
-          python3 build_with_bazel.py \
-            --build_config=$PRIMARY_BUILD_CONFIG \
-            --out_dir=$OUT_DIR \
-            --dist_dir=$DIST_DIR \
-          || python3 build_with_bazel.py -b $PRIMARY_BUILD_CONFIG \
-          || BUILD_CONFIG=$PRIMARY_BUILD_CONFIG OUT_DIR=$OUT_DIR DIST_DIR=$DIST_DIR python3 build_with_bazel.py \
-          || {
-            echo "Primary failed, trying fallback config: $FALLBACK_BUILD_CONFIG"
-            python3 build_with_bazel.py \
-              --build_config=$FALLBACK_BUILD_CONFIG \
-              --out_dir=$OUT_DIR \
-              --dist_dir=$DIST_DIR \
-            || python3 build_with_bazel.py -b $FALLBACK_BUILD_CONFIG \
-            || BUILD_CONFIG=$FALLBACK_BUILD_CONFIG OUT_DIR=$OUT_DIR DIST_DIR=$DIST_DIR python3 build_with_bazel.py
-          }
+
+          echo "Trying: houji user"
+          python3 build_with_bazel.py -t houji user -o $OUT_DIR \
+          || { echo "houji user failed"; false; }
+
+      - name: Fallback build - houji userdebug
+        if: failure()
+        run: |
+          cd $REPO_DIR
+          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          set -x
+          python3 build_with_bazel.py -t houji userdebug -o $OUT_DIR
+
+      - name: Fallback build - shennong user
+        if: failure()
+        run: |
+          cd $REPO_DIR
+          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          set -x
+          python3 build_with_bazel.py -t shennong user -o $OUT_DIR
+
+      - name: Fallback build - shennong userdebug
+        if: failure()
+        run: |
+          cd $REPO_DIR
+          export PATH="$GITHUB_WORKSPACE/toolchain/google-clang/bin:$PATH"
+          set -x
+          python3 build_with_bazel.py -t shennong userdebug -o $OUT_DIR
 
       - name: Collect outputs
         if: always()
@@ -147,7 +149,7 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/artifacts
           cd $REPO_DIR
 
-          echo "==== Searching outputs ===="
+          echo "==== Find generated files ===="
           find . -type f \( \
             -name "Image" -o \
             -name "Image.gz" -o \
@@ -165,16 +167,11 @@ jobs:
           \) | tee $GITHUB_WORKSPACE/found_files.txt
 
           while IFS= read -r file; do
-            cp --parents "$file" $GITHUB_WORKSPACE/artifacts/ || true
+            [ -n "$file" ] && cp --parents "$file" $GITHUB_WORKSPACE/artifacts/ || true
           done < $GITHUB_WORKSPACE/found_files.txt
 
-          if [ -d "$DIST_DIR" ]; then
-            mkdir -p $GITHUB_WORKSPACE/artifacts/dist
-            cp -r $DIST_DIR/* $GITHUB_WORKSPACE/artifacts/dist/ 2>/dev/null || true
-          fi
-
-          echo "==== Final artifacts ===="
-          find $GITHUB_WORKSPACE/artifacts -type f | sed -n '1,400p'
+          echo "==== Artifact tree ===="
+          find $GITHUB_WORKSPACE/artifacts -type f | sed -n '1,400p' || true
 
       - name: Pack outputs
         if: always()
@@ -185,7 +182,7 @@ jobs:
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           ls -lh "$ZIP_NAME" || true
 
-      - name: Upload build zip
+      - name: Upload packed build
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -193,7 +190,7 @@ jobs:
           path: ${{ github.workspace }}/${{ env.ZIP_NAME }}
           if-no-files-found: warn
 
-      - name: Upload raw artifacts folder
+      - name: Upload raw artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
