@@ -1,277 +1,213 @@
-name: Build Xiaomi MI14 Kernel
+name: CG+ Full LTO Boot Test (Final Anti-OOM)
+
+permissions:
+  contents: write
+  actions: write
 
 on:
   workflow_dispatch:
-    inputs:
-      source_branch:
-        description: Source branch
-        required: true
-        default: main
-      target:
-        description: Build target
-        required: true
-        default: houji
-      variant:
-        description: Build variant
-        required: true
-        default: gki
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 180
-
+  build-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 420
     env:
-      SOURCE_REPO: https://github.com/Xiaomi-SM8650-houji/Xiaomi_Kernel_OpenSource.git
-      GOOGLE_CLANG_REV: r530567
+      KBUILD_BUILD_USER: "caglar"
+      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+      - name: Maximize Space
+        uses: easimon/maximize-build-space@master
         with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+          root-reserve-mb: 2048
+          temp-reserve-mb: 512
+          swap-size-gb: 48
 
-      - name: Install dependencies
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packages + ZyC Clang
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git curl wget python3 python3-pip python-is-python3 \
-            openjdk-17-jdk \
-            build-essential bc bison flex cpio rsync kmod \
-            libssl-dev libelf-dev dwarves lz4 zstd zip unzip \
-            ca-certificates xz-utils jq file findutils \
-            device-tree-compiler perl sed make
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            lld llvm pkg-config zstd zip
 
-      - name: Install Bazelisk
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: clang indirilemedi"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          rm -f clang.tar.gz
+
+      - name: Hardened Memory (zram + sysctl)
         run: |
-          wget -O bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-          chmod +x bazelisk
-          sudo mv bazelisk /usr/local/bin/bazel
-          /usr/local/bin/bazel version || true
+          sudo modprobe zram num_devices=1 2>/dev/null || true
+          if [ -e /sys/block/zram0/disksize ]; then
+            sudo swapoff /dev/zram0 2>/dev/null || true
+            echo 1 | sudo tee /sys/block/zram0/reset >/dev/null 2>&1 || true
+            echo lz4 | sudo tee /sys/block/zram0/comp_algorithm >/dev/null 2>&1 || true
+            echo 16G | sudo tee /sys/block/zram0/disksize >/dev/null
+            sudo mkswap /dev/zram0
+            sudo swapon -p 100 /dev/zram0
+          fi
 
-      - name: Cache Google Clang
-        id: cache-clang
-        uses: actions/cache@v4
+          sudo sysctl -w vm.overcommit_memory=1
+          sudo sysctl -w vm.swappiness=200
+          sudo sysctl -w vm.vfs_cache_pressure=500
+          sudo sysctl -w vm.dirty_ratio=10
+          sudo sysctl -w vm.dirty_background_ratio=5
+          sudo sysctl -w vm.max_map_count=2097152
+          sudo sysctl -w vm.page-cluster=0
+
+          echo "=== free -h ==="
+          free -h
+          echo "=== swapon --show ==="
+          swapon --show
+
+      - name: Clone sources
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+
+      - name: Setup VortexSU & Apply Hurdacı Yamaları
+        run: |
+          cd common
+          # VortexSU Kurulumu
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+
+          # 🔥 Efsane Yamalar Fırına Sürülüyor (ABI Kurtarıcı, KSU ve Cgroup) 🔥
+          echo "🛠️ Hurdacıdan gelen özel yamalar basılıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/a72032ecf33c63d8a4abb64b08c1a0b847c82a32.patch || true
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/750b43051d2e4317121c7250544ae38fdf28d4c7.patch || true
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/3dcc884c689681dda2d9ad24a9e219013f70cfe8.patch || true
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/0ac686b9e81ba331c2ad9b420fd21262a80daaa4.patch || true
+
+      - name: Configure (Clean Full LTO + KMI safe + NO debug info)
+        run: |
+          cd common
+
+          # olddefconfig CFI/KCFI select geri açmasın
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select KCFI/d' 2>/dev/null || true
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
+
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull bootconfig"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+
+          # Full LTO
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THINLTO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+
+          # CFI/KCFI/SCS kapat
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
+
+          # KMI/ABI safe (vendor modüller için)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_LOAD
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_FORCE
+
+                    # Hurdacı Yamalarının Aktif Edilmesi
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYSVIPC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          
+          # OOM azaltmak için debug info KAPAT (çok önemli)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4 || true
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5 || true
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_GDB_SCRIPTS || true
+
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-FullLTO-BootTest"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+
+          sed -i 's/check_defconfig//' build.config.gki || true
+
+      - name: Build kernel (LLD threads off + -j1)
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          touch .scmversion
+          ulimit -n 65535 || true
+
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x scripts/check-local-export
+
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            gki_defconfig
+
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            olddefconfig
+
+          echo "=== CONFIG CHECK ==="
+          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_DEBUG_INFO|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_FORCE_LOAD" out/.config || true
+
+          # LLD thread flag otomatik seç (hangisi varsa onu kullan)
+          THREAD_FLAG=""
+          if ld.lld --help | grep -q -- '--no-threads'; then
+            THREAD_FLAG="--no-threads"
+          elif ld.lld --help | grep -q -- '--threads='; then
+            THREAD_FLAG="--threads=1"
+          fi
+          echo "LLD thread flag: ${THREAD_FLAG}"
+
+          sync
+          echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
+          free -h
+          swapon --show
+
+          # -j1: en düşük RAM riski
+          make -j1 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            KCFLAGS="-O2 -fno-sanitize=kcfi -Wno-constant-logical-operand" \
+            LDFLAGS_vmlinux="--export-dynamic ${THREAD_FLAG}" \
+            Image || { echo "❌ BUILD FAILED"; free -h; exit 1; }
+
+          echo "BOOTHASH=FullLTO-BootTest-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+
+      - name: Pack AnyKernel3
+        run: |
+          cd AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Full LTO Boot Test (Final)/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r ../CG-FullLTO-BootTest.zip ./*
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
-          path: ${{ github.workspace }}/toolchain/google-clang
-          key: google-clang-${{ env.GOOGLE_CLANG_REV }}
-
-      - name: Download Google Clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "${GITHUB_WORKSPACE}/toolchain/google-clang"
-          cd "${GITHUB_WORKSPACE}/toolchain/google-clang"
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
-          echo "Downloading ${CLANG_URL}"
-          curl -L "${CLANG_URL}" | tar -xz
-          test -f "${GITHUB_WORKSPACE}/toolchain/google-clang/bin/clang"
-          "${GITHUB_WORKSPACE}/toolchain/google-clang/bin/clang" --version
-
-      - name: Clone source repo
-        run: |
-          git clone --depth=1 --branch "${{ inputs.source_branch }}" "${SOURCE_REPO}" "${GITHUB_WORKSPACE}/src"
-          cd "${GITHUB_WORKSPACE}/src"
-          git log --oneline -1
-
-      - name: Detect workspace layout
-        id: layout
-        run: |
-          BUILD_SCRIPT="$(find "${GITHUB_WORKSPACE}/src" -type f -name build_with_bazel.py | head -n 1)"
-          if [ -z "${BUILD_SCRIPT}" ]; then
-            echo "build_with_bazel.py not found"
-            exit 1
-          fi
-
-          SCRIPT_DIR="$(dirname "${BUILD_SCRIPT}")"
-
-          if [ "${SCRIPT_DIR}" = "${GITHUB_WORKSPACE}/src" ]; then
-            mkdir -p "${GITHUB_WORKSPACE}/workspace"
-            mv "${GITHUB_WORKSPACE}/src" "${GITHUB_WORKSPACE}/workspace/msm-kernel"
-            WORKSPACE_ROOT="${GITHUB_WORKSPACE}/workspace"
-            KERNEL_DIR="${GITHUB_WORKSPACE}/workspace/msm-kernel"
-          else
-            WORKSPACE_ROOT="$(realpath "${SCRIPT_DIR}/..")"
-            KERNEL_DIR="${SCRIPT_DIR}"
-          fi
-
-          echo "build_script=${BUILD_SCRIPT}" >> "${GITHUB_OUTPUT}"
-          echo "workspace_root=${WORKSPACE_ROOT}" >> "${GITHUB_OUTPUT}"
-          echo "kernel_dir=${KERNEL_DIR}" >> "${GITHUB_OUTPUT}"
-
-          echo "WORKSPACE_ROOT=${WORKSPACE_ROOT}"
-          echo "KERNEL_DIR=${KERNEL_DIR}"
-
-      - name: Prepare workspace
-        run: |
-          WORKSPACE_ROOT="${{ steps.layout.outputs.workspace_root }}"
-          KERNEL_DIR="${{ steps.layout.outputs.kernel_dir }}"
-
-          mkdir -p "${WORKSPACE_ROOT}/tools"
-          mkdir -p "${WORKSPACE_ROOT}/build"
-          mkdir -p "${WORKSPACE_ROOT}/bootable/bootloader/edk2"
-
-          if [ ! -x "${WORKSPACE_ROOT}/tools/bazel" ]; then
-            printf '%s\n' '#!/usr/bin/env bash' 'exec /usr/local/bin/bazel "$@"' > "${WORKSPACE_ROOT}/tools/bazel"
-            chmod +x "${WORKSPACE_ROOT}/tools/bazel"
-          fi
-
-          if [ ! -f "${WORKSPACE_ROOT}/WORKSPACE" ]; then
-            if [ -f "${WORKSPACE_ROOT}/bazel.WORKSPACE" ]; then
-              cp "${WORKSPACE_ROOT}/bazel.WORKSPACE" "${WORKSPACE_ROOT}/WORKSPACE"
-            elif [ -f "${KERNEL_DIR}/bazel.WORKSPACE" ]; then
-              cp "${KERNEL_DIR}/bazel.WORKSPACE" "${WORKSPACE_ROOT}/WORKSPACE"
-            else
-              touch "${WORKSPACE_ROOT}/WORKSPACE"
-            fi
-          fi
-
-          if [ ! -f "${WORKSPACE_ROOT}/MODULE.bazel" ]; then
-            touch "${WORKSPACE_ROOT}/MODULE.bazel"
-          fi
-
-          if [ ! -f "${WORKSPACE_ROOT}/build/msm_kernel_extensions.bzl" ] && [ -f "${KERNEL_DIR}/msm_kernel_extensions.bzl" ]; then
-            cp "${KERNEL_DIR}/msm_kernel_extensions.bzl" "${WORKSPACE_ROOT}/build/msm_kernel_extensions.bzl"
-          fi
-
-          if [ ! -f "${WORKSPACE_ROOT}/bootable/bootloader/edk2/abl_extensions.bzl" ]; then
-            touch "${WORKSPACE_ROOT}/bootable/bootloader/edk2/abl_extensions.bzl"
-          fi
-
-          if [ ! -f "${WORKSPACE_ROOT}/build/abl_extensions.bzl" ]; then
-            cp "${WORKSPACE_ROOT}/bootable/bootloader/edk2/abl_extensions.bzl" "${WORKSPACE_ROOT}/build/abl_extensions.bzl" || true
-          fi
-
-          if [ -d "${WORKSPACE_ROOT}/build/bazel_common_rules" ]; then
-            mkdir -p "${WORKSPACE_ROOT}/build/bazel_common_rules/dist"
-            touch "${WORKSPACE_ROOT}/build/BUILD.bazel"
-            touch "${WORKSPACE_ROOT}/build/bazel_common_rules/BUILD.bazel"
-            touch "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/BUILD.bazel"
-          fi
-
-          if [ ! -f "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/dist.bzl" ]; then
-            REAL_DIST_BZL="$(find "${WORKSPACE_ROOT}" -type f -path '*/bazel_common_rules/dist/dist.bzl' | head -n 1 || true)"
-            if [ -n "${REAL_DIST_BZL}" ] && [ -f "${REAL_DIST_BZL}" ]; then
-              mkdir -p "${WORKSPACE_ROOT}/build/bazel_common_rules/dist"
-              cp "${REAL_DIST_BZL}" "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/dist.bzl"
-              touch "${WORKSPACE_ROOT}/build/BUILD.bazel"
-              touch "${WORKSPACE_ROOT}/build/bazel_common_rules/BUILD.bazel"
-              touch "${WORKSPACE_ROOT}/build/bazel_common_rules/dist/BUILD.bazel"
-            fi
-          fi
-
-      - name: Export LLVM tools
-        run: |
-          echo "${GITHUB_WORKSPACE}/toolchain/google-clang/bin" >> "${GITHUB_PATH}"
-          {
-            echo "CC=clang"
-            echo "CXX=clang++"
-            echo "LD=ld.lld"
-            echo "AR=llvm-ar"
-            echo "NM=llvm-nm"
-            echo "OBJCOPY=llvm-objcopy"
-            echo "OBJDUMP=llvm-objdump"
-            echo "STRIP=llvm-strip"
-            echo "READELF=llvm-readelf"
-            echo "LLVM=1"
-            echo "LLVM_IAS=1"
-          } >> "${GITHUB_ENV}"
-
-      - name: Debug layout
-        run: |
-          echo "===== workspace root ====="
-          echo "${{ steps.layout.outputs.workspace_root }}"
-          echo "===== kernel dir ====="
-          echo "${{ steps.layout.outputs.kernel_dir }}"
-          echo "===== build script ====="
-          find "${{ steps.layout.outputs.workspace_root }}" -maxdepth 4 -name build_with_bazel.py | sort || true
-          echo "===== workspace files ====="
-          find "${{ steps.layout.outputs.workspace_root }}" -maxdepth 3 \( -name WORKSPACE -o -name MODULE.bazel -o -name BUILD.bazel -o -name bazel.WORKSPACE \) | sort || true
-          echo "===== tools ====="
-          ls -lah "${{ steps.layout.outputs.workspace_root }}/tools" || true
-          echo "===== build dir ====="
-          find "${{ steps.layout.outputs.workspace_root }}/build" -maxdepth 4 -type f | sort || true
-
-      - name: Build target
-        id: build_primary
-        continue-on-error: true
-        run: |
-          cd "${{ steps.layout.outputs.kernel_dir }}"
-          export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
-          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-          echo "Building: ${{ inputs.target }} ${{ inputs.variant }}"
-          python3 build_with_bazel.py -t "${{ inputs.target }}" "${{ inputs.variant }}"
-
-      - name: Fallback build shennong gki
-        if: steps.build_primary.outcome == 'failure' && inputs.target == 'houji'
-        id: build_shennong
-        continue-on-error: true
-        run: |
-          cd "${{ steps.layout.outputs.kernel_dir }}"
-          export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
-          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-          echo "Fallback: shennong gki"
-          python3 build_with_bazel.py -t shennong gki
-
-      - name: Fallback build pineapple gki
-        if: steps.build_primary.outcome == 'failure' && steps.build_shennong.outcome == 'failure'
-        id: build_pineapple
-        continue-on-error: true
-        run: |
-          cd "${{ steps.layout.outputs.kernel_dir }}"
-          export PATH="${GITHUB_WORKSPACE}/toolchain/google-clang/bin:${PATH}"
-          export KLEAF_DOWNLOAD_BUILD_NUMBER_MAP=gki_prebuilts=0
-          echo "Fallback: pineapple gki"
-          python3 build_with_bazel.py -t pineapple gki
-
-      - name: Stop if all builds failed
-        if: steps.build_primary.outcome == 'failure' && (steps.build_shennong.outcome == 'failure' || steps.build_shennong.outcome == '') && (steps.build_pineapple.outcome == 'failure' || steps.build_pineapple.outcome == '')
-        run: |
-          echo "All build attempts failed"
-          exit 1
-
-      - name: Collect outputs
-        if: always()
-        run: |
-          WORKSPACE_ROOT="${{ steps.layout.outputs.workspace_root }}"
-          mkdir -p "${GITHUB_WORKSPACE}/artifacts"
-
-          find "${WORKSPACE_ROOT}/out" -type f \( \
-            -name "Image" -o \
-            -name "Image.gz" -o \
-            -name "Image.lz4" -o \
-            -name "dtbo.img" -o \
-            -name "boot.img" -o \
-            -name "vendor_boot.img" -o \
-            -name "*.dtb" -o \
-            -name "*.ko" -o \
-            -name "vmlinux" -o \
-            -name "System.map" \
-          \) | tee "${GITHUB_WORKSPACE}/found_files.txt" || true
-
-          while IFS= read -r file; do
-            [ -n "${file}" ] && cp --parents "${file}" "${GITHUB_WORKSPACE}/artifacts/" || true
-          done < "${GITHUB_WORKSPACE}/found_files.txt"
-
-      - name: Pack outputs
-        if: always()
-        run: |
-          cd "${GITHUB_WORKSPACE}"
-          ZIP_NAME="mi14-kernel-$(date +%Y%m%d-%H%M).zip"
-          zip -r9 "${ZIP_NAME}" artifacts found_files.txt || true
-          echo "ZIP_NAME=${ZIP_NAME}" >> "${GITHUB_ENV}"
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mi14-kernel-build
-          path: |
-            ${{ github.workspace }}/${{ env.ZIP_NAME }}
-            ${{ github.workspace }}/artifacts
-          if-no-files-found: warn
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Full LTO Boot Test (Final Anti-OOM)"
+          files: "CG-FullLTO-BootTest.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
