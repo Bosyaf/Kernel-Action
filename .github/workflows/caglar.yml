@@ -190,13 +190,6 @@ jobs:
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_SIG_FORCE
 
-          # Derleme RAM tüketimi azalt
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_DWARF4 || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_DWARF5 || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_GDB_SCRIPTS || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DEBUG_INFO_BTF || true
-
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-MI14-BootSafe-FullLTO"
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
 
