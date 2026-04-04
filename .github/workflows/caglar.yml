@@ -40,7 +40,7 @@ jobs:
           CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
           curl -L -o clang.tar.gz "$CLANG_LINK"
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
           rm -f clang.tar.gz
           
           # Clang versiyonunu göster
