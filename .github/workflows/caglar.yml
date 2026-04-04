@@ -218,14 +218,11 @@ jobs:
           # ═══════════════════════════════════════
           # DEBUG kapatmaları - Boyut + hız
           # ═══════════════════════════════════════
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_FS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
 
           # ═══════════════════════════════════════
