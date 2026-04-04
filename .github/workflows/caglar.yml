@@ -1,4 +1,4 @@
-name: MI14 Vendor Visibility Test No LTO
+name: MI14 Stock Like WiFi Patch Test
 
 permissions:
   contents: write
@@ -15,25 +15,26 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      CLANG_URL: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-security-release/clang-r487747c.tar.gz"
+      WIFI_PATCH_URL: "https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch"
+      CLANG_URL: "https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
 
     steps:
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 4096
-          temp-reserve-mb: 1024
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
           swap-size-gb: 16
 
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Clang
+      - name: Cache ZyC Clang
         id: cache-clang
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/google-clang
-          key: clang-r487747c-a14-security-linux
+          path: ${{ github.workspace }}/clang-zyc
+          key: zyc-clang-22.0.0git-20250928-release
 
       - name: Install packages
         run: |
@@ -44,40 +45,21 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd zip patch pahole ca-certificates
 
-      - name: Download Clang
+      - name: Download ZyC Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/google-clang"
-          cd "$GITHUB_WORKSPACE/google-clang"
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          cd "$GITHUB_WORKSPACE/clang-zyc"
           echo "Downloading ${CLANG_URL}"
-          curl -fL "${CLANG_URL}" | tar -xz
-          test -x "$GITHUB_WORKSPACE/google-clang/bin/clang"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          tar -xzf clang.tar.gz --strip-components=1
+          rm -f clang.tar.gz
+          test -x "$GITHUB_WORKSPACE/clang-zyc/bin/clang"
 
       - name: Show Clang version
         run: |
-          "$GITHUB_WORKSPACE/google-clang/bin/clang" --version
-          "$GITHUB_WORKSPACE/google-clang/bin/ld.lld" --version || true
-
-      - name: Hardened Memory
-        run: |
-          sudo modprobe zram num_devices=1 2>/dev/null || true
-          if [ -e /sys/block/zram0/disksize ]; then
-            sudo swapoff /dev/zram0 2>/dev/null || true
-            echo 1 | sudo tee /sys/block/zram0/reset >/dev/null 2>&1 || true
-            echo lz4 | sudo tee /sys/block/zram0/comp_algorithm >/dev/null 2>&1 || true
-            echo 12G | sudo tee /sys/block/zram0/disksize >/dev/null
-            sudo mkswap /dev/zram0
-            sudo swapon -p 100 /dev/zram0
-          fi
-
-          sudo sysctl -w vm.overcommit_memory=1
-          sudo sysctl -w vm.swappiness=180
-          sudo sysctl -w vm.vfs_cache_pressure=500
-          sudo sysctl -w vm.dirty_ratio=10
-          sudo sysctl -w vm.dirty_background_ratio=5
-
-          free -h
-          swapon --show
+          "$GITHUB_WORKSPACE/clang-zyc/bin/clang" --version
+          "$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" --version || true
 
       - name: Clone sources
         run: |
@@ -86,16 +68,22 @@ jobs:
             https://github.com/ramabondanp/android_kernel_common-6.1.git \
             --depth=1 common
 
-      - name: Fix bluetooth source mismatch
+      - name: Apply WiFi patch only
         run: |
           cd common
-          sed -i 's/QCA_WCN3988/QCA_WCN3998/g' drivers/bluetooth/btqca.c
-          grep -n "QCA_WCN3998" drivers/bluetooth/btqca.c | head -20 || true
+          curl -fLSs "${WIFI_PATCH_URL}" -o wifi.patch
+          test -s wifi.patch || { echo "HATA: WiFi patch boş indi"; exit 1; }
+
+          echo "Patch preview:"
+          head -40 wifi.patch || true
+
+          patch --dry-run -p1 < wifi.patch
+          patch -p1 < wifi.patch
 
       - name: Configure kernel
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/google-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
@@ -103,24 +91,7 @@ jobs:
             --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
 
-          # Vendor modül görünürlüğü
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULE_ALLOW_BTF_MISMATCH
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODVERSIONS
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_FORCE_LOAD
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_SIG_FORCE
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TRIM_UNUSED_KSYMS
-
-          # Stock benzeri
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_SYSVIPC || true
-
-          # No LTO
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_FULL || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_THINLTO || true
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_NONE || true
-
-          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-NoLTO-BTFTest"
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-StockLike-WiFiPatch"
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
 
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -128,7 +99,7 @@ jobs:
       - name: Build kernel
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/google-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -148,7 +119,7 @@ jobs:
             olddefconfig
 
           echo "=== CONFIG CHECK ==="
-          grep -E "CONFIG_MODULE_ALLOW_BTF_MISMATCH|CONFIG_LTO|CONFIG_DEBUG_INFO_BTF|CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_SYSVIPC|CONFIG_CMDLINE" out/.config || true
+          grep -E "CONFIG_LTO|CONFIG_DEBUG_INFO|CONFIG_DEBUG_INFO_BTF|CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_ALLOW_BTF_MISMATCH|CONFIG_CMDLINE" out/.config || true
 
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -158,23 +129,32 @@ jobs:
 
           test -f out/arch/arm64/boot/Image || { echo "HATA: Image oluşmadı"; exit 1; }
 
-          echo "BOOTHASH=VendorVisible-NoLTO-$(date +%s%N | cut -c1-10)" >> "$GITHUB_ENV"
+          echo "BOOTHASH=StockLikeWiFiPatch-$(date +%s%N | cut -c1-10)" >> "$GITHUB_ENV"
 
       - name: Pack AnyKernel3
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=MI14 Vendor Visibility Test No LTO/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=MI14 Stock Like WiFi Patch Test/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r ../MI14-VendorVisible-NoLTO.zip ./*
+          zip -r ../MI14-StockLike-WiFiPatch-Test.zip ./*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MI14-StockLike-WiFiPatch-Test
+          path: |
+            MI14-StockLike-WiFiPatch-Test.zip
+            common/out/arch/arm64/boot/Image
+          if-no-files-found: error
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "MI14 Vendor Visibility Test No LTO"
-          files: "MI14-VendorVisible-NoLTO.zip"
+          name: "MI14 Stock Like WiFi Patch Test"
+          files: "MI14-StockLike-WiFiPatch-Test.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
