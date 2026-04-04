@@ -24,6 +24,28 @@ jobs:
           temp-reserve-mb: 512
           swap-size-gb: 48
 
+      - name: Aggressive Cleanup
+        run: |
+          echo "=== Before cleanup ==="
+          df -h
+
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /opt/hostedtoolcache/go || true
+          sudo rm -rf /opt/hostedtoolcache/Python || true
+          sudo rm -rf /opt/hostedtoolcache/node || true
+          sudo rm -rf /opt/hostedtoolcache/Ruby || true
+          sudo rm -rf /opt/hostedtoolcache/Java* || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* || true
+          docker system prune -af || true
+
+          echo "=== After cleanup ==="
+          df -h
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -77,15 +99,25 @@ jobs:
             sudo swapoff /dev/zram0 2>/dev/null || true
             echo 1 | sudo tee /sys/block/zram0/reset >/dev/null 2>&1 || true
             echo lz4 | sudo tee /sys/block/zram0/comp_algorithm >/dev/null 2>&1 || true
-            echo 24G | sudo tee /sys/block/zram0/disksize >/dev/null
+            echo 16G | sudo tee /sys/block/zram0/disksize >/dev/null
             sudo mkswap /dev/zram0
             sudo swapon -p 100 /dev/zram0
           fi
 
-          sudo fallocate -l 24G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=24576
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile || true
-          sudo swapon /swapfile || true
+          if sudo fallocate -l 8G /swapfile 2>/dev/null; then
+            echo "8G swapfile created with fallocate"
+          elif sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress 2>/dev/null; then
+            echo "8G swapfile created with dd"
+          else
+            echo "Swapfile oluşturulamadı, devam ediliyor"
+            sudo rm -f /swapfile || true
+          fi
+
+          if [ -f /swapfile ]; then
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile || true
+            sudo swapon /swapfile || true
+          fi
 
           sudo sysctl -w vm.overcommit_memory=1
           sudo sysctl -w vm.swappiness=200
@@ -110,11 +142,9 @@ jobs:
 
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
-          # sadece cmdline
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
 
-          # sadece full lto
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_NONE || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_THINLTO || true
@@ -122,21 +152,17 @@ jobs:
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG_FULL || true
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE || true
 
-          # cfi / kcfi / scs kesin kapalı
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_CFI || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_CFI_CLANG || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_KCFI || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_ARCH_USES_CFI_TRAPS || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_SHADOW_CALL_STACK || true
 
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-MI14-FullLTO-NoCFI"
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
 
-          # olddefconfig geri açmasın
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select KCFI/d' 2>/dev/null || true
           find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
-          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select SHADOW_CALL_STACK/d' 2>/dev/null || true
 
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -165,7 +191,7 @@ jobs:
             olddefconfig
 
           echo "=== FINAL CONFIG CHECK ==="
-          grep -E "CONFIG_LTO|CONFIG_CFI|CONFIG_KCFI|CONFIG_SHADOW_CALL_STACK|CONFIG_CMDLINE" out/.config || true
+          grep -E "CONFIG_LTO|CONFIG_CFI|CONFIG_KCFI|CONFIG_CMDLINE" out/.config || true
 
           THREAD_FLAG=""
           if ld.lld --help | grep -q -- '--no-threads'; then
