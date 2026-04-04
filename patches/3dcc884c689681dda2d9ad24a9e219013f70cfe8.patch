@@ -1,0 +1,27 @@
+From 6faceb733c150bfe2143177ba1ba3851508b9907 Mon Sep 17 00:00:00 2001
+From: Patch Fix <fix@patch.com>
+Date: Thu, 11 Dec 2025 04:10:40 +0000
+Subject: [PATCH] overlayfs: dont make DCACHE_OP_{HASH,COMPARE} weird
+
+---
+ fs/overlayfs/util.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/fs/overlayfs/util.c b/fs/overlayfs/util.c
+index ed525ea31..3d6c4d973 100644
+--- a/fs/overlayfs/util.c
++++ b/fs/overlayfs/util.c
+@@ -148,9 +148,7 @@ bool ovl_dentry_weird(struct dentry *dentry)
+ 		return true;
+ 
+ 	return dentry->d_flags & (DCACHE_NEED_AUTOMOUNT |
+-				  DCACHE_MANAGE_TRANSIT |
+-				  DCACHE_OP_HASH |
+-				  DCACHE_OP_COMPARE);
++				  DCACHE_MANAGE_TRANSIT);
+ }
+ 
+ enum ovl_path_type ovl_path_type(struct dentry *dentry)
+-- 
+2.52.0
+
