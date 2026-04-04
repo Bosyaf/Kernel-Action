@@ -86,6 +86,12 @@ jobs:
             https://github.com/ramabondanp/android_kernel_common-6.1.git \
             --depth=1 common
 
+      - name: Fix bluetooth source mismatch
+        run: |
+          cd common
+          sed -i 's/QCA_WCN3988/QCA_WCN3998/g' drivers/bluetooth/btqca.c
+          grep -n "QCA_WCN3998" drivers/bluetooth/btqca.c | head -20 || true
+
       - name: Configure kernel
         run: |
           cd common
@@ -97,17 +103,17 @@ jobs:
             --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
 
-          # Vendor modül görünürlüğü için
+          # Vendor modül görünürlüğü
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULE_ALLOW_BTF_MISMATCH
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODVERSIONS
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_SIG_FORCE
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TRIM_UNUSED_KSYMS
 
-          # Deepongi'de kapalı
+          # Stock benzeri
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_SYSVIPC || true
 
-          # LTO kapalı bırak
+          # No LTO
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_FULL || true
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
