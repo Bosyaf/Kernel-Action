@@ -1,4 +1,4 @@
-name: MI14 Stock Like WiFi Patch Test
+name: MI14 Full LTO Minimal NoCFI
 
 permissions:
   contents: write
@@ -15,16 +15,14 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      WIFI_PATCH_URL: "https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch"
-      CLANG_URL: "https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
 
     steps:
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-gb: 16
+          root-reserve-mb: 2048
+          temp-reserve-mb: 512
+          swap-size-gb: 48
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,51 +32,76 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/clang-zyc
-          key: zyc-clang-22.0.0git-20250928-release
+          key: zyc-clang-main-link-latest
 
-      - name: Install packages
+      - name: Paketler ve ZYC CLANG Çekimi
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            lld llvm pkg-config zstd zip patch pahole ca-certificates
+            lld llvm pkg-config zstd zip pahole
 
-      - name: Download ZyC Clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
+          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
+
+          curl -L -o clang.tar.gz "$CLANG_LINK"
+
+          echo "Arşiv Çıkarılıyor..."
           mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
-          cd "$GITHUB_WORKSPACE/clang-zyc"
-          echo "Downloading ${CLANG_URL}"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz
-          tar -xzf clang.tar.gz --strip-components=1
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
           rm -f clang.tar.gz
-          test -x "$GITHUB_WORKSPACE/clang-zyc/bin/clang"
+
+      - name: Install missing packages if clang cache hit
+        if: steps.cache-clang.outputs.cache-hit == 'true'
+        run: |
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            lld llvm pkg-config zstd zip pahole
 
       - name: Show Clang version
         run: |
-          "$GITHUB_WORKSPACE/clang-zyc/bin/clang" --version
+          "$GITHUB_WORKSPACE/clang-zyc/bin/clang" --version || true
           "$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" --version || true
 
-      - name: Clone sources
+      - name: Hardened Memory
         run: |
+          sudo modprobe zram num_devices=1 2>/dev/null || true
+          if [ -e /sys/block/zram0/disksize ]; then
+            sudo swapoff /dev/zram0 2>/dev/null || true
+            echo 1 | sudo tee /sys/block/zram0/reset >/dev/null 2>&1 || true
+            echo lz4 | sudo tee /sys/block/zram0/comp_algorithm >/dev/null 2>&1 || true
+            echo 24G | sudo tee /sys/block/zram0/disksize >/dev/null
+            sudo mkswap /dev/zram0
+            sudo swapon -p 100 /dev/zram0
+          fi
+
+          sudo fallocate -l 24G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=24576
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile || true
+          sudo swapon /swapfile || true
+
+          sudo sysctl -w vm.overcommit_memory=1
+          sudo sysctl -w vm.swappiness=200
+          sudo sysctl -w vm.vfs_cache_pressure=500
+          sudo sysctl -w vm.dirty_ratio=10
+          sudo sysctl -w vm.dirty_background_ratio=5
+          sudo sysctl -w vm.max_map_count=2097152
+          sudo sysctl -w vm.page-cluster=0
+
+          free -h
+          swapon --show
+
+      - name: Clone source
+        run: |
+          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging \
-            https://github.com/ramabondanp/android_kernel_common-6.1.git \
-            --depth=1 common
-
-      - name: Apply WiFi patch only
-        run: |
-          cd common
-          curl -fLSs "${WIFI_PATCH_URL}" -o wifi.patch
-          test -s wifi.patch || { echo "HATA: WiFi patch boş indi"; exit 1; }
-
-          echo "Patch preview:"
-          head -40 wifi.patch || true
-
-          patch --dry-run -p1 < wifi.patch
-          patch -p1 < wifi.patch
 
       - name: Configure kernel
         run: |
@@ -87,12 +110,33 @@ jobs:
 
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
-          ./scripts/config --file "$CONFIG_FILE" \
-            --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
+          # sadece cmdline
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
 
-          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-StockLike-WiFiPatch"
+          # sadece full lto
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_NONE || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_THINLTO || true
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG || true
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG_FULL || true
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE || true
+
+          # cfi / kcfi / scs kesin kapalı
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_CFI || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_CFI_CLANG || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_KCFI || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_ARCH_USES_CFI_TRAPS || true
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_SHADOW_CALL_STACK || true
+
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-MI14-FullLTO-NoCFI"
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
+
+          # olddefconfig geri açmasın
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select CFI_CLANG/d' 2>/dev/null || true
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select KCFI/d' 2>/dev/null || true
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select ARCH_USES_CFI_TRAPS/d' 2>/dev/null || true
+          find . -path './out' -prune -o -name 'Kconfig*' -print | xargs sed -i '/select SHADOW_CALL_STACK/d' 2>/dev/null || true
 
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -103,7 +147,9 @@ jobs:
 
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-          ulimit -n 65535 || true
+          ulimit -n 1048576 || true
+          ulimit -s unlimited || true
+          ulimit -u unlimited || true
 
           printf '%s\n' '#!/bin/sh' 'exit 0' > scripts/check-local-export
           chmod +x scripts/check-local-export
@@ -118,35 +164,50 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
-          echo "=== CONFIG CHECK ==="
-          grep -E "CONFIG_LTO|CONFIG_DEBUG_INFO|CONFIG_DEBUG_INFO_BTF|CONFIG_MODVERSIONS|CONFIG_TRIM_UNUSED_KSYMS|CONFIG_MODULE_ALLOW_BTF_MISMATCH|CONFIG_CMDLINE" out/.config || true
+          echo "=== FINAL CONFIG CHECK ==="
+          grep -E "CONFIG_LTO|CONFIG_CFI|CONFIG_KCFI|CONFIG_SHADOW_CALL_STACK|CONFIG_CMDLINE" out/.config || true
 
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          THREAD_FLAG=""
+          if ld.lld --help | grep -q -- '--no-threads'; then
+            THREAD_FLAG="--no-threads"
+          elif ld.lld --help | grep -q -- '--threads='; then
+            THREAD_FLAG="--threads=1"
+          fi
+          echo "LLD thread flag: ${THREAD_FLAG}"
+
+          sync
+          echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
+          free -h
+          swapon --show
+
+          make -j1 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            Image || { echo "BUILD FAILED"; exit 1; }
+            LDFLAGS_vmlinux="--export-dynamic ${THREAD_FLAG}" \
+            Image || { echo "❌ BUILD FAILED"; free -h; exit 1; }
 
           test -f out/arch/arm64/boot/Image || { echo "HATA: Image oluşmadı"; exit 1; }
 
-          echo "BOOTHASH=StockLikeWiFiPatch-$(date +%s%N | cut -c1-10)" >> "$GITHUB_ENV"
+          echo "BOOTHASH=MI14-FullLTO-NoCFI-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: Pack AnyKernel3
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=MI14 Stock Like WiFi Patch Test/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=MI14 Full LTO Minimal NoCFI/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r ../MI14-StockLike-WiFiPatch-Test.zip ./*
+          zip -r ../MI14-FullLTO-Minimal-NoCFI.zip ./*
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MI14-StockLike-WiFiPatch-Test
+          name: MI14-FullLTO-Minimal-NoCFI
           path: |
-            MI14-StockLike-WiFiPatch-Test.zip
+            MI14-FullLTO-Minimal-NoCFI.zip
             common/out/arch/arm64/boot/Image
           if-no-files-found: error
 
@@ -154,7 +215,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "MI14 Stock Like WiFi Patch Test"
-          files: "MI14-StockLike-WiFiPatch-Test.zip"
+          name: "MI14 Full LTO Minimal NoCFI"
+          files: "MI14-FullLTO-Minimal-NoCFI.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
