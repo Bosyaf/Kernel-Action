@@ -62,9 +62,9 @@ jobs:
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch
+            patch -p1 --forward < wifi.patch || true
           fi
-          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig
 
@@ -74,10 +74,10 @@ jobs:
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -102,8 +102,10 @@ jobs:
           
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
-          # 🚀 KASAN ve TEMEL CMDLINE (Performans Optimizasyonu
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=64 kasan.stacktrace=off"
+          # 🚀 KASAN ve TEMEL CMDLINE (Performans Optimizasyonu)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_STACK
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=64 kasan.stacktrace=off cpuidle.governor=teo"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # 🚀 PREEMPT VE HZ (Temel Kesinti Yöneticisi)
@@ -193,7 +195,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+ZyC+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki
 
