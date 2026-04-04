@@ -15,7 +15,7 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      GOOGLE_CLANG_REV: "r487747c"
+      CLANG_URL: "https://github.com/ZyCromerZ/Clang/releases/download/17.0.2-release/Clang-17.0.2.tar.gz"
 
     steps:
       - name: Maximize Space
@@ -28,12 +28,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Google Clang 17
+      - name: Cache Clang 17
         id: cache-clang
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/google-clang
-          key: google-clang-${{ env.GOOGLE_CLANG_REV }}
+          key: clang-17.0.2-zyc
 
       - name: Install packages
         run: |
@@ -44,14 +44,15 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd zip patch pahole ca-certificates
 
-      - name: Download Google Clang 17
+      - name: Download Clang 17
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p "$GITHUB_WORKSPACE/google-clang"
           cd "$GITHUB_WORKSPACE/google-clang"
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${GOOGLE_CLANG_REV}.tar.gz"
           echo "Downloading ${CLANG_URL}"
-          curl -L "${CLANG_URL}" | tar -xz
+          curl -fL "${CLANG_URL}" -o clang.tar.gz
+          tar -xzf clang.tar.gz --strip-components=1
+          rm -f clang.tar.gz
           test -x "$GITHUB_WORKSPACE/google-clang/bin/clang"
 
       - name: Show Clang version
@@ -96,20 +97,15 @@ jobs:
 
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
 
-          # Senin çalışan kernel cmdline'ına yakın kısa blok
           ./scripts/config --file "$CONFIG_FILE" \
             --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
-          
+
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULE_ALLOW_BTF_MISMATCH
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODVERSIONS
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_FORCE_LOAD
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_SIG_FORCE
-
-          # Deepongi'de açık
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TRIM_UNUSED_KSYMS
-
-          # Deepongi'de kapalı
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_SYSVIPC || true
 
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-deepongi"
