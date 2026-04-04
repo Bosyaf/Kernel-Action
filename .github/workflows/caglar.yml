@@ -86,7 +86,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. Full Kernel Config (Full LTO + Usta İşi Denge)
+      - name: 3. Full Kernel Config (Full LTO + 🎭 Müşaviri Kandırma)
         run: |
           cd common
           
@@ -102,12 +102,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
           
-          # KCFI / CFI / SCS kapat - Full LTO link hatasını düzeltir
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFI_CLANG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_USES_CFI_TRAPS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHADOW_CALL_STACK
+          # 🎭 TABELA ASILIYOR: Xiaomi modülleri görsün diye güvenlik şalterleri "AÇIK" gösteriliyor
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KCFI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_USES_CFI_TRAPS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SHADOW_CALL_STACK
           
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
@@ -144,25 +144,11 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
-          # ⚡ olddefconfig sonrası KCFI/CFI zorla kapatma ⚡
-          # Kconfig bağımlılıkları geri açmış olabilir, sed ile zorla kapat
-          sed -i 's/CONFIG_CFI_CLANG=y/# CONFIG_CFI_CLANG is not set/' out/.config
-          sed -i 's/CONFIG_CFI=y/# CONFIG_CFI is not set/' out/.config
-          sed -i 's/CONFIG_KCFI=y/# CONFIG_KCFI is not set/' out/.config
-          sed -i 's/CONFIG_ARCH_USES_CFI_TRAPS=y/# CONFIG_ARCH_USES_CFI_TRAPS is not set/' out/.config
-          sed -i 's/CONFIG_SHADOW_CALL_STACK=y/# CONFIG_SHADOW_CALL_STACK is not set/' out/.config
-          
-          # Tekrar olddefconfig: bağımlılık çözümü
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-          
           echo ""
           echo "⚡ FULL LTO DOĞRULAMASI:"
           grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_LTO_CLANG=|CONFIG_LTO_NONE" out/.config || true
           echo ""
-          echo "🛡️ CFI/KCFI/SCS DOĞRULAMASI:"
+          echo "🛡️ CFI/KCFI/SCS TABELA DOĞRULAMASI (=y OLMALI):"
           grep -E "CONFIG_CFI_CLANG|CONFIG_CFI=|CONFIG_KCFI|CONFIG_ARCH_USES_CFI_TRAPS|CONFIG_SHADOW_CALL_STACK" out/.config || true
           echo ""
           
@@ -185,22 +171,6 @@ jobs:
               olddefconfig
           fi
           
-          # KCFI hâlâ açıksa son çare: Kconfig'den tamamen sök
-          if grep -q "CONFIG_KCFI=y" out/.config; then
-            echo "⚠️ KCFI hâlâ açık! Kconfig'den söküyorum..."
-            find . -name "Kconfig*" -exec sed -i 's/select ARCH_USES_CFI_TRAPS//g' {} \; 2>/dev/null || true
-            find . -name "Kconfig*" -exec sed -i 's/select CFI_CLANG//g' {} \; 2>/dev/null || true
-            find . -name "Kconfig*" -exec sed -i 's/select KCFI//g' {} \; 2>/dev/null || true
-            sed -i 's/CONFIG_KCFI=y/# CONFIG_KCFI is not set/' out/.config
-            sed -i 's/CONFIG_CFI_CLANG=y/# CONFIG_CFI_CLANG is not set/' out/.config
-            sed -i 's/CONFIG_ARCH_USES_CFI_TRAPS=y/# CONFIG_ARCH_USES_CFI_TRAPS is not set/' out/.config
-            
-            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-              CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-              AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-              olddefconfig
-          fi
-          
           echo ""
           echo "🔍 Final config:"
           grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_KCFI|CONFIG_CFI_CLANG|CONFIG_CFI=|CONFIG_SHADOW_CALL_STACK|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
@@ -211,14 +181,15 @@ jobs:
           sync && echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
           
           echo ""
-          echo "🔨 Full LTO derleme başlıyor..."
+          echo "🔨 Full LTO derleme başlıyor (Kandırmaca Modu Aktif)..."
           echo ""
           
+          # ⚡ ALTIN VURUŞ BURADA: KCFLAGS içine -fno-sanitize=kcfi eklendi!
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -Wno-constant-logical-operand" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+crc -fno-stack-protector -fomit-frame-pointer -fno-unwind-tables -fno-sanitize=kcfi -Wno-constant-logical-operand" \
             Image || { echo "❌ Derleme HATASI!"; free -h; exit 1; }
           
           echo ""
