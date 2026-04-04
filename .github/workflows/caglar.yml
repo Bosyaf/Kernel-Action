@@ -100,15 +100,7 @@ jobs:
           ./scripts/config --file "$CONFIG_FILE" \
             --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard"
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CMDLINE_EXTEND
-
-          # Deepongi'ye yaklaş
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_NONE
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LTO_CLANG_THIN || true
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_THINLTO || true
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
-
+          
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULE_ALLOW_BTF_MISMATCH
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODVERSIONS
           ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_MODULE_FORCE_LOAD
