@@ -120,6 +120,7 @@ jobs:
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           
           # 🚀 CMDLINE (Performans/Kasan Optimizasyonu)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_STACK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=32 kasan.stacktrace=off"
