@@ -184,7 +184,7 @@ jobs:
           
           # 🛡️ %100 GÜVENLİ DEBUG KAPATMALARI (Performans Artışı)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MEMORY_INIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_WQ_WATCHDOG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_TRACE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CMA_DEBUGFS
           
