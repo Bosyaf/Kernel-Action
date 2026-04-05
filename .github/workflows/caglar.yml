@@ -210,7 +210,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -229,13 +229,29 @@ jobs:
           chmod +x scripts/check-local-export
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            CC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
+            LD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
+            HOSTCC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
+            HOSTCXX="$GITHUB_WORKSPACE/clang-zyc/bin/clang++" \
+            HOSTLD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
+            AR="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-ar" \
+            NM="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-nm" \
+            OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy" \
+            OBJDUMP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objdump" \
+            STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip" \
             gki_defconfig
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            CC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
+            LD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
+            HOSTCC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
+            HOSTCXX="$GITHUB_WORKSPACE/clang-zyc/bin/clang++" \
+            HOSTLD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
+            AR="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-ar" \
+            NM="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-nm" \
+            OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy" \
+            OBJDUMP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objdump" \
+            STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip" \
             olddefconfig
           
           echo "🔍 WALT / governor config kontrolü:"
@@ -243,8 +259,16 @@ jobs:
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            CC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
+            LD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
+            HOSTCC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
+            HOSTCXX="$GITHUB_WORKSPACE/clang-zyc/bin/clang++" \
+            HOSTLD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
+            AR="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-ar" \
+            NM="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-nm" \
+            OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy" \
+            OBJDUMP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objdump" \
+            STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip" \
             KCFLAGS="-O2 \
                 -march=armv9-a+crypto+crc+sha3+dotprod+fp16 \
                 -mtune=cortex-x4 \
