@@ -40,7 +40,7 @@ jobs:
           CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
           curl -L -o clang.tar.gz "$CLANG_LINK"
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
           
           # Clang versiyonunu göster
@@ -262,7 +262,7 @@ jobs:
           # ═══════════════════════════════════════
           # LOCALVERSION
           # ═══════════════════════════════════════
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+ZyC"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG++"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -373,4 +373,5 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           
