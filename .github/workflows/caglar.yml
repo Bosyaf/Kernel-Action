@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-mb: 8192
+          swap-size-gb: 8
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,63 +45,39 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
           rm -f clang.tar.gz
-          
-          if [ -f "$GITHUB_WORKSPACE/clang-zyc/bin/clang" ]; then
-            echo "✅ Clang: $($GITHUB_WORKSPACE/clang-zyc/bin/clang --version | head -1)"
-          else
-            echo "❌ Clang bulunamadı!"
-            exit 1
-          fi
 
-      - name: 2. Kernel Kaynağı ve AnyKernel3
+      - name: 2. Kaynakları Çek (Yeni Staging Dalı)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-          echo "✅ Kaynaklar hazır"
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-          echo "✅ VortexSU kuruldu"
 
-      - name: 4. Yamalar (Wi-Fi + BBRv3 + Baseband Guard)
+      - name: 4. Wi-Fi, BBRv3 ve Asya Yamaları
         run: |
           cd common
-          
-          # Wi-Fi patch
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
-            echo "✅ Wi-Fi patch uygulandı"
           fi
-          
-          # BBRv3 patch
-          if [ -f "$GITHUB_WORKSPACE/patches/bbrv3.patch" ]; then
-            patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
-            echo "✅ BBRv3 patch uygulandı"
-          else
-            echo "⚠️ BBRv3 patch bulunamadı"
-          fi
-          
-          # Baseband Guard
-          wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
+          patch -p1 --fuzz=3 < $GITHUB_WORKSPACE/patches/bbrv3.patch || true
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-          echo "✅ Baseband Guard kuruldu"
 
-      - name: 5. SUSFS Entegrasyonu
+      - name: 5. SUSFS Master Formülü
         run: |
           cd common
-          
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          git clone --depth=1 -q https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-
-          # namespace.c enjeksiyonu
+          
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -116,51 +92,40 @@ jobs:
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
-
-          # statfs.c düzeltmesi
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
 
-          echo "✅ SUSFS entegrasyonu tamamlandı"
-
-      - name: 6. HZ_300 Kconfig Enjeksiyonu
+      - name: 6. Full Kernel Config (Usta İşi Denge ve Modüller)
         run: |
           cd common
-          HZ_KCONFIG="kernel/Kconfig.hz"
           
-          if [ -f "$HZ_KCONFIG" ] && ! grep -q "config HZ_300" "$HZ_KCONFIG"; then
-            echo "📝 HZ_300 ekleniyor..."
-            cat >> "$HZ_KCONFIG" << 'EOF'
+          # 🔥 300HZ ZORUNLU KILMA (Kconfig Bypass) 🔥
+          HZ_KCONFIG="kernel/Kconfig.hz"
+          if [ -f "$HZ_KCONFIG" ]; then
+            if ! grep -q "^config HZ_300" "$HZ_KCONFIG"; then
+              echo "📝 HZ_300 Kconfig'e işleniyor..."
+              cat >> "$HZ_KCONFIG" << 'EOF'
 
           config HZ_300
               bool "300 HZ"
               help
-                300 Hz timer frequency for 60/120Hz displays.
-                Best balance for mobile gaming.
-
+                300 Hz timer tick. Optimized for 120Hz and 60Hz displays.
+                Provides good balance between latency and overhead for
+                mobile gaming workloads.
           EOF
-            sed -i '/default 250 if HZ_250/a \	default 300 if HZ_300' "$HZ_KCONFIG"
-            echo "✅ HZ_300 eklendi"
-          else
-            echo "ℹ️ HZ_300 zaten var"
+              sed -i '/default 250 if HZ_250/a\\tdefault 300 if HZ_300' "$HZ_KCONFIG"
+            fi
           fi
-
-      - name: 7. Kernel Config - MI14 Optimized
-        run: |
-          cd common
+          
           CONFIG_FILE="arch/arm64/configs/gki_defconfig"
-
-          echo "🔧 Config ayarlanıyor..."
-
-          # ═══════════════════════════════════════
-          # CMDLINE
-          # ═══════════════════════════════════════
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=32 kasan.stacktrace=off"
+          
+          # 🚀 CMDLINE (Performans/Kasan Optimizasyonu ve IDLE TEO)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_STACK
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=32 kasan.stacktrace=off cpuidle.governor=teo"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-
-          # ═══════════════════════════════════════
-          # HZ + PREEMPT
-          # ═══════════════════════════════════════
+          
+          # 🚀 PREEMPT VE HZ (Temel Kesinti Yöneticisi)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -170,134 +135,72 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          
+          # 🚀 TICK AYARLARI (Batarya)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-
-          # ═══════════════════════════════════════
-          # THERMAL + IDLE
-          # ═══════════════════════════════════════
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          
+          # 🚀 CPUFREQ VE IDLE (WALT & TEO)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-
-          # ═══════════════════════════════════════
-          # SCHEDULER
-          # ═══════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
+          
+          # 🚀 THERMAL: Dengeli Oyun İçin Güvenli Varsayılan
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR || true
+          
+          # 🚀 SCHEDULER (Temel İş Yükü Dengesi)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
-
-          # ═══════════════════════════════════════
-          # KPROBES (VortexSU için ŞART)
-          # ═══════════════════════════════════════
+          
+          # KPROBES (KernelSU Zorunluluğu)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-
-          # ═══════════════════════════════════════
-          # LTO
-          # ═══════════════════════════════════════
+         
+          # 🔥 LTO (İnce Ayar: Thin LTO)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-
-          # ═══════════════════════════════════════
+          
           # RAM KURTARICI & SUNUCU KODLARINI İPTAL
-          # ═══════════════════════════════════════
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-
-          # ═══════════════════════════════════════
-          # 🔥 GÜVENLİ DEBUG KAPATMALARI 🔥
-          # ═══════════════════════════════════════
-          # Memory debug
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLUB_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_STACK_USAGE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_VM
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MEMORY_INIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_POISONING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_PAGEALLOC
           
-          # Lock debug
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MUTEXES
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SPINLOCK
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LOCK_ALLOC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROVE_LOCKING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCK_STAT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_ATOMIC_SLEEP
-          
-          # Scheduler debug
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_DEBUG
-          
-          # Object debug
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_OBJECTS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_OBJECTS_FREE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_OBJECTS_TIMERS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_OBJECTS_WORK
-          
-          # Diğer debug
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_BUGVERBOSE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_LIST
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_PLIST
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_SG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_NOTIFIERS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_CREDENTIALS
-          
-          # Ftrace (ağır profiling)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FTRACE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FUNCTION_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FUNCTION_GRAPH_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IRQSOFF_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_TRACER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_STACK_TRACER
-          
-          # Profiling
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROFILING
-          
-          # Log seviyesi
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CONSOLE_LOGLEVEL_DEFAULT 1
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_MESSAGE_LOGLEVEL_DEFAULT 1
-
-          # ═══════════════════════════════════════
-          # AĞ + TTL BYPASS
-          # ═══════════════════════════════════════
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          # AĞ & HOTSPOT KORUMASI (TTL/HL Bypass)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-
-          # ═══════════════════════════════════════
-          # GÜVENLİK + DOSYA SİSTEMİ
-          # ═══════════════════════════════════════
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          
+          # ÇİNLİ ZIRHLAR & DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-
-          # ═══════════════════════════════════════
+          
           # SUSFS
-          # ═══════════════════════════════════════
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -306,44 +209,41 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-
-          # ═══════════════════════════════════════
-          # LOCALVERSION
-          # ═══════════════════════════════════════
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+ZyC"
+          
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G++"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
-          # check_defconfig bypass
           sed -i 's/check_defconfig//' build.config.gki || true
-          
-          echo "✅ Tüm config ayarları tamamlandı"
 
-      - name: 8. Kernel Derleme
+      - name: 7. Kernel Derleme
         run: |
           cd common
-          
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          echo "🔧 Clang: $(clang --version | head -1)"
           
+          sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-
-          # Config oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-
-          # Config doğrulama
-          echo ""
-          echo "═══════════════════════════════════════"
-          echo "📋 UYGULANAN CONFIG AYARLARI:"
-          echo "═══════════════════════════════════════"
-          grep -E "CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_LTO_CLANG_THIN|CONFIG_KPROBES=|CONFIG_KSU_SUSFS=|CONFIG_THERMAL_DEFAULT_GOV|CONFIG_DEBUG_INFO=|CONFIG_SLUB_DEBUG=|CONFIG_FTRACE=" out/.config || true
-          echo "═══════════════════════════════════════"
-
-          # Derleme
-          echo "🚀 Derleme başlıyor..."
+          
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x scripts/check-local-export
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            gki_defconfig
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            olddefconfig
+          
+          echo "🔍 WALT / governor config kontrolü:"
+          grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O3 -march=armv9.2-a+crypto+crc+sha3 \
               -fomit-frame-pointer \
@@ -351,53 +251,26 @@ jobs:
               -fno-trapping-math \
               -falign-functions=64 \
               -Wno-constant-logical-operand" \
-            Image
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+          
+          echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-          # Başarı kontrolü
-          if [ -f "out/arch/arm64/boot/Image" ]; then
-            echo ""
-            echo "✅ DERLEME BAŞARILI!"
-            echo "📦 Boyut: $(du -h out/arch/arm64/boot/Image | cut -f1)"
-          else
-            echo "❌ DERLEME BAŞARISIZ!"
-            exit 1
-          fi
-
-          echo "BOOTHASH=CGZyC-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
-
-      - name: 9. AnyKernel3 Paketleme
+      - name: 8. AnyKernel3
         run: |
-          cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Golden Kernel/' anykernel.sh
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r9 "../CG-ZyC-Golden-${{ env.BOOTHASH }}.zip" ./*
-          echo "✅ Paket hazır"
+          zip -r "../CG-ZyC-Balanced-Pro.zip" ./*
 
-      - name: 10. Release
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC Golden Kernel | Xiaomi 14"
-          body: |
-            ## 🔥 CG+ ZyC Golden Kernel
-            
-            ### ✅ Özellikler
-            - HZ 300 | Full Preempt | ThinLTO
-            - Power Allocator Thermal | TEO Idle  
-            - BBRv3 + fq_codel | WireGuard | TTL Bypass
-            - VortexSU + SUSFS (tam root gizlilik)
-            - Güvenli debug kapatmaları (~%20 performans artışı)
-            
-            ### 🌡️ Beklenen Sonuçlar
-            - Oyunlarda: 41-44°C
-            - Pil: Stock'tan ~%15 daha iyi
-            
-            ### 📱 Cihazlar
-            houji | shennong | aurora | xiaomi14
+          name: "CG+ ZyC Clang (Balanced Pro - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
