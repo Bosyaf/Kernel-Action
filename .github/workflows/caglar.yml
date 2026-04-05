@@ -43,8 +43,13 @@ jobs:
           
           echo "Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          # 🔥 HATA ÇÖZÜMÜ: strip-components kaldırıldı, bin klasörü dinamik bulunacak
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
+          
+          CLANG_BIN_PATH=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
+          echo "✅ Bulunan Clang Bin Yolu: $CLANG_BIN_PATH"
+          echo "CLANG_BIN_PATH=$CLANG_BIN_PATH" >> $GITHUB_ENV
 
       - name: 2. Kaynakları Çek (Yeni Staging Dalı)
         run: |
@@ -217,7 +222,8 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          # 🔥 HATA ÇÖZÜMÜ: Dinamik bulduğumuz klasörü sisteme tanıtıyoruz
+          export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -229,29 +235,13 @@ jobs:
           chmod +x scripts/check-local-export
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
-            LD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
-            HOSTCC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
-            HOSTCXX="$GITHUB_WORKSPACE/clang-zyc/bin/clang++" \
-            HOSTLD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
-            AR="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-ar" \
-            NM="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-nm" \
-            OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy" \
-            OBJDUMP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objdump" \
-            STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
-            LD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
-            HOSTCC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
-            HOSTCXX="$GITHUB_WORKSPACE/clang-zyc/bin/clang++" \
-            HOSTLD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
-            AR="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-ar" \
-            NM="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-nm" \
-            OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy" \
-            OBJDUMP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objdump" \
-            STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
           
           echo "🔍 WALT / governor config kontrolü:"
@@ -259,16 +249,8 @@ jobs:
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
-            LD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
-            HOSTCC="$GITHUB_WORKSPACE/clang-zyc/bin/clang" \
-            HOSTCXX="$GITHUB_WORKSPACE/clang-zyc/bin/clang++" \
-            HOSTLD="$GITHUB_WORKSPACE/clang-zyc/bin/ld.lld" \
-            AR="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-ar" \
-            NM="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-nm" \
-            OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy" \
-            OBJDUMP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objdump" \
-            STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
                 -march=armv9-a+crypto+crc+sha3+dotprod+fp16 \
                 -mtune=cortex-x4 \
