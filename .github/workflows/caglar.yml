@@ -122,7 +122,7 @@ jobs:
           # 🚀 CMDLINE (Performans/Kasan Optimizasyonu ve IDLE TEO)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_STACK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KASAN_VMALLOC
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=32 kasan.stacktrace=off cpuidle.governor=teo"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=32 kasan.stacktrace=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # 🚀 PREEMPT VE HZ (Temel Kesinti Yöneticisi)
