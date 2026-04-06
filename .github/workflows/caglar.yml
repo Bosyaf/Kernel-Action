@@ -232,12 +232,13 @@ jobs:
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          cat << 'EOF' > scripts/check-local-export
+                    cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
           
+          # 1. Config Hazırlığı
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
@@ -251,21 +252,24 @@ jobs:
           echo "🔍 Config Kontrolü:"
           grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
           
-          echo "🔍 Derleme Sırasında Clang Versiyonu (Final Check):"
+          echo "🔍 Derleme Sırasında Clang Versiyonu:"
           grep "CONFIG_CC_VERSION_TEXT" out/.config || true
           
+          # 2. Ana Derleme (Optimize Edilmiş)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             KCFLAGS="-O2 \
-                -march=armv9-a+crypto+crc+sha3+dotprod+fp16 \
-                -fno-asynchronous-unwind-tables \
-                -fno-unwind-tables \
-                -falign-functions=16 \
-                -fno-omit-frame-pointer \
-                -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--strip-debug" \
+               -march=armv9.2-a+crypto+sha3+dotprod+fp16+i8mm+bf16 \
+               -falign-functions=32 \
+               -fno-asynchronous-unwind-tables \
+               -fno-unwind-tables \
+               -fno-math-errno \
+               -fmerge-all-constants \
+               -fomit-frame-pointer \
+               -Wno-constant-logical-operand" \
+            KLDFLAGS="-Wl,--strip-debug -Wl,--icf=all" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
