@@ -1,4 +1,4 @@
-name: Kernel PGO Generate (Stable Minimal)
+name: Kernel PGO Generate (Final Stable)
 
 on:
   workflow_dispatch:
@@ -9,48 +9,35 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Minimal deps (zorunlu)
+      - name: Install minimal deps
         run: |
           sudo apt update -qq
           sudo apt install -y bc flex bison
 
-      - name: Download ZyC Clang
+      - name: Clone Proton Clang (STABLE)
         run: |
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -L $CLANG_URL -o clang.tar.gz
-          mkdir clang
-          tar -xzf clang.tar.gz -C clang --strip-components=1
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-      - name: Verify clang toolchain
+      - name: Verify clang
         run: |
           ls clang/bin
           clang/bin/clang --version
-          clang/bin/ld.lld --version || echo "lld missing"
+          clang/bin/ld.lld --version
 
       - name: Clone Kernel
         run: |
           git clone --depth=1 -b android14-6.1-staging \
           https://github.com/ramabondanp/android_kernel_common-6.1.git kernel
 
-      - name: Build PGO Generate
+      - name: Build Kernel (PGO Generate)
         run: |
           cd kernel
 
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/clang/lib:$LD_LIBRARY_PATH"
-
-          # LLVM toolchain zorla belirt
-          export CC=clang
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
 
-          # PGO enable
+          # PGO aç
           scripts/config --file out/.config --enable CONFIG_DEBUG_FS
           scripts/config --file out/.config --enable CONFIG_PGO_CLANG
           scripts/config --file out/.config --enable CONFIG_PGO_CLANG_KERNEL
@@ -58,10 +45,9 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-fprofile-generate" \
             Image
 
-      - name: Upload Image
+      - name: Upload Kernel
         uses: actions/upload-artifact@v4
         with:
           name: kernel-pgo-generate
