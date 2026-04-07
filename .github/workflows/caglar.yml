@@ -43,12 +43,10 @@ jobs:
           rm -f clang.tar.zst
 
           echo "🔍 Clang yolu bulunuyor..."
-          # Yuki clang genelde direkt bin/clang içindedir. Garantilemek için arıyoruz.
           CLANG_BIN=$(find $GITHUB_WORKSPACE/toolchain -path "*/bin/clang" | head -n 1)
           
           if [ -z "$CLANG_BIN" ]; then
             echo "❌ HATA: clang bulunamadı!"
-            echo "Açılan dosyalar:"
             ls -R $GITHUB_WORKSPACE/toolchain | head -n 50
             exit 1
           fi
@@ -56,10 +54,8 @@ jobs:
           CLANG_DIR="$(dirname "$CLANG_BIN")"
           echo "✅ Clang bulundu: $CLANG_DIR"
           
-          # Yolu sistem ortamına ekle
           echo "CLANG_DIR=$CLANG_DIR" >> $GITHUB_ENV
 
-          # Doğrulama
           $CLANG_DIR/clang --version
           $CLANG_DIR/ld.lld --version
 
@@ -72,7 +68,7 @@ jobs:
           echo "📥 AnyKernel3 indiriliyor..."
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: PGO İçin Config Ayarla
+      - name: PGO İçin Config Ayarla (merge_config.sh Yöntemi)
         run: |
           cd kernel
           export PATH="${{ env.CLANG_DIR }}:$PATH"
@@ -84,20 +80,24 @@ jobs:
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             gki_defconfig
 
-          echo "🔧 PGO modifikasyonları yapılıyor..."
-          # PGO için zorunlu olanlar (aktif)
-          scripts/config --file out/.config --enable CONFIG_PGO_CLANG
-          scripts/config --file out/.config --enable CONFIG_DEBUG_FS
-          scripts/config --file out/.config --enable CONFIG_LTO_CLANG_THIN
-          
-          # PGO ile çakışanlar (kapalı)
-          scripts/config --file out/.config --disable CONFIG_CFI_CLANG
-          scripts/config --file out/.config --disable CONFIG_LTO_CLANG_FULL
-          
-          # İsim etiketi
-          scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-PGO-TRAIN"
+          echo "🔧 PGO ayarları pgo_fragment.config dosyasına yazılıyor..."
+          # DİKKAT: KASAN ve diğer GKI ayarlarına DOKUNULMADI!
+          # Sadece PGO açılıp, çakışan CFI kapatıldı ve Thin LTO'ya geçildi.
+          cat << 'EOF' > pgo_fragment.config
+          CONFIG_PGO_CLANG=y
+          CONFIG_DEBUG_FS=y
+          CONFIG_LTO_CLANG_THIN=y
+          # CONFIG_LTO_CLANG_FULL is not set
+          # CONFIG_CFI_CLANG is not set
+          EOF
 
-          echo "⚙️ olddefconfig ile ayarlar sabitleniyor..."
+          echo "⚙️ merge_config.sh ile ayarlar birleştiriliyor..."
+          ARCH=arm64 ./scripts/kconfig/merge_config.sh -O out/ out/.config pgo_fragment.config
+
+          echo "🔧 Kernel etiket ismi ayarlanıyor..."
+          scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-PGO-TRAIN"
+          
+          echo "⚙️ Ayarlar olddefconfig ile sabitleniyor..."
           make O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -105,9 +105,13 @@ jobs:
             olddefconfig
 
           echo "📋 Son Config Kontrolü:"
-          grep "CONFIG_PGO_CLANG=" out/.config || { echo "❌ PGO AKTİF DEĞİL!"; exit 1; }
-          grep "CONFIG_DEBUG_FS=" out/.config || echo "DEBUG_FS aktif değil."
-          grep "CONFIG_CFI_CLANG" out/.config || echo "CFI Başarıyla Kapatıldı."
+          if ! grep -q "CONFIG_PGO_CLANG=y" out/.config; then
+            echo "❌ PGO HALA AKTİF DEĞİL!"
+            echo "🔎 out/.config dosyasındaki PGO durumuna bakalım:"
+            grep -i "PGO" out/.config || echo "Kernel source kodunda PGO desteği bulunmuyor olabilir!"
+            exit 1
+          fi
+          echo "✅ PGO BAŞARIYLA AKTİF EDİLDİ!"
 
       - name: Kernel Derle (PGO Generate)
         run: |
@@ -135,7 +139,6 @@ jobs:
           cp kernel/out/arch/arm64/boot/Image AnyKernel3/
           cd AnyKernel3
           
-          # Her cihaza flashlanabilmesi için device check'i kapat
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
           sed -i 's/kernel.string=.*/kernel.string=PGO-Training Kernel by Caglar/g' anykernel.sh
           
@@ -150,19 +153,17 @@ jobs:
           name: "🔬 PGO Training Kernel #${{ github.run_number }}"
           body: |
             ## ⚠️ DİKKAT: PGO TRAINING KERNEL
-            Bu kernel PGO (Profile-Guided Optimization) profili toplamak içindir. Günlük kullanım için performansı bir tık düşük olabilir.
+            Bu kernel PGO (Profile-Guided Optimization) profili toplamak içindir.
 
             ### Nasıl Profil Toplanır?
             1. Bu ZIP dosyasını TWRP/Recovery üzerinden flashlayın.
-            2. Cihaz açıldıktan sonra **en az 30-40 dakika** ağır oyun (PUBG, Genshin vb.), kamera ve benchmark uygulamaları kullanın. (Ne kadar çok şey yaparsanız profil o kadar kaliteli olur).
+            2. Cihaz açıldıktan sonra **en az 30-40 dakika** ağır oyun (PUBG, Genshin vb.), kamera ve benchmark kullanın.
             3. Root yetkisi olan bir terminal (Termux vb.) açın ve şu komutu girin:
                ```bash
                su
                cat /sys/kernel/debug/pgo/profraw > /sdcard/Download/kernel_profile.profraw
                ```
-            4. `kernel_profile.profraw` dosyasını PC'ye alın. Bu dosyayı **2. Aşama (Optimize Kernel)** derlemesinde kullanacağız.
-
-            **Not:** Eğer `/sys/kernel/debug` boş görünüyorsa önce `su -c "mount -t debugfs none /sys/kernel/debug"` komutunu çalıştırın.
+            4. `kernel_profile.profraw` dosyasını PC'ye/GitHub'a alın.
           files: ${{ env.ZIP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
