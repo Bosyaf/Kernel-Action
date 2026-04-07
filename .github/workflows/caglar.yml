@@ -217,7 +217,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme (FULL LTO)
+            - name: 7. Kernel Derleme (FULL LTO)
         run: |
           cd common
           
@@ -241,15 +241,21 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
+          # 🔥 FULL LTO İÇİN MAKEFILE YAMASI
+          sed -i '/^KBUILD_HOSTCFLAGS/s/$/ -fno-lto/' scripts/Makefile.host || true
+          sed -i '/^KBUILD_HOSTLDFLAGS/s/$/ -fno-lto/' scripts/Makefile.host || true
+          
           # 1. Config Hazırlığı
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCFLAGS="-fno-lto" HOSTLDFLAGS="-fno-lto" \
             gki_defconfig
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCFLAGS="-fno-lto" HOSTLDFLAGS="-fno-lto" \
             olddefconfig
           
           echo "🔍 Config Kontrolü (FULL LTO Aktif mi?):"
@@ -263,8 +269,10 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCFLAGS="-O2 -fno-lto" \
+            HOSTLDFLAGS="-fno-lto" \
             KCFLAGS="-O2 \
-               -march=armv9.2-a+crypto+sha3+dotprod+fp16+ \
+               -march=armv9.2-a+crypto+sha3+dotprod+fp16 \
                -flto=full \
                -fwhole-program-vtables \
                -falign-functions=32 \
@@ -276,7 +284,7 @@ jobs:
                -fvectorize \
                -fslp-vectorize \
                -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--lto-O3 -Wl,--strip-debug -Wl,--icf=all -Wl,--gc-sections -Wl,-O3" \
+            KLDFLAGS="-Wl,--lto-O3 -Wl,--strip-debug -Wl,--icf=all -Wl,--gc-sections -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=ZyC-FullLTO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
