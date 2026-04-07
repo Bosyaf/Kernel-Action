@@ -1,14 +1,10 @@
-name: Pure Full LTO Kernel
-
-permissions:
-  contents: write
-  actions: write
+name: PGO 1. Asama (Training Kernel)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build-pgo-training:
     runs-on: ubuntu-latest
     timeout-minutes: 480
     env:
@@ -34,7 +30,7 @@ jobs:
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             git curl build-essential bc bison flex libssl-dev libelf-dev \
-            cpio kmod wget xz-utils
+            cpio kmod wget xz-utils file tree
           
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
@@ -51,121 +47,61 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. Full LTO Config Hazırlığı
+      - name: 3. PGO Training İçin Config Ayarları
         run: |
           cd common
+          # Ana defconfig'i oluştur
+          make ARCH=arm64 gki_defconfig
           
-          # Config dosyasını düzenle (make çalıştırmadan)
-          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          # PGO Profilleme için KRİTİK ayarlar
+          scripts/config --file .config \
+            --enable CONFIG_PGO_CLANG \
+            --enable CONFIG_DEBUG_FS \
+            --disable CONFIG_CFI_CLANG \
+            --disable CONFIG_LTO_CLANG_FULL \
+            --enable CONFIG_LTO_CLANG_THIN \
+            --set-str CONFIG_LOCALVERSION "-PGO-TRAINING"
           
-          # SADECE Full LTO ayarları
-          scripts/config --file $CONFIG_FILE \
-            --enable CONFIG_LTO_CLANG \
-            --enable CONFIG_LTO_CLANG_FULL \
-            --disable CONFIG_LTO_CLANG_THIN \
-            --disable CONFIG_LTO_NONE \
-            --set-str CONFIG_LOCALVERSION "-FullLTO"
+          # Ayarları doğrula ve kaydet
+          make ARCH=arm64 olddefconfig
 
-      - name: 4. Build System Hazırlığı
+      - name: 4. PGO Training Kernel Derleme
         run: |
           cd common
-          
-          # Host tools LTO bypass
-          cat << 'EOF' >> scripts/Makefile.host
-          KBUILD_HOSTCFLAGS := $(filter-out -flto%, $(KBUILD_HOSTCFLAGS)) -fno-lto
-          KBUILD_HOSTLDFLAGS := $(filter-out -flto%, $(KBUILD_HOSTLDFLAGS)) -fno-lto
-          EOF
-          
-          # check-local-export bypass
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          EOF
-          chmod +x scripts/check-local-export
-          
-          # .scmversion
-          touch .scmversion
-
-      - name: 5. Full LTO Derleme
-        run: |
-          cd common
-          
           export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
-          export LD_LIBRARY_PATH="${{ env.CLANG_BIN_PATH }}/../lib:$LD_LIBRARY_PATH"
           
-          echo "✅ Clang Version:"
-          clang --version
-          echo ""
-          
-          # Config oluştur (O=out ile)
-          make -j$(nproc) O=out ARCH=arm64 \
-            LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            HOSTCFLAGS="-O2 -fno-lto" \
-            HOSTLDFLAGS="-fno-lto" \
-            gki_defconfig
-          
-          make -j$(nproc) O=out ARCH=arm64 \
-            LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            HOSTCFLAGS="-O2 -fno-lto" \
-            HOSTLDFLAGS="-fno-lto" \
-            olddefconfig
-          
-          echo "📊 LTO Config Kontrolü:"
-          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_CFI_CLANG" out/.config || echo "Config değerleri bulunamadı"
-          echo ""
-          
-          # Ana derleme
-          echo "🚀 Derleme başlıyor..."
-          make -j$(nproc) O=out ARCH=arm64 \
+          # Kernel PGO veri toplama modunda derleniyor
+          make -j$(nproc --all) O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            HOSTCFLAGS="-O2 -fno-lto" \
-            HOSTLDFLAGS="-fno-lto" \
-            KCFLAGS="-O2" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
-          echo ""
-          echo "✅ Derleme başarılı!"
-          ls -lh out/arch/arm64/boot/Image
-          echo "BOOTHASH=FullLTO-$(date +%s | tail -c 6)" >> $GITHUB_ENV
+            KCFLAGS="-O2 -march=armv9-a+crypto+sha3" \
+            Image || { echo "❌ Derleme HATASI! Loglara bak."; exit 1; }
 
-      - name: 6. AnyKernel3 Zip
+      - name: 5. AnyKernel3 Zip Hazırlama
         run: |
-          cd AnyKernel3
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r9 "../Pure-FullLTO-Kernel.zip" ./*
+          if [ -f common/out/arch/arm64/boot/Image ]; then
+            cp common/out/arch/arm64/boot/Image AnyKernel3/
+            cd AnyKernel3
+            sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+            zip -r9 "../PGO-Training-Kernel.zip" ./*
+          else
+            echo "❌ Image dosyası bulunamadı, paketleme iptal!"
+            exit 1
+          fi
 
-      - name: 7. Release
+      - name: 6. GitHub Release'e Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "Pure Full LTO Kernel"
+          tag_name: pgo-training-${{ github.run_number }}
+          name: "PGO Training Build"
           body: |
-            ## ⚡ Minimal Full LTO Build
-            - **Compiler:** ZyC Clang 22.0.0git
-            - **LTO:** Full (enabled)
-            - **Base:** GKI defconfig (vanilla)
-            - **Optimization:** -O2
-            - **Extra features:** None
-            
-            ### Config Changes:
-            ```
-            CONFIG_LTO_CLANG_FULL=y
-            CONFIG_CFI_CLANG=n
-            CONFIG_SHADOW_CALL_STACK=n
-            CONFIG_DEBUG_INFO=n
-            CONFIG_DEBUG_INFO_BTF=n
-            ```
+            ⚠️ **DİKKAT:** Bu kernel günlük kullanım için değil, PGO profil verisi toplamak içindir!
+            1. Cihaza flashlayın.
+            2. Ağır oyunlar/uygulamalar açıp test edin.
+            3. `/sys/kernel/debug/pgo/profraw` dosyasını PC'ye/GitHub'a alın.
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
