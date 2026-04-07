@@ -1,4 +1,4 @@
-name: PGO 1. Asama (Training Kernel)
+name: PGO 1. Aşama (Training Kernel)
 
 on:
   workflow_dispatch:
@@ -30,7 +30,7 @@ jobs:
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             git curl build-essential bc bison flex libssl-dev libelf-dev \
-            cpio kmod wget xz-utils file tree
+            cpio kmod wget xz-utils file tree python3
           
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
@@ -47,61 +47,81 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. PGO Training İçin Config Ayarları
+      - name: 3. PGO Training Config
         run: |
           cd common
-          # Ana defconfig'i oluştur
           make ARCH=arm64 gki_defconfig
           
-          # PGO Profilleme için KRİTİK ayarlar
+          # SADECE PGO için kritik ayarlar
           scripts/config --file .config \
             --enable CONFIG_PGO_CLANG \
             --enable CONFIG_DEBUG_FS \
             --disable CONFIG_CFI_CLANG \
             --disable CONFIG_LTO_CLANG_FULL \
             --enable CONFIG_LTO_CLANG_THIN \
-            --set-str CONFIG_LOCALVERSION "-PGO-TRAINING"
+            --set-str CONFIG_LOCALVERSION "-PGO-TRAIN"
           
-          # Ayarları doğrula ve kaydet
           make ARCH=arm64 olddefconfig
+          
+          # Doğrulama
+          echo "=== PGO CONFIG DURUMU ==="
+          grep "CONFIG_PGO_CLANG" .config
+          grep "CONFIG_CFI_CLANG" .config
+          grep "CONFIG_LTO_CLANG" .config
+          grep "CONFIG_DEBUG_FS" .config
+          grep "CONFIG_BTF" .config || echo "BTF yok"
+          
+          # PGO aktif mi?
+          grep -q "CONFIG_PGO_CLANG=y" .config || { echo "❌ PGO aktif değil!"; exit 1; }
+          echo "✅ PGO Training config hazır"
 
-      - name: 4. PGO Training Kernel Derleme
+      - name: 4. Kernel Derle
         run: |
           cd common
           export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
           
-          # Kernel PGO veri toplama modunda derleniyor
           make -j$(nproc --all) O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            KCFLAGS="-O2 -march=armv9-a+crypto+sha3" \
-            Image || { echo "❌ Derleme HATASI! Loglara bak."; exit 1; }
+            Image modules || { echo "❌ Derleme hatası!"; exit 1; }
+          
+          echo "✅ Derleme başarılı"
+          ls -lh out/arch/arm64/boot/Image
 
-      - name: 5. AnyKernel3 Zip Hazırlama
+      - name: 5. AnyKernel3 Hazırla
         run: |
-          if [ -f common/out/arch/arm64/boot/Image ]; then
-            cp common/out/arch/arm64/boot/Image AnyKernel3/
-            cd AnyKernel3
-            sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-            zip -r9 "../PGO-Training-Kernel.zip" ./*
-          else
-            echo "❌ Image dosyası bulunamadı, paketleme iptal!"
-            exit 1
-          fi
+          cp common/out/arch/arm64/boot/Image AnyKernel3/
+          cd AnyKernel3
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          zip -r9 "../PGO-Training-$(date +%Y%m%d-%H%M).zip" ./*
+          cd ..
+          ls -lh PGO-Training-*.zip
 
-      - name: 6. GitHub Release'e Yükle
+      - name: 6. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: pgo-training-${{ github.run_number }}
-          name: "PGO Training Build"
+          tag_name: pgo-train-${{ github.run_number }}
+          name: "🔬 PGO Training #${{ github.run_number }}"
           body: |
-            ⚠️ **DİKKAT:** Bu kernel günlük kullanım için değil, PGO profil verisi toplamak içindir!
-            1. Cihaza flashlayın.
-            2. Ağır oyunlar/uygulamalar açıp test edin.
-            3. `/sys/kernel/debug/pgo/profraw` dosyasını PC'ye/GitHub'a alın.
+            ## PGO TRAINING KERNEL
+            
+            ### 📱 Nasıl Kullanılır:
+            1. Flash yap, boot et
+            2. 30-60 dakika yoğun kullan (oyun, kamera, benchmark)
+            3. Root shell'de:
+            ```bash
+            su
+            cat /sys/kernel/debug/pgo/profraw > /sdcard/pgo-profile.profraw
+            ```
+            4. Dosyayı PC'ye aktar
+            
+            ### ⚙️ Ayarlar:
+            - ✅ PGO_CLANG: Aktif
+            - ✅ DEBUG_FS: Aktif  
+            - ❌ CFI: Kapalı
+            - ✅ LTO_THIN: Aktif
+            - ℹ️ KASAN/BTF: Defconfig ayarı (değiştirilmedi)
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
