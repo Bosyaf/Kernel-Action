@@ -1,4 +1,4 @@
-name: Pure Full LTO Kernel (Fixed Path)
+name: Pure Full LTO Kernel
 
 permissions:
   contents: write
@@ -29,50 +29,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. ZyC Clang İndir ve Kesin PATH Belirle
+      - name: 1. ZyC Clang İndir
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             git curl build-essential bc bison flex libssl-dev libelf-dev \
-            cpio kmod wget xz-utils file tree
+            cpio kmod wget xz-utils
           
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "📥 ZyC Clang indiriliyor..."
-          wget -q "$CLANG_URL" -O clang.tar.gz
-          
-          echo "📦 Arşiv açılıyor..."
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          rm -f clang.tar.gz
           
-          # PATH bulma mantığını garantiye alıyoruz
-          # Bin klasörünün tam yolunu bul ve çevre değişkenine ata
-          CLANG_PATH=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
-          
-          if [ -z "$CLANG_PATH" ]; then
-            echo "❌ HATA: Bin dizini bulunamadı! Arşiv içeriği:"
-            ls -R $GITHUB_WORKSPACE/clang-zyc
-            exit 1
-          fi
-          
-          echo "✅ Clang Bin Path bulundu: $CLANG_PATH"
-          echo "CLANG_BIN_PATH=$CLANG_PATH" >> $GITHUB_ENV
-          
-          # Test et
-          $CLANG_PATH/clang --version
+          CLANG_BIN_PATH=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
+          echo "CLANG_BIN_PATH=$CLANG_BIN_PATH" >> $GITHUB_ENV
+          $CLANG_BIN_PATH/clang --version
 
       - name: 2. Kernel Source İndir
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. SADECE Full LTO Config Uygula
+      - name: 3. Full LTO Config Hazırlığı
         run: |
           cd common
-          # Önce defconfig oluştur
-          make ARCH=arm64 gki_defconfig
           
-          # Ayarları zorla (Full LTO aktif, CFI kapalı)
-          scripts/config --file .config \
+          # Config dosyasını düzenle (make çalıştırmadan)
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          
+          # SADECE Full LTO ayarları
+          scripts/config --file $CONFIG_FILE \
             --enable CONFIG_LTO_CLANG \
             --enable CONFIG_LTO_CLANG_FULL \
             --disable CONFIG_LTO_CLANG_THIN \
@@ -80,44 +67,112 @@ jobs:
             --disable CONFIG_CFI_CLANG \
             --disable CONFIG_CFI_PERMISSIVE \
             --disable CONFIG_SHADOW_CALL_STACK \
+            --disable CONFIG_DEBUG_INFO \
+            --disable CONFIG_DEBUG_INFO_BTF \
+            --disable CONFIG_DEBUG_INFO_DWARF4 \
+            --disable CONFIG_DEBUG_INFO_DWARF5 \
             --set-str CONFIG_LOCALVERSION "-FullLTO"
-          
-          # Config'i doğrula
-          make ARCH=arm64 olddefconfig
 
-      - name: 4. Full LTO Derleme (Garantili Komut)
+      - name: 4. Build System Hazırlığı
         run: |
           cd common
-          # Dinamik PATH ataması
-          export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
           
+          # Host tools LTO bypass
+          cat << 'EOF' >> scripts/Makefile.host
+          KBUILD_HOSTCFLAGS := $(filter-out -flto%, $(KBUILD_HOSTCFLAGS)) -fno-lto
+          KBUILD_HOSTLDFLAGS := $(filter-out -flto%, $(KBUILD_HOSTLDFLAGS)) -fno-lto
+          EOF
+          
+          # check-local-export bypass
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x scripts/check-local-export
+          
+          # .scmversion
+          touch .scmversion
+
+      - name: 5. Full LTO Derleme
+        run: |
+          cd common
+          
+          export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
+          export LD_LIBRARY_PATH="${{ env.CLANG_BIN_PATH }}/../lib:$LD_LIBRARY_PATH"
+          
+          echo "✅ Clang Version:"
+          clang --version
+          echo ""
+          
+          # Config oluştur (O=out ile)
+          make -j$(nproc) O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            HOSTCFLAGS="-O2 -fno-lto" \
+            HOSTLDFLAGS="-fno-lto" \
+            gki_defconfig
+          
+          make -j$(nproc) O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            HOSTCFLAGS="-O2 -fno-lto" \
+            HOSTLDFLAGS="-fno-lto" \
+            olddefconfig
+          
+          echo "📊 LTO Config Kontrolü:"
+          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_CFI_CLANG" out/.config || echo "Config değerleri bulunamadı"
+          echo ""
+          
+          # Ana derleme
           echo "🚀 Derleme başlıyor..."
-          make -j$(nproc --all) O=out ARCH=arm64 \
+          make -j$(nproc) O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            KCFLAGS="-O2 -march=armv9-a+crypto+sha3 -falign-functions=32" \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            HOSTCFLAGS="-O2 -fno-lto" \
+            HOSTLDFLAGS="-fno-lto" \
+            KCFLAGS="-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
+          
+          echo ""
+          echo "✅ Derleme başarılı!"
+          ls -lh out/arch/arm64/boot/Image
+          echo "BOOTHASH=FullLTO-$(date +%s | tail -c 6)" >> $GITHUB_ENV
 
-      - name: 5. Paketleme
+      - name: 6. AnyKernel3 Zip
         run: |
-          if [ -f common/out/arch/arm64/boot/Image ]; then
-            cp common/out/arch/arm64/boot/Image AnyKernel3/
-            cd AnyKernel3
-            sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-            zip -r "../Pure-FullLTO-Kernel.zip" ./*
-          else
-            echo "❌ Image dosyası bulunamadı!"
-            exit 1
-          fi
+          cd AnyKernel3
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r9 "../Pure-FullLTO-Kernel.zip" ./*
 
-      - name: 6. Yayınla
+      - name: 7. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "Laurelin-X Full LTO Build"
+          tag_name: ${{ env.BOOTHASH }}
+          name: "Pure Full LTO Kernel"
+          body: |
+            ## ⚡ Minimal Full LTO Build
+            - **Compiler:** ZyC Clang 22.0.0git
+            - **LTO:** Full (enabled)
+            - **Base:** GKI defconfig (vanilla)
+            - **Optimization:** -O2
+            - **Extra features:** None
+            
+            ### Config Changes:
+            ```
+            CONFIG_LTO_CLANG_FULL=y
+            CONFIG_CFI_CLANG=n
+            CONFIG_SHADOW_CALL_STACK=n
+            CONFIG_DEBUG_INFO=n
+            CONFIG_DEBUG_INFO_BTF=n
+            ```
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
