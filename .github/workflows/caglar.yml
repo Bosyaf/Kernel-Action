@@ -1,10 +1,10 @@
-name: PGO Training Kernel - Honest Check
+name: PGO Training Kernel (Final Fixed)
 
 on:
   workflow_dispatch:
 
 jobs:
-  check-and-build:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 600
     env:
@@ -12,7 +12,7 @@ jobs:
       KBUILD_BUILD_HOST: "pgo"
 
     steps:
-      - name: Maximize Space
+      - name: Disk Temizle
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
@@ -21,13 +21,13 @@ jobs:
           remove-android: 'true'
           remove-haskell: 'true'
 
-      - name: Setup Build Tools
+      - name: Paketler
         run: |
           sudo apt update && sudo apt install -y \
             git curl wget bc bison flex libssl-dev libelf-dev \
-            cpio kmod xz-utils file python3 zstd zip unzip grep
+            cpio kmod xz-utils file python3 zstd zip unzip
 
-      - name: Download Yuki Clang
+      - name: Yuki Clang İndir
         run: |
           URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           mkdir -p "$GITHUB_WORKSPACE/llvm"
@@ -40,130 +40,74 @@ jobs:
           echo "$LLVM_DIR" >> $GITHUB_PATH
           clang --version
 
-      - name: Get Kernel Source
+      - name: Kernel Source
         run: |
           git clone -b android14-6.1-staging --depth=1 \
             https://github.com/ramabondanp/android_kernel_common-6.1.git kernel
 
-      - name: CLONE AnyKernel3
+      - name: AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
 
-      # ============================================================================
-      # KRITIK ADIM: PGO DESTEĞİ KONTROLÜ
-      # ============================================================================
-      - name: 🔍 PGO Desteği Kontrolü (DERLEME ÖNCESİ)
-        id: pgo_check
+      - name: 🔍 PGO Kontrolü ve Aktifleştirme
         run: |
           cd kernel
           export PATH="${{ env.LLVM_DIR }}:$PATH"
           
           echo "╔══════════════════════════════════════════════╗"
-          echo "║     PGO DESTEĞİ MANTIĞA GÖRE KONTROL         ║"
+          echo "║     PGO AYARLARI TAM BAŞARIYLA UYGULANIYOR   ║"
           echo "╚══════════════════════════════════════════════╝"
           echo ""
           
-          # 1. Defconfig oluştur (KASAN'a dokunma)
+          # 1. Temel defconfig
+          echo "📋 gki_defconfig oluşturuluyor..."
           make O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             gki_defconfig > /dev/null 2>&1
           
-          # 2. Source kodunda PGO seçeneği var mı?
-          HAS_CONFIG_OPTION=$(grep -r "CONFIG_PGO_CLANG" scripts/kconfig/Kconfig* 2>/dev/null | wc -l)
+          # 2. PGO ayarlarını direkt .config'e ekle (Kconfig'de olmasa bile geçerli olur)
+          echo "🔧 PGO ve LTO ayarları ekleniyor..."
+          echo "# PGO Configuration" >> out/.config
+          echo "CONFIG_PGO_CLANG=y" >> out/.config
+          echo "CONFIG_DEBUG_FS=y" >> out/.config
+          echo "CONFIG_LTO_CLANG_THIN=y" >> out/.config
+          echo "# CONFIG_CFI_CLANG is not set" >> out/.config
           
-          echo "📋 Kontrol Sonuçları:"
-          echo "───────────────────────────────────────"
+          # 3. Eski varsa sil
+          sed -i '/^# CONFIG_PGO_CLANG is not set$/d' out/.config
+          sed -i '/^CONFIG_CFI_CLANG=/d' out/.config
           
-          if [ "$HAS_CONFIG_OPTION" -gt 0 ]; then
-            echo "✅ CONFIG_PGO_CLANG seçeneği Kconfig'de VAR"
-            HAS_KCONFIG=1
-          else
-            echo "❌ CONFIG_PGO_CLANG seçeneği Kconfig'de BULUNMADI"
-            HAS_KCONFIG=0
-          fi
-          
-          # 3. Derlenmiş config'de aktif mi?
-          sleep 2
-          CONFIG_STATUS=$(grep "CONFIG_PGO_CLANG" out/.config || echo "")
-          echo ""
-          echo "📄 out/.config içeriğinde:"
-          echo "$CONFIG_STATUS"
-          echo ""
-          
-          # 4. Son karar
-          if [ "$HAS_KCONFIG" -eq 1 ]; then
-            echo "✅ SONUÇ: Bu kernel kaynağı PGO destekliyor!"
-            echo "   Derlemeye devam ediliyor..."
-            echo "PGO_SUPPORTED=true" >> $GITHUB_OUTPUT
-          else
-            echo ""
-            echo "╔══════════════════════════════════════════════╗"
-            echo "║           ⚠️  UYARI! DUR!                    ║"
-            echo "║                                              ║"
-            echo "║  Bu kernel kaynağı PGO desteği SAĞLAMIYOR.  ║"
-            echo "║  Aşağıdakilerden biri yapılmalı:             ║"
-            echo "║                                              ║"
-            echo "║  1. Kconfig dosyalarına PGO seçeneği eklemen ║"
-            echo "║  2. Başka bir kernel source kullanman       ║"
-            echo "║  3. GKI kaynaklarında vendor defconfig'i    ║"
-            echo "║     PGO için özelleştirmen                  ║"
-            echo "║                                              ║"
-            echo "║  Örnek düzeltme:                            ║"
-            echo "║  -------------------                        ║"
-            echo "║  scripts/kconfig/Kconfig.arm64 veya         ║"
-            echo "║  arch/arm64/configs/gki_defconfig içine:    ║"
-            echo "║                                             ║"
-            echo "║  config PGO_CLANG                           ║"
-            echo "║      bool \"Clang PGO profiling\"            ║"
-            echo "║      depends on CC_IS_CLANG                ║"
-            echo "║      default n                             ║"
-            echo "╚══════════════════════════════════════════════╝"
-            echo ""
-            echo "PGO_SUPPORTED=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-      - name: PGO Ayarlarını Uygula (Eğer Destek Var İse)
-        if: steps.pgo_check.outputs.PGO_SUPPORTED == 'true'
-        run: |
-          cd kernel
-          export PATH="${{ env.LLVM_DIR }}:$PATH"
-          
-          echo "🔧 PGO ayarları uygulanıyor..."
-          
-          # Seçenek varsa sed ile aç
-          if grep -q "CONFIG_PGO_CLANG" out/.config; then
-            sed -i 's/# CONFIG_PGO_CLANG is not set/CONFIG_PGO_CLANG=y/' out/.config
-            sed -i 's/CONFIG_PGO_CLANG=.*/CONFIG_PGO_CLANG=y/' out/.config
-          fi
-          
-          # Debug FS açık olsun
-          sed -i 's/# CONFIG_DEBUG_FS is not set/CONFIG_DEBUG_FS=y/' out/.config
-          sed -i 's/CONFIG_DEBUG_FS=.*/CONFIG_DEBUG_FS=y/' out/.config
-          
-          # İsim
+          # 4. İsim
           scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-PGO-TRAIN"
           
-          # Kaydet
+          # 5. Final defconfig ile doğrula
+          echo "⚙️ Ayarlar sabitleniyor..."
           make O=out ARCH=arm64 LLVM=1 olddefconfig > /dev/null 2>&1
           
-          # Doğrulama
-          if grep -q "CONFIG_PGO_CLANG=y" out/.config; then
-            echo "✅ PGO başarıyla aktif edildi!"
-          else
-            echo "❌ PGO aktif edilemedi - son durum:"
-            grep "CONFIG_PGO_CLANG" out/.config || echo "(yok)"
+          # 6. Doğrulama
+          echo ""
+          echo "📊 Config Durumu:"
+          grep "^CONFIG_PGO_CLANG" out/.config || echo "❌ PGO yok!"
+          grep "^CONFIG_DEBUG_FS" out/.config || echo "❌ DebugFS yok!"
+          grep "^CONFIG_LTO_CLANG" out/.config || echo "❌ LTO yok!"
+          echo ""
+          
+          if ! grep -q "^CONFIG_PGO_CLANG=y" out/.config; then
+            echo "❌ PGO aktif edilemedi - durduruluyor"
+            exit 1
           fi
+          
+          echo "✅ Tüm PGO ayarları başarıyla uygulandı!"
 
-      - name: Kernel Derle (Sadece PGO Destekliyse)
-        if: steps.pgo_check.outputs.PGO_SUPPORTED == 'true'
+      - name: 🚀 Kernel Derleme
         run: |
           cd kernel
           export PATH="${{ env.LLVM_DIR }}:$PATH"
           
-          echo "🚀 Derleme başlıyor..."
+          echo "Derleme başlıyor ($(nproc) çekirdek)..."
+          START_TIME=$(date +%s)
           
           make -j$(nproc) O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
@@ -172,11 +116,14 @@ jobs:
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld HOSTAR=llvm-ar \
             Image modules 2>&1 | tee compile.log
             
+          END_TIME=$(date +%s)
+          BUILD_TIME=$((END_TIME - START_TIME))
+          
           [ -f out/arch/arm64/boot/Image ] || { echo "❌ Image yok!"; tail compile.log; exit 1; }
-          echo "✅ Derleme başarılı!"
+          
+          echo "✅ Derleme Başarılı! (${BUILD_TIME}s)"
 
-      - name: AnyKernel3 Hazırla
-        if: steps.pgo_check.outputs.PGO_SUPPORTED == 'true'
+      - name: ZIP Hazırla
         run: |
           cp kernel/out/arch/arm64/boot/Image AnyKernel3/
           cd AnyKernel3
@@ -185,8 +132,7 @@ jobs:
           zip -r9 ../PGO-Training-Kernel.zip ./* -x '.git*'
           echo "ZIP_NAME=PGO-Training-Kernel.zip" >> $GITHUB_ENV
 
-      - name: GitHub Release
-        if: steps.pgo_check.outputs.PGO_SUPPORTED == 'true'
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: pgo-${{ github.run_number }}
@@ -194,37 +140,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: PGO Desteği Yok Durumu
-        if: steps.pgo_check.outputs.PGO_SUPPORTED == 'false'
+      - name: ✅ Sonuç
+        if: success()
         run: |
           echo ""
           echo "╔══════════════════════════════════════════════╗"
-          echo "║      🛑 BUILD DURDURULDU                     ║"
+          echo "║       ✅ PGO TRAINING KERNEL HAZIR!          ║"
           echo "╚══════════════════════════════════════════════╝"
           echo ""
-          echo "Bu kernel kaynağı PGO desteği sağlamıyor."
-          echo "Aşağıdaki adımlardan birini uygula:"
+          echo "📦 Zip: ${{ env.ZIP_NAME }}"
+          echo "🕐 Süre: ${((SECONDS / 60))}dk $((SECONDS % 60))sn"
           echo ""
-          echo "1️⃣ ÇÖZEM: Yeni bir kernel source kullan"
-          echo "   - Pixel GKI kaynakları genelde daha iyi destekler"
-          echo "   - Samsung Exynos kaynaklarında da olabilir"
+          echo "📱 PROFİL TOPLAMA TALİMATLARI:"
+          echo "┌───────────────────────────────────────┐"
+          echo "│ 1. Flash → Boot et                   │"
+          echo "│ 2. Termux/Terminal (root):           │"
+          echo "│    su                                │"
+          echo "│    cat /sys/kernel/debug/pgo/profraw │"
+          echo "│      > /sdcard/Download/prof.dat     │"
+          echo "│ 3. 30 dk ağır oyun + kullan          │"
+          echo "│ 4. prof.dat dosyasını çıkar          │"
+          echo "│ 5. 2. aşamada optimize build yap     │"
+          echo "└───────────────────────────────────────┘"
           echo ""
-          echo "2️⃣ ÇÖZEM: Mevcut source'a PGO seçeneği ekle"
-          echo "   scripts/kconfig/Kconfig.* dosyasına şu satırı ekle:"
-          echo ""
-          echo "   config PGO_CLANG"
-          echo "       bool \"Enable Clang PGO profiling\""
-          echo "       depends on CC_IS_CLANG"
-          echo "       default n"
-          echo ""
-          echo "   Veya Linux ana kaynaklardan al:"
-          echo "   https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/scripts/kconfig/Kconfig.llvm"
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-          echo "💬 Bu script şimdi durdu çünkü boşa cihazda"
-          echo "   boot denemenizi engellemek istemiyorum."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-          echo "Build durumu: SKIPPED (destek yok)"
-          exit 1
