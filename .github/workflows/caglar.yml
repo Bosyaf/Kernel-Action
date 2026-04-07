@@ -86,7 +86,7 @@ jobs:
             --disable CONFIG_LTO_CLANG_THIN \
             --disable CONFIG_LTO_NONE \
             --disable CONFIG_CFI_CLANG \
-            --disable CONFIG_CFI_PERMISSIVE \
+            --enable CONFIG_CFI_PERMISSIVE \
             --disable CONFIG_DEBUG_INFO_DWARF4 \
             --disable CONFIG_DEBUG_INFO_DWARF5 \
             --set-str CONFIG_LOCALVERSION "-FullLTO"
