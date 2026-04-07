@@ -284,10 +284,10 @@ jobs:
                -fvectorize \
                -fslp-vectorize \
                -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--lto-O3 -Wl,--strip-debug -Wl,--icf=all -Wl,--gc-sections -Wl,-O2" \
+            KLDFLAGS="-Wl,--lto-O2 -Wl,--strip-debug -Wl,--icf=all -Wl,--gc-sections -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-           echo "BOOTHASH=ZyC-FullLTO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=ZyC-FullLTO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
