@@ -10,6 +10,8 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
+      CLANG_VERSION: "22.0.0git-20250928"
+      KERNEL_BRANCH: "android14-6.1-staging"
 
     steps:
       - name: Maximize Space
@@ -34,63 +36,134 @@ jobs:
             build-essential bc bison flex \
             libssl-dev libelf-dev \
             cpio kmod xz-utils file tree \
-            python3 python3-pip \
-            ccache
+            python3 python3-pip ccache
 
-      - name: 2. ZyC Clang Toolchain İndir
+      - name: 2. Cache - ZyC Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ~/clang-zyc
+          key: clang-${{ env.CLANG_VERSION }}
+          restore-keys: |
+            clang-22.0.0git-
+
+      - name: 3. ZyC Clang İndir (Cache Yoksa)
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          TOOLCHAIN_DIR="$GITHUB_WORKSPACE/clang-zyc"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/${{ env.CLANG_VERSION }}-release/Clang-${{ env.CLANG_VERSION }}.tar.gz"
           
-          echo "📥 Clang indiriliyor..."
-          mkdir -p "$TOOLCHAIN_DIR"
+          echo "📥 Clang indiriliyor: $CLANG_URL"
+          mkdir -p ~/clang-zyc
+          
           curl -fLSs "$CLANG_URL" -o /tmp/clang.tar.gz
           
           echo "📦 Clang ayıklanıyor..."
-          tar -xzf /tmp/clang.tar.gz -C "$TOOLCHAIN_DIR" --strip-components=1 2>/dev/null || \
-          tar -xzf /tmp/clang.tar.gz -C "$TOOLCHAIN_DIR"
+          tar -xzf /tmp/clang.tar.gz -C ~/clang-zyc
           rm -f /tmp/clang.tar.gz
           
-          echo "=== Toolchain Yapısı ==="
-          ls -lah "$TOOLCHAIN_DIR"
-          
+          echo "✅ Clang indirildi ve cache'e kaydedildi"
+
+      - name: 4. Clang Binary Path Belirle
+        run: |
           echo "🔍 Clang binary aranıyor..."
-          CLANG_PATH=$(find "$TOOLCHAIN_DIR" -type f -name clang -path '*/bin/clang' | head -n 1)
           
+          # Tüm olası yolları kontrol et
+          CLANG_PATH=""
+          
+          for pattern in \
+            "$HOME/clang-zyc/bin/clang" \
+            "$HOME/clang-zyc/*/bin/clang" \
+            "$HOME/clang-zyc/*/*/bin/clang"
+          do
+            for file in $pattern; do
+              if [ -x "$file" ] 2>/dev/null; then
+                CLANG_PATH="$file"
+                break 2
+              fi
+            done
+          done
+          
+          # find ile kontrol et
           if [ -z "$CLANG_PATH" ]; then
-            echo "❌ clang bulunamadı! Tüm bin klasörleri:"
-            find "$TOOLCHAIN_DIR" -type d -name bin
-            echo "Tüm clang dosyaları:"
-            find "$TOOLCHAIN_DIR" -type f -name clang
+            CLANG_PATH=$(find ~/clang-zyc -type f -name clang -executable 2>/dev/null | head -n 1)
+          fi
+          
+          if [ -z "$CLANG_PATH" ] || [ ! -x "$CLANG_PATH" ]; then
+            echo "❌ clang binary bulunamadı!"
+            echo ""
+            echo "=== Klasör Yapısı ==="
+            ls -lahR ~/clang-zyc | head -n 200
+            echo ""
+            echo "=== Executable Dosyalar ==="
+            find ~/clang-zyc -type f -executable -name '*clang*' 2>/dev/null
             exit 1
           fi
           
           CLANG_BIN_PATH="$(dirname "$CLANG_PATH")"
-          echo "✅ Clang bulundu: $CLANG_BIN_PATH"
+          
+          echo "✅ Clang bulundu: $CLANG_PATH"
+          echo "✅ Binary klasörü: $CLANG_BIN_PATH"
           
           echo "CLANG_BIN_PATH=$CLANG_BIN_PATH" >> "$GITHUB_ENV"
-          echo "PATH=$CLANG_BIN_PATH:\$PATH" >> "$GITHUB_ENV"
           
-          echo "=== Toolchain Versiyonları ==="
-          "$CLANG_BIN_PATH/clang" --version
-          "$CLANG_BIN_PATH/ld.lld" --version || echo "⚠️ ld.lld bulunamadı"
-          "$CLANG_BIN_PATH/llvm-ar" --version || echo "⚠️ llvm-ar bulunamadı"
+          # PATH'e ekle
+          echo "$CLANG_BIN_PATH" >> "$GITHUB_PATH"
+          
+          echo ""
+          echo "=== Toolchain Bilgileri ==="
+          "$CLANG_PATH" --version
+          "$CLANG_BIN_PATH/ld.lld" --version 2>/dev/null || echo "⚠️ ld.lld bulunamadı"
+          "$CLANG_BIN_PATH/llvm-ar" --version 2>/dev/null || echo "⚠️ llvm-ar bulunamadı"
 
-      - name: 3. Kernel Source ve AnyKernel3 İndir
+      - name: 5. Cache - Kernel Source
+        id: cache-kernel
+        uses: actions/cache@v4
+        with:
+          path: ~/kernel-source
+          key: kernel-${{ env.KERNEL_BRANCH }}-${{ github.run_id }}
+          restore-keys: |
+            kernel-${{ env.KERNEL_BRANCH }}-
+
+      - name: 6. Kernel Source İndir (Cache Yoksa)
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
         run: |
           echo "📥 Kernel source indiriliyor..."
-          git clone -b android14-6.1-staging \
+          git clone -b ${{ env.KERNEL_BRANCH }} \
             https://github.com/ramabondanp/android_kernel_common-6.1.git \
-            --depth=1 common
+            --depth=1 ~/kernel-source
           
+          echo "✅ Kernel source indirildi ve cache'e kaydedildi"
+
+      - name: 7. Kernel Source'u Workspace'e Kopyala
+        run: |
+          echo "📋 Kernel source kopyalanıyor..."
+          cp -r ~/kernel-source ./common
+          echo "✅ Kernel hazır: $(du -sh common)"
+
+      - name: 8. Cache - AnyKernel3
+        id: cache-ak3
+        uses: actions/cache@v4
+        with:
+          path: ~/anykernel3
+          key: anykernel3-${{ hashFiles('**/anykernel.sh') }}
+          restore-keys: |
+            anykernel3-
+
+      - name: 9. AnyKernel3 İndir (Cache Yoksa)
+        if: steps.cache-ak3.outputs.cache-hit != 'true'
+        run: |
           echo "📥 AnyKernel3 indiriliyor..."
           git clone https://github.com/osm0sis/AnyKernel3.git \
-            --depth=1 AnyKernel3
+            --depth=1 ~/anykernel3
           
-          echo "✅ Source hazır"
-          ls -lah common/
+          echo "✅ AnyKernel3 indirildi ve cache'e kaydedildi"
 
-      - name: 4. PGO Training Config Hazırla
+      - name: 10. AnyKernel3'ü Kopyala
+        run: |
+          cp -r ~/anykernel3 ./AnyKernel3
+          echo "✅ AnyKernel3 hazır"
+
+      - name: 11. PGO Training Config Hazırla
         run: |
           cd common
           
@@ -110,24 +183,26 @@ jobs:
           make ARCH=arm64 olddefconfig
           
           echo ""
-          echo "=== 📋 KERNEL CONFIG DURUMU ==="
-          echo "PGO_CLANG:       $(grep 'CONFIG_PGO_CLANG' .config || echo 'YOK')"
-          echo "DEBUG_FS:        $(grep 'CONFIG_DEBUG_FS=' .config || echo 'YOK')"
-          echo "CFI_CLANG:       $(grep 'CONFIG_CFI_CLANG' .config || echo 'KAPALI')"
-          echo "LTO_CLANG_THIN:  $(grep 'CONFIG_LTO_CLANG_THIN' .config || echo 'YOK')"
-          echo "LTO_CLANG_FULL:  $(grep 'CONFIG_LTO_CLANG_FULL' .config || echo 'KAPALI')"
-          echo "BTF:             $(grep 'CONFIG_BTF=' .config || echo 'YOK')"
-          echo "KASAN:           $(grep 'CONFIG_KASAN=' .config || echo 'YOK/KAPALI')"
-          echo "LOCALVERSION:    $(grep 'CONFIG_LOCALVERSION' .config || echo 'YOK')"
+          echo "╔══════════════════════════════════════════╗"
+          echo "║        KERNEL CONFIG DURUMU              ║"
+          echo "╚══════════════════════════════════════════╝"
+          echo ""
+          printf "%-20s : %s\n" "PGO_CLANG" "$(grep 'CONFIG_PGO_CLANG=' .config || echo 'YOK ❌')"
+          printf "%-20s : %s\n" "DEBUG_FS" "$(grep 'CONFIG_DEBUG_FS=' .config || echo 'YOK ❌')"
+          printf "%-20s : %s\n" "CFI_CLANG" "$(grep 'CONFIG_CFI_CLANG' .config || echo 'KAPALI ✅')"
+          printf "%-20s : %s\n" "LTO_CLANG_THIN" "$(grep 'CONFIG_LTO_CLANG_THIN=' .config || echo 'YOK ❌')"
+          printf "%-20s : %s\n" "LTO_CLANG_FULL" "$(grep 'CONFIG_LTO_CLANG_FULL' .config || echo 'KAPALI ✅')"
+          printf "%-20s : %s\n" "BTF" "$(grep 'CONFIG_BTF=' .config || echo 'KAPALI/YOK')"
+          printf "%-20s : %s\n" "KASAN" "$(grep 'CONFIG_KASAN=' .config || echo 'KAPALI/YOK')"
+          printf "%-20s : %s\n" "LOCALVERSION" "$(grep 'CONFIG_LOCALVERSION=' .config || echo 'YOK')"
           echo ""
           
-          # PGO aktif mi kontrol
+          # Kritik kontroller
           if ! grep -q "CONFIG_PGO_CLANG=y" .config; then
             echo "❌ CONFIG_PGO_CLANG aktif değil!"
             exit 1
           fi
           
-          # CFI kapalı mı kontrol
           if grep -q "CONFIG_CFI_CLANG=y" .config; then
             echo "❌ CONFIG_CFI_CLANG hala aktif! PGO ile çakışır!"
             exit 1
@@ -135,20 +210,20 @@ jobs:
           
           echo "✅ PGO Training config hazır"
 
-      - name: 5. Kernel Derle
+      - name: 12. Kernel Derle
         run: |
           cd common
           
-          export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
-          
-          echo "=== Kullanılacak Toolchain ==="
-          which clang
-          which ld.lld
-          clang --version | head -n 1
-          
+          echo "╔══════════════════════════════════════════╗"
+          echo "║         KERNEL DERLENİYOR                ║"
+          echo "╚══════════════════════════════════════════╝"
           echo ""
-          echo "🔨 Kernel derleniyor..."
-          echo "CPU Sayısı: $(nproc --all)"
+          echo "CPU Sayısı    : $(nproc --all)"
+          echo "Clang Path    : ${{ env.CLANG_BIN_PATH }}"
+          echo "Clang Version : $(clang --version | head -n 1)"
+          echo ""
+          
+          START_TIME=$(date +%s)
           
           make -j"$(nproc --all)" \
             O=out \
@@ -168,32 +243,44 @@ jobs:
             HOSTLD=ld.lld \
             Image modules 2>&1 | tee build.log
           
-          if [ ! -f out/arch/arm64/boot/Image ]; then
-            echo "❌ Image dosyası oluşmadı!"
-            echo "Son 50 satır log:"
-            tail -n 50 build.log
-            exit 1
-          fi
+          BUILD_RESULT=$?
+          END_TIME=$(date +%s)
+          BUILD_TIME=$((END_TIME - START_TIME))
           
           echo ""
-          echo "✅ Derleme başarılı!"
-          ls -lh out/arch/arm64/boot/Image
-
-      - name: 6. PGO Profil Sembolleri Kontrol
-        run: |
-          cd common
-          echo "🔍 PGO profil sembolleri kontrol ediliyor..."
-          
-          if grep -r "llvm_prf" out/ 2>/dev/null | head -n 5; then
-            echo "✅ PGO profil sembolleri bulundu!"
+          if [ $BUILD_RESULT -eq 0 ] && [ -f out/arch/arm64/boot/Image ]; then
+            echo "✅ Derleme başarılı! (Süre: $((BUILD_TIME / 60))dk $((BUILD_TIME % 60))sn)"
+            ls -lh out/arch/arm64/boot/Image
           else
-            echo "⚠️ PGO sembolleri bulunamadı (sorun olabilir)"
+            echo "❌ Derleme hatası! (Süre: $((BUILD_TIME / 60))dk $((BUILD_TIME % 60))sn)"
+            echo ""
+            echo "=== SON 100 SATIR LOG ==="
+            tail -n 100 build.log
+            exit 1
           fi
 
-      - name: 7. AnyKernel3 Zip Hazırla
+      - name: 13. PGO Profil Sembolleri Kontrol
+        run: |
+          cd common
+          echo "🔍 PGO profil sembolleri aranıyor..."
+          
+          if strings out/vmlinux 2>/dev/null | grep -q "llvm_prf"; then
+            echo "✅ PGO profil sembolleri vmlinux'ta bulundu!"
+          else
+            echo "⚠️ vmlinux'ta PGO sembolleri bulunamadı"
+          fi
+          
+          if find out/ -name "*.o" -exec strings {} \; 2>/dev/null | grep -q "llvm_prf"; then
+            echo "✅ PGO profil sembolleri object dosyalarında bulundu!"
+          else
+            echo "⚠️ Object dosyalarında PGO sembolleri bulunamadı"
+          fi
+
+      - name: 14. AnyKernel3 Zip Hazırla
         run: |
           echo "📦 AnyKernel3 hazırlanıyor..."
           
+          # Image'i kopyala
           cp common/out/arch/arm64/boot/Image AnyKernel3/
           
           cd AnyKernel3
@@ -202,124 +289,203 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
           
           # Kernel string güncelle
-          sed -i 's/kernel.string=.*/kernel.string=PGO Training by caglar @ '"$(date +%Y%m%d)"'/g' anykernel.sh || \
-          echo 'kernel.string=PGO Training by caglar' >> anykernel.sh
+          BUILD_DATE=$(date +%Y%m%d-%H%M)
+          sed -i "s/kernel.string=.*/kernel.string=PGO-Training by caglar @ $BUILD_DATE/g" anykernel.sh || \
+          echo "kernel.string=PGO-Training by caglar @ $BUILD_DATE" >> anykernel.sh
           
           # Zip oluştur
-          ZIP_NAME="PGO-Training-Kernel-$(date +%Y%m%d-%H%M).zip"
-          zip -r9 "../$ZIP_NAME" ./* -x "*.git*"
+          ZIP_NAME="PGO-Training-Kernel-$BUILD_DATE.zip"
+          zip -r9 "../$ZIP_NAME" ./* -x "*.git*" -x "README.md"
           
           cd ..
-          echo "✅ Zip hazır: $ZIP_NAME"
-          ls -lh "$ZIP_NAME"
+          
+          ZIP_SIZE=$(du -h "$ZIP_NAME" | cut -f1)
+          echo ""
+          echo "✅ Kernel ZIP hazır!"
+          echo "   Dosya: $ZIP_NAME"
+          echo "   Boyut: $ZIP_SIZE"
+          
           echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
 
-      - name: 8. Build Log Yükle (Hata Durumunda)
+      - name: 15. Build Log Artifact (Hata Durumunda)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log-${{ github.run_number }}
+          name: build-error-log-${{ github.run_number }}
           path: common/build.log
           retention-days: 7
 
-      - name: 9. GitHub Release Oluştur
+      - name: 16. GitHub Release Oluştur
         uses: softprops/action-gh-release@v2
         with:
           tag_name: pgo-training-v${{ github.run_number }}
           name: "🔬 PGO Training Build #${{ github.run_number }}"
           body: |
-            ## ⚠️ PGO TRAINING KERNEL
+            ## ⚠️ PGO TRAINING KERNEL - KULLANIM KILAVUZU
             
-            Bu kernel **günlük kullanım için DEĞİL**, PGO profil verisi toplamak içindir!
+            > **DİKKAT:** Bu kernel günlük kullanım için **DEĞİL**, PGO profil verisi toplamak içindir!
             
             ---
             
-            ### 📱 Kullanım Adımları:
+            ## 📱 KULLANIM ADIMLARI
             
-            #### 1️⃣ Flash ve Boot
+            ### 1️⃣ Kernel Flash
+            
             ```bash
             # TWRP/Recovery'de:
-            - Kernel zip'i flash'la
-            - Reboot system
+            1. Kernel ZIP dosyasını seç
+            2. Flash yap
+            3. Reboot System
             ```
             
-            #### 2️⃣ Yoğun Kullanım (30-60 dakika)
-            - 🎮 Ağır oyunlar oyna (Genshin Impact, PUBG, COD Mobile)
-            - 📸 Kamera kullan (4K video çek)
-            - 🌐 Tarayıcıda 20+ sekme aç
-            - 📊 Benchmark uygulamaları çalıştır (Geekbench, AnTuTu)
-            - 📹 YouTube 4K video izle
-            - 🎵 Spotify + oyun aynı anda
+            ### 2️⃣ Yoğun Kullanım (30-60 dakika)
             
-            #### 3️⃣ Profil Verisini Topla
+            **Ne kadar çeşitli kullanım yaparsan PGO o kadar iyi optimize eder!**
+            
+            - 🎮 **Oyunlar:** Genshin Impact, PUBG Mobile, COD Mobile, Asphalt 9
+            - 📸 **Kamera:** 4K video çekim, arka arkaya fotoğraf
+            - 🌐 **Tarayıcı:** Chrome/Firefox'ta 20+ sekme, YouTube 4K
+            - 📊 **Benchmark:** AnTuTu, Geekbench, 3DMark
+            - 🎵 **Multitask:** Spotify + oyun, video izlerken download
+            - 📹 **Video:** Netflix/YouTube 4K stream
+            
+            ### 3️⃣ Profil Verisini Topla
+            
+            **Termux (Root gerekli):**
+            
             ```bash
-            # Termux veya ADB shell:
             su
             cat /sys/kernel/debug/pgo/profraw > /sdcard/Download/pgo-profile.profraw
             
-            # Dosya boyutunu kontrol et (birkaç MB olmalı):
+            # Dosya boyutunu kontrol et (1-10 MB arası olmalı):
             ls -lh /sdcard/Download/pgo-profile.profraw
             ```
             
-            #### 4️⃣ Profil Dosyasını Paylaş
-            - PC'ye kopyala veya
-            - GitHub issue'ye yükle veya
-            - Telegram/Discord'a at
+            **ADB Shell:**
+            
+            ```bash
+            adb root
+            adb shell "cat /sys/kernel/debug/pgo/profraw" > pgo-profile.profraw
+            
+            # Boyut kontrol:
+            ls -lh pgo-profile.profraw
+            ```
+            
+            ### 4️⃣ Profil Dosyasını Paylaş
+            
+            - GitHub Issue aç ve dosyayı ekle
+            - Telegram/Discord'a yükle
+            - Google Drive/Mega link paylaş
             
             ---
             
-            ### ⚙️ Config Ayarları:
+            ## ⚙️ KERNEL AYARLARI
             
-            | Ayar | Durum | Açıklama |
-            |------|-------|----------|
-            | `CONFIG_PGO_CLANG` | ✅ Aktif | PGO profil toplama |
-            | `CONFIG_DEBUG_FS` | ✅ Aktif | `/sys/kernel/debug` erişimi |
-            | `CONFIG_CFI_CLANG` | ❌ Kapalı | PGO ile uyumsuz |
-            | `CONFIG_LTO_CLANG_THIN` | ✅ Aktif | PGO için optimize |
-            | `CONFIG_LTO_CLANG_FULL` | ❌ Kapalı | THIN kullanılıyor |
-            | `CONFIG_KASAN` | ℹ️ Defconfig | Değiştirilmedi |
-            | `CONFIG_BTF` | ℹ️ Defconfig | GKI için zorunlu |
-            
-            ---
-            
-            ### 🔧 Derleme Bilgileri:
-            - **Toolchain:** ZyC Clang 22.0.0
-            - **LTO:** Thin
-            - **PGO:** Training Mode
-            - **Tarih:** ${{ github.event.repository.updated_at }}
-            - **Commit:** ${{ github.sha }}
+            | Config | Durum | Açıklama |
+            |--------|-------|----------|
+            | `CONFIG_PGO_CLANG` | ✅ **Aktif** | PGO profil toplama modu |
+            | `CONFIG_DEBUG_FS` | ✅ **Aktif** | `/sys/kernel/debug` erişimi |
+            | `CONFIG_CFI_CLANG` | ❌ **Kapalı** | PGO ile uyumsuz |
+            | `CONFIG_LTO_CLANG_THIN` | ✅ **Aktif** | Optimize link-time |
+            | `CONFIG_LTO_CLANG_FULL` | ❌ **Kapalı** | THIN kullanılıyor |
+            | `CONFIG_KASAN` | ℹ️ Defconfig | GKI varsayılan |
+            | `CONFIG_BTF` | ℹ️ Defconfig | GKI zorunlu |
             
             ---
             
-            ### 📌 Sonraki Adım:
+            ## 🔧 DERLENİRKEN KULLANILAN ARAÇLAR
             
-            Toplanan `pgo-profile.profraw` dosyası ile **2. Aşama (Optimize Build)** yapılacak.
+            - **Toolchain:** ZyC Clang ${{ env.CLANG_VERSION }}
+            - **LTO:** Thin LTO
+            - **PGO:** Training Mode (Profiling)
+            - **Arch:** ARM64
+            - **Build User:** ${{ env.KBUILD_BUILD_USER }}
+            - **Build Host:** ${{ env.KBUILD_BUILD_HOST }}
+            - **Build Date:** ${{ github.event.repository.updated_at }}
             
             ---
             
-            **⚠️ Sorun mu var?**
-            - Boot olmuyorsa → `/proc/last_kmsg` veya `dmesg` logunu paylaş
-            - `/sys/kernel/debug/pgo/profraw` yoksa → `mount -o remount,rw /sys/kernel/debug` dene
-            - Profil dosyası 0 byte ise → Daha fazla uygulama kullan
+            ## 🐛 SORUN GİDERME
+            
+            ### ❌ Boot Olmuyor
+            
+            ```bash
+            # Last kernel log:
+            adb shell cat /proc/last_kmsg > last_kmsg.txt
+            
+            # veya recovery'de:
+            adb pull /sys/fs/pstore/console-ramoops-0
+            ```
+            
+            ### ❌ `/sys/kernel/debug/pgo/profraw` Yok
+            
+            ```bash
+            # Debug filesystem mount et:
+            su
+            mount -t debugfs none /sys/kernel/debug
+            ls /sys/kernel/debug/pgo/
+            ```
+            
+            ### ❌ Profil Dosyası 0 Byte
+            
+            - Daha fazla uygulama kullan (30+ dakika)
+            - Kernel yeniden boot et ve tekrar dene
+            - PGO aktif mi kontrol et: `cat /proc/config.gz | gunzip | grep PGO`
+            
+            ---
+            
+            ## 📌 SONRAKI ADIM
+            
+            Toplanan `pgo-profile.profraw` dosyası ile:
+            
+            1. **2. Aşama (Optimize Build)** workflow çalıştırılacak
+            2. Profil verisi kernel derlemesine dahil edilecek
+            3. En çok kullanılan kod yolları optimize edilecek
+            4. **%5-15 daha hızlı** kernel elde edilecek
+            
+            ---
+            
+            ## 💬 DESTEK
+            
+            - **Issue:** GitHub Issues'ta rapor aç
+            - **Log:** Build log, dmesg, last_kmsg paylaş
+            - **Profil:** `pgo-profile.profraw` dosyasını yükle
+            
+            ---
+            
+            **📦 Dosya:** `${{ env.ZIP_NAME }}`  
+            **🏷️ Release:** `pgo-training-v${{ github.run_number }}`  
+            **⏱️ Build Time:** ${{ github.event.repository.updated_at }}
             
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 10. Özet
+      - name: 17. Build Özeti
         if: success()
         run: |
           echo ""
-          echo "╔════════════════════════════════════════════╗"
-          echo "║   ✅ PGO TRAINING KERNEL HAZIR!           ║"
-          echo "╚════════════════════════════════════════════╝"
+          echo "╔════════════════════════════════════════════════════════╗"
+          echo "║                                                        ║"
+          echo "║        ✅ PGO TRAINING KERNEL BAŞARIYLA HAZIR!        ║"
+          echo "║                                                        ║"
+          echo "╚════════════════════════════════════════════════════════╝"
           echo ""
-          echo "📦 Zip: ${{ env.ZIP_NAME }}"
-          echo "🔖 Release: pgo-training-v${{ github.run_number }}"
+          echo "📦 Kernel ZIP   : ${{ env.ZIP_NAME }}"
+          echo "🔖 Release Tag  : pgo-training-v${{ github.run_number }}"
+          echo "🛠️  Toolchain   : ZyC Clang ${{ env.CLANG_VERSION }}"
+          echo "🎯 Branch       : ${{ env.KERNEL_BRANCH }}"
           echo ""
-          echo "📋 Sonraki adımlar:"
-          echo "1. Kernel'i cihaza flash'la"
-          echo "2. 30-60 dk yoğun kullan"
-          echo "3. /sys/kernel/debug/pgo/profraw dosyasını al"
-          echo "4. 2. aşama (optimize build) için kullan"
+          echo "📋 SONRAKI ADIMLAR:"
+          echo ""
+          echo "  1. ⬇️  Kernel ZIP'i indir"
+          echo "  2. 📱 Cihaza flash yap"
+          echo "  3. 🎮 30-60 dakika yoğun kullan"
+          echo "  4. 💾 Profil dosyasını topla:"
+          echo "     su"
+          echo "     cat /sys/kernel/debug/pgo/profraw > /sdcard/pgo-profile.profraw"
+          echo "  5. 📤 Profil dosyasını GitHub'a yükle"
+          echo "  6. 🚀 2. Aşama (Optimize Build) workflow'unu çalıştır"
+          echo ""
+          echo "════════════════════════════════════════════════════════"
           echo ""
