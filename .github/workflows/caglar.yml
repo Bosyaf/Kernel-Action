@@ -10,7 +10,7 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 420
+    timeout-minutes: 480
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 8
+          swap-size-gb: 12
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -170,10 +170,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
          
-          # 🔥 LTO (İnce Ayar: Thin LTO)
+          # 🔥🔥🔥 FULL LTO (Maksimum Optimizasyon) 🔥🔥🔥
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_SUPPORTS_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAS_LTO_CLANG
           
           # RAM KURTARICI & SUNUCU KODLARINI İPTAL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
@@ -210,11 +213,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X-FullLTO"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
-      - name: 7. Kernel Derleme
+      - name: 7. Kernel Derleme (FULL LTO)
         run: |
           cd common
           
@@ -232,7 +235,7 @@ jobs:
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-                    cat << 'EOF' > scripts/check-local-export
+          cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
@@ -249,47 +252,51 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
           
-          echo "🔍 Config Kontrolü:"
-          grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
+          echo "🔍 Config Kontrolü (FULL LTO Aktif mi?):"
+          grep -E "CONFIG_LTO_CLANG_FULL|CONFIG_LTO_CLANG_THIN|CONFIG_LTO_CLANG=|CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
           
           echo "🔍 Derleme Sırasında Clang Versiyonu:"
           grep "CONFIG_CC_VERSION_TEXT" out/.config || true
           
-          # 2. Ana Derleme (Optimize Edilmiş)
+          # 2. Ana Derleme (FULL LTO İçin Optimize Edilmiş)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             KCFLAGS="-O2 \
-               -march=armv9.2-a+crypto+sha3+dotprod+fp16+i8mm+bf16 \
+               -march=armv9.2-a+crypto+sha3+dotprod+fp16+ \
+               -flto=full \
+               -fwhole-program-vtables \
                -falign-functions=32 \
                -fno-asynchronous-unwind-tables \
                -fno-unwind-tables \
                -fno-math-errno \
                -fmerge-all-constants \
                -fomit-frame-pointer \
+               -fvectorize \
+               -fslp-vectorize \
                -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--strip-debug -Wl,--icf=all" \
+            KLDFLAGS="-Wl,--lto-O3 -Wl,--strip-debug -Wl,--icf=all -Wl,--gc-sections -Wl,-O3" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=ZyC-FullLTO-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ ZyC FULL LTO Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-ZyC-Balanced-Pro.zip" ./*
+          zip -r "../CG-ZyC-FullLTO-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyC Clang (Balanced Pro - Altın Denge)"
+          name: "CG+ ZyC Clang (FULL LTO - Maksimum Performans)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
