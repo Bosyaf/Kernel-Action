@@ -1,4 +1,4 @@
-name: Kernel PGO Generate (Ultra Minimal)
+name: Kernel PGO Generate (Ultra Minimal Fixed)
 
 on:
   workflow_dispatch:
@@ -6,14 +6,44 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 480
 
     steps:
-      - name: Clone Clang (ZyC)
+      - name: Install Dependencies
+        run: |
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            git curl wget bc bison flex build-essential \
+            libssl-dev libelf-dev cpio kmod xz-utils file python3
+
+      - name: Download ZyC Clang
         run: |
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -L $CLANG_URL -o clang.tar.gz
-          mkdir clang
-          tar -xzf clang.tar.gz -C clang --strip-components=1
+          
+          mkdir -p "$GITHUB_WORKSPACE/clang"
+          curl -L "$CLANG_URL" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
+          rm -f clang.tar.gz
+
+          echo "=== Toolchain tree ==="
+          find "$GITHUB_WORKSPACE/clang" -maxdepth 4 -type f | sort | head -n 100
+
+          CLANG_BIN=$(find "$GITHUB_WORKSPACE/clang" -type f -path "*/bin/clang" | head -n 1)
+          if [ -z "$CLANG_BIN" ]; then
+            echo "❌ clang bulunamadı"
+            find "$GITHUB_WORKSPACE/clang" -type f | grep -E 'clang|ld.lld|llvm-ar' || true
+            exit 1
+          fi
+
+          CLANG_DIR="$(dirname "$CLANG_BIN")"
+
+          echo "CLANG_DIR=$CLANG_DIR" >> $GITHUB_ENV
+          echo "$CLANG_DIR" >> $GITHUB_PATH
+
+          echo "✅ clang: $CLANG_BIN"
+          "$CLANG_DIR/clang" --version
+          "$CLANG_DIR/ld.lld" --version || true
+          "$CLANG_DIR/llvm-ar" --version || true
 
       - name: Clone Kernel
         run: |
@@ -23,19 +53,46 @@ jobs:
       - name: Build (PGO Generate)
         run: |
           cd kernel
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          export PATH="${{ env.CLANG_DIR }}:$PATH"
+
+          echo "=== PATH tools ==="
+          which clang || true
+          which ld.lld || true
+          which llvm-ar || true
+
+          clang --version
+          ld.lld --version || true
+
+          make O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            gki_defconfig
 
           scripts/config --file out/.config --enable CONFIG_DEBUG_FS
           scripts/config --file out/.config --enable CONFIG_PGO_CLANG
-          scripts/config --file out/.config --enable CONFIG_PGO_CLANG_KERNEL
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          # varsa aktif olur, yoksa olddefconfig düşürür
+          scripts/config --file out/.config --enable CONFIG_PGO_CLANG_KERNEL || true
 
-          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
-            KCFLAGS="-fprofile-generate" \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            olddefconfig
+
+          echo "=== Final config check ==="
+          grep "CONFIG_PGO_CLANG" out/.config || true
+          grep "CONFIG_DEBUG_FS" out/.config || true
+          grep "CONFIG_LTO_CLANG" out/.config || true
+
+          make -j$(nproc) O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             Image
 
       - name: Upload
