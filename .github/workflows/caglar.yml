@@ -1,4 +1,4 @@
-name: PGO Training Kernel (Final Fixed)
+name: PGO Training Kernel
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
       KBUILD_BUILD_HOST: "pgo"
 
     steps:
-      - name: Disk Temizle
+      - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
@@ -21,93 +21,100 @@ jobs:
           remove-android: 'true'
           remove-haskell: 'true'
 
-      - name: Paketler
+      - name: Setup Build Tools
         run: |
           sudo apt update && sudo apt install -y \
             git curl wget bc bison flex libssl-dev libelf-dev \
             cpio kmod xz-utils file python3 zstd zip unzip
 
-      - name: Yuki Clang İndir
+      - name: Download Yuki Clang
         run: |
           URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           mkdir -p "$GITHUB_WORKSPACE/llvm"
-          curl -LSso clang.tar.zst "$URL"
-          tar --zstd -xf clang.tar.zst -C "$GITHUB_WORKSPACE/llvm"
-          rm -f clang.tar.zst
           
-          LLVM_DIR=$(find "$GITHUB_WORKSPACE/llvm" -type f -name clang | grep '/bin/clang$' | head -n1 | xargs dirname)
+          echo "⬇️ Clang indiriliyor..."
+          curl -LSso /tmp/clang.tar.zst "$URL"
+          
+          echo "📦 Arşiv açılıyor..."
+          tar --zstd -xf /tmp/clang.tar.zst -C "$GITHUB_WORKSPACE/llvm"
+          rm -f /tmp/clang.tar.zst
+          
+          echo "🔍 Toolchain yapısı:"
+          ls -la "$GITHUB_WORKSPACE/llvm/"
+          
+          # Clang binary'si doğrudan llvm/bin/ içinde olsun (Yuki'nin standart yapısı)
+          if [ -x "$GITHUB_WORKSPACE/llvm/bin/clang" ]; then
+            LLVM_DIR="$GITHUB_WORKSPACE/llvm/bin"
+          elif [ -x "$GITHUB_WORKSPACE/llvm/llvm/bin/clang" ]; then
+            LLVM_DIR="$GITHUB_WORKSPACE/llvm/llvm/bin"
+          else
+            echo "❌ clang bulunamadı!"
+            find "$GITHUB_WORKSPACE/llvm" -name clang -type f 2>/dev/null
+            exit 1
+          fi
+          
           echo "LLVM_DIR=$LLVM_DIR" >> $GITHUB_ENV
           echo "$LLVM_DIR" >> $GITHUB_PATH
+          
+          echo ""
+          echo "✅ Clang hazır:"
           clang --version
 
-      - name: Kernel Source
+      - name: Get Kernel Source
         run: |
           git clone -b android14-6.1-staging --depth=1 \
             https://github.com/ramabondanp/android_kernel_common-6.1.git kernel
 
-      - name: AnyKernel3
+      - name: Clone AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
 
-      - name: 🔍 PGO Kontrolü ve Aktifleştirme
+      - name: Configure PGO
         run: |
           cd kernel
           export PATH="${{ env.LLVM_DIR }}:$PATH"
           
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║     PGO AYARLARI TAM BAŞARIYLA UYGULANIYOR   ║"
-          echo "╚══════════════════════════════════════════════╝"
-          echo ""
-          
-          # 1. Temel defconfig
-          echo "📋 gki_defconfig oluşturuluyor..."
+          echo "⚙️ gki_defconfig oluşturuluyor..."
           make O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             gki_defconfig > /dev/null 2>&1
           
-          # 2. PGO ayarlarını direkt .config'e ekle (Kconfig'de olmasa bile geçerli olur)
-          echo "🔧 PGO ve LTO ayarları ekleniyor..."
-          echo "# PGO Configuration" >> out/.config
+          echo "🔧 PGO ayarları ekleniyor..."
+          # .config'in sonuna satır ekle (en güvenli yöntem)
+          echo "# PGO by Caglar" >> out/.config
           echo "CONFIG_PGO_CLANG=y" >> out/.config
           echo "CONFIG_DEBUG_FS=y" >> out/.config
           echo "CONFIG_LTO_CLANG_THIN=y" >> out/.config
-          echo "# CONFIG_CFI_CLANG is not set" >> out/.config
           
-          # 3. Eski varsa sil
+          # Çakışan varsa sil
           sed -i '/^# CONFIG_PGO_CLANG is not set$/d' out/.config
           sed -i '/^CONFIG_CFI_CLANG=/d' out/.config
           
-          # 4. İsim
+          # İsim
           scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-PGO-TRAIN"
           
-          # 5. Final defconfig ile doğrula
-          echo "⚙️ Ayarlar sabitleniyor..."
+          # Kaydet
           make O=out ARCH=arm64 LLVM=1 olddefconfig > /dev/null 2>&1
           
-          # 6. Doğrulama
           echo ""
-          echo "📊 Config Durumu:"
-          grep "^CONFIG_PGO_CLANG" out/.config || echo "❌ PGO yok!"
-          grep "^CONFIG_DEBUG_FS" out/.config || echo "❌ DebugFS yok!"
-          grep "^CONFIG_LTO_CLANG" out/.config || echo "❌ LTO yok!"
-          echo ""
+          echo "📊 Kontrol:"
+          grep "^CONFIG_PGO_CLANG" out/.config
+          grep "^CONFIG_DEBUG_FS" out/.config
           
           if ! grep -q "^CONFIG_PGO_CLANG=y" out/.config; then
-            echo "❌ PGO aktif edilemedi - durduruluyor"
+            echo "❌ PGO aktif değil!"
             exit 1
           fi
-          
-          echo "✅ Tüm PGO ayarları başarıyla uygulandı!"
+          echo "✅ PGO aktif!"
 
-      - name: 🚀 Kernel Derleme
+      - name: Build Kernel
         run: |
           cd kernel
           export PATH="${{ env.LLVM_DIR }}:$PATH"
           
-          echo "Derleme başlıyor ($(nproc) çekirdek)..."
-          START_TIME=$(date +%s)
+          echo "🚀 Derleme başlıyor ($(nproc) çekirdek)..."
           
           make -j$(nproc) O=out ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
@@ -116,14 +123,10 @@ jobs:
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld HOSTAR=llvm-ar \
             Image modules 2>&1 | tee compile.log
             
-          END_TIME=$(date +%s)
-          BUILD_TIME=$((END_TIME - START_TIME))
-          
-          [ -f out/arch/arm64/boot/Image ] || { echo "❌ Image yok!"; tail compile.log; exit 1; }
-          
-          echo "✅ Derleme Başarılı! (${BUILD_TIME}s)"
+          [ -f out/arch/arm64/boot/Image ] || { echo "❌ Image yok!"; tail -50 compile.log; exit 1; }
+          echo "✅ Tamamlandı!"
 
-      - name: ZIP Hazırla
+      - name: Package
         run: |
           cp kernel/out/arch/arm64/boot/Image AnyKernel3/
           cd AnyKernel3
@@ -140,26 +143,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: ✅ Sonuç
+      - name: Success
         if: success()
         run: |
+          echo "╔══════════════════════════════════════╗"
+          echo "║   ✅ PGO TRAINING KERNEL HAZIR       ║"
+          echo "╚══════════════════════════════════════╝"
           echo ""
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║       ✅ PGO TRAINING KERNEL HAZIR!          ║"
-          echo "╚══════════════════════════════════════════════╝"
+          echo "📦 ZIP: ${{ env.ZIP_NAME }}"
           echo ""
-          echo "📦 Zip: ${{ env.ZIP_NAME }}"
-          echo "🕐 Süre: ${((SECONDS / 60))}dk $((SECONDS % 60))sn"
-          echo ""
-          echo "📱 PROFİL TOPLAMA TALİMATLARI:"
-          echo "┌───────────────────────────────────────┐"
-          echo "│ 1. Flash → Boot et                   │"
-          echo "│ 2. Termux/Terminal (root):           │"
-          echo "│    su                                │"
-          echo "│    cat /sys/kernel/debug/pgo/profraw │"
-          echo "│      > /sdcard/Download/prof.dat     │"
-          echo "│ 3. 30 dk ağır oyun + kullan          │"
-          echo "│ 4. prof.dat dosyasını çıkar          │"
-          echo "│ 5. 2. aşamada optimize build yap     │"
-          echo "└───────────────────────────────────────┘"
+          echo "📱 PROFİL TOPLAMA:"
+          echo "1. Flash → Boot"
+          echo "2. su"
+          echo "3. cat /sys/kernel/debug/pgo/profraw > /sdcard/pgo.profraw"
+          echo "4. 30 dk ağır kullan (oyun/kamera)"
+          echo "5. profraw dosyasını 2. aşamada kullan"
           echo ""
