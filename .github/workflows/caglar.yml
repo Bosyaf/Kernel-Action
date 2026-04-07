@@ -64,8 +64,6 @@ jobs:
             --enable CONFIG_LTO_CLANG_FULL \
             --disable CONFIG_LTO_CLANG_THIN \
             --disable CONFIG_LTO_NONE \
-            --disable CONFIG_CFI_CLANG \
-            --enable CONFIG_CFI_PERMISSIVE \
             --set-str CONFIG_LOCALVERSION "-FullLTO"
 
       - name: 4. Build System Hazırlığı
