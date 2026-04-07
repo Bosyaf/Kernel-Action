@@ -1,54 +1,166 @@
-name: Kernel PGO Generate (Final Stable)
+name: PGO Aşama 1 (Training Kernel)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-pgo:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 480
+    env:
+      KBUILD_BUILD_USER: "caglar"
+      KBUILD_BUILD_HOST: "pgo-builder"
 
     steps:
-      - name: Install minimal deps
-        run: |
-          sudo apt update -qq
-          sudo apt install -y bc flex bison
+      - name: Disk Alanını Temizle
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          swap-size-mb: 16384
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
 
-      - name: Clone Proton Clang (STABLE)
+      - name: Gerekli Paketleri Kur
         run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            git curl wget bc bison flex build-essential \
+            libssl-dev libelf-dev cpio kmod xz-utils file python3 zip unzip
 
-      - name: Verify clang
+      - name: ZyC Clang 22 İndir ve Kur
         run: |
-          ls clang/bin
-          clang/bin/clang --version
-          clang/bin/ld.lld --version
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          mkdir -p $GITHUB_WORKSPACE/toolchain
+          
+          echo "📥 Clang indiriliyor..."
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          
+          echo "📦 Clang arşivden çıkarılıyor (strip-components YOK)..."
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/toolchain
+          rm -f clang.tar.gz
 
-      - name: Clone Kernel
+          echo "🔍 Clang yolu bulunuyor..."
+          CLANG_BIN=$(find $GITHUB_WORKSPACE/toolchain -type f -path "*/bin/clang" | head -n 1)
+          
+          if [ -z "$CLANG_BIN" ]; then
+            echo "❌ HATA: clang bulunamadı!"
+            find $GITHUB_WORKSPACE/toolchain -type d -name "bin"
+            exit 1
+          fi
+
+          CLANG_DIR="$(dirname "$CLANG_BIN")"
+          echo "✅ Clang bulundu: $CLANG_DIR"
+          
+          # Yolu sistem ortamına ekle
+          echo "CLANG_DIR=$CLANG_DIR" >> $GITHUB_ENV
+
+          # Doğrulama
+          $CLANG_DIR/clang --version
+          $CLANG_DIR/ld.lld --version
+
+      - name: Kernel Source ve AnyKernel3 İndir
         run: |
+          echo "📥 Kernel kaynak kodları indiriliyor..."
           git clone --depth=1 -b android14-6.1-staging \
-          https://github.com/ramabondanp/android_kernel_common-6.1.git kernel
+            https://github.com/ramabondanp/android_kernel_common-6.1.git kernel
 
-      - name: Build Kernel (PGO Generate)
+          echo "📥 AnyKernel3 indiriliyor..."
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+
+      - name: PGO İçin Config Ayarla
         run: |
           cd kernel
+          export PATH="${{ env.CLANG_DIR }}:$PATH"
+          
+          echo "⚙️ gki_defconfig oluşturuluyor..."
+          make O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            gki_defconfig
 
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
-
-          # PGO aç
-          scripts/config --file out/.config --enable CONFIG_DEBUG_FS
+          echo "🔧 PGO modifikasyonları yapılıyor..."
+          # PGO için zorunlu olanlar (aktif)
           scripts/config --file out/.config --enable CONFIG_PGO_CLANG
-          scripts/config --file out/.config --enable CONFIG_PGO_CLANG_KERNEL
+          scripts/config --file out/.config --enable CONFIG_DEBUG_FS
+          scripts/config --file out/.config --enable CONFIG_LTO_CLANG_THIN
+          
+          # PGO ile çakışanlar (kapalı)
+          scripts/config --file out/.config --disable CONFIG_CFI_CLANG
+          scripts/config --file out/.config --disable CONFIG_LTO_CLANG_FULL
+          
+          # İsim etiketi
+          scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-PGO-TRAIN"
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          echo "⚙️ olddefconfig ile ayarlar sabitleniyor..."
+          make O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            olddefconfig
 
-          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            Image
+          echo "📋 Son Config Kontrolü:"
+          grep "CONFIG_PGO_CLANG=" out/.config || { echo "❌ PGO AKTİF DEĞİL!"; exit 1; }
+          grep "CONFIG_DEBUG_FS=" out/.config
+          grep "CONFIG_CFI_CLANG" out/.config || echo "CFI Başarıyla Kapatıldı."
 
-      - name: Upload Kernel
-        uses: actions/upload-artifact@v4
+      - name: Kernel Derle (PGO Generate)
+        run: |
+          cd kernel
+          export PATH="${{ env.CLANG_DIR }}:$PATH"
+          
+          echo "🚀 Derleme Başlıyor ($(nproc) çekirdek)..."
+          
+          make -j$(nproc) O=out ARCH=arm64 \
+            LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld HOSTAR=llvm-ar \
+            Image modules 2>&1 | tee build.log
+
+          if [ ! -f out/arch/arm64/boot/Image ]; then
+            echo "❌ HATA: Image dosyası bulunamadı! Derleme başarısız."
+            tail -n 50 build.log
+            exit 1
+          fi
+          echo "✅ Derleme Başarılı!"
+
+      - name: AnyKernel3 Hazırla
+        run: |
+          cp kernel/out/arch/arm64/boot/Image AnyKernel3/
+          cd AnyKernel3
+          
+          # Her cihaza flashlanabilmesi için device check'i kapat
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=PGO-Training Kernel by Caglar/g' anykernel.sh
+          
+          ZIP_NAME="PGO-Training-Kernel.zip"
+          zip -r9 "../$ZIP_NAME" * -x .git README.md *placeholder
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: GitHub Release ile Yayınla
+        uses: softprops/action-gh-release@v2
         with:
-          name: kernel-pgo-generate
-          path: kernel/out/arch/arm64/boot/Image
+          tag_name: pgo-train-${{ github.run_number }}
+          name: "🔬 PGO Training Kernel #${{ github.run_number }}"
+          body: |
+            ## ⚠️ DİKKAT: PGO TRAINING KERNEL
+            Bu kernel PGO (Profile-Guided Optimization) profili toplamak içindir. Günlük kullanım için performansı düşük olabilir.
+
+            ### Nasıl Profil Toplanır?
+            1. Bu ZIP dosyasını TWRP/Recovery üzerinden flashlayın.
+            2. Cihaz açıldıktan sonra **en az 30 dakika** ağır oyun (PUBG, Genshin vb.), kamera ve benchmark uygulamaları kullanın.
+            3. Root yetkisi olan bir terminal (Termux vb.) açın ve şu komutu girin:
+               ```bash
+               su
+               cat /sys/kernel/debug/pgo/profraw > /sdcard/Download/kernel_profile.profraw
+               ```
+            4. `kernel_profile.profraw` dosyasını PC'ye alın. Bu dosyayı **2. Aşama (Optimize Kernel)** derlemesinde kullanacağız.
+
+            **Not:** Eğer `/sys/kernel/debug` boş görünüyorsa önce `su -c "mount -t debugfs none /sys/kernel/debug"` komutunu çalıştırın.
+          files: ${{ env.ZIP_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
