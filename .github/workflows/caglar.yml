@@ -87,9 +87,6 @@ jobs:
             --disable CONFIG_LTO_NONE \
             --disable CONFIG_CFI_CLANG \
             --disable CONFIG_CFI_PERMISSIVE \
-            --disable CONFIG_SHADOW_CALL_STACK \
-            --disable CONFIG_DEBUG_INFO \
-            --disable CONFIG_DEBUG_INFO_BTF \
             --disable CONFIG_DEBUG_INFO_DWARF4 \
             --disable CONFIG_DEBUG_INFO_DWARF5 \
             --set-str CONFIG_LOCALVERSION "-FullLTO"
