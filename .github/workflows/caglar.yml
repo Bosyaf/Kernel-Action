@@ -1,4 +1,4 @@
-name: Kernel PGO Generate (Minimal)
+name: Kernel PGO Generate (Ultra Minimal)
 
 on:
   workflow_dispatch:
@@ -6,18 +6,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
 
     steps:
-      - name: Install deps
-        run: |
-          sudo apt update -qq
-          sudo apt install -y \
-            git curl build-essential flex bison \
-            libssl-dev libelf-dev bc \
-            gcc-aarch64-linux-gnu \
-            lld llvm
-
       - name: Clone Clang (ZyC)
         run: |
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
@@ -25,40 +15,31 @@ jobs:
           mkdir clang
           tar -xzf clang.tar.gz -C clang --strip-components=1
 
-      - name: Clone Kernel Source
+      - name: Clone Kernel
         run: |
           git clone --depth=1 -b android14-6.1-staging \
             https://github.com/ramabondanp/android_kernel_common-6.1.git kernel
 
-      - name: Configure Kernel (PGO Generate)
+      - name: Build (PGO Generate)
         run: |
           cd kernel
-          
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
 
-          # PGO flags ekle
           scripts/config --file out/.config --enable CONFIG_DEBUG_FS
           scripts/config --file out/.config --enable CONFIG_PGO_CLANG
           scripts/config --file out/.config --enable CONFIG_PGO_CLANG_KERNEL
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: Build Kernel (PGO Instrumented)
-        run: |
-          cd kernel
-          
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
-            CROSS_COMPILE=aarch64-linux-gnu- \
             KCFLAGS="-fprofile-generate" \
             Image
 
-      - name: Upload Image
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-pgo-generate
+          name: kernel-pgo
           path: kernel/out/arch/arm64/boot/Image
