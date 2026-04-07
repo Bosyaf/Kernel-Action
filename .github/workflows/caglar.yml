@@ -29,22 +29,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. ZyC Clang İndir
+      - name: 1. ZyC Clang İndir ve Doğru PATH Bul
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             git curl build-essential bc bison flex libssl-dev libelf-dev \
-            cpio kmod wget xz-utils
+            cpio kmod wget xz-utils file tree
           
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "📥 ZyC Clang indiriliyor..."
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          
+          echo "📦 Arşiv açılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
           
-          CLANG_BIN_PATH=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
+          echo "🔍 Clang yapısı kontrol ediliyor:"
+          ls -la $GITHUB_WORKSPACE/clang-zyc/
+          
+          echo "🔍 Bin dizini aranıyor:"
+          find $GITHUB_WORKSPACE/clang-zyc -name "clang" -type f
+          
+          # Doğru bin path'ini bul
+          CLANG_BIN=$(find $GITHUB_WORKSPACE/clang-zyc -name "clang" -type f | grep -E "bin/clang$" | head -n 1)
+          
+          if [ -z "$CLANG_BIN" ]; then
+            echo "❌ HATA: Clang binary bulunamadı!"
+            exit 1
+          fi
+          
+          CLANG_BIN_PATH=$(dirname "$CLANG_BIN")
+          echo "✅ Clang Binary: $CLANG_BIN"
+          echo "✅ Clang Bin Path: $CLANG_BIN_PATH"
           echo "CLANG_BIN_PATH=$CLANG_BIN_PATH" >> $GITHUB_ENV
-          $CLANG_BIN_PATH/clang --version
+          
+          echo "🔍 Clang Versiyonu:"
+          $CLANG_BIN --version
 
       - name: 2. Kernel Source İndir
         run: |
@@ -65,7 +86,10 @@ jobs:
             --disable CONFIG_LTO_CLANG_THIN \
             --disable CONFIG_LTO_NONE \
             --disable CONFIG_CFI_CLANG \
-            --enable CONFIG_CFI_PERMISSIVE \
+            --disable CONFIG_CFI_PERMISSIVE \
+            --disable CONFIG_SHADOW_CALL_STACK \
+            --disable CONFIG_DEBUG_INFO \
+            --disable CONFIG_DEBUG_INFO_BTF \
             --disable CONFIG_DEBUG_INFO_DWARF4 \
             --disable CONFIG_DEBUG_INFO_DWARF5 \
             --set-str CONFIG_LOCALVERSION "-FullLTO"
@@ -91,11 +115,16 @@ jobs:
         run: |
           cd common
           
+          # ZyC Clang PATH kontrolü
+          echo "🔍 CLANG_BIN_PATH: ${{ env.CLANG_BIN_PATH }}"
+          ls -la "${{ env.CLANG_BIN_PATH }}"
+          
           export PATH="${{ env.CLANG_BIN_PATH }}:$PATH"
           export LD_LIBRARY_PATH="${{ env.CLANG_BIN_PATH }}/../lib:$LD_LIBRARY_PATH"
           
           echo "✅ Clang Version:"
           clang --version
+          which clang
           
           touch .scmversion
           
