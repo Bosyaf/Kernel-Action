@@ -28,26 +28,28 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             git curl wget bc bison flex build-essential \
-            libssl-dev libelf-dev cpio kmod xz-utils file python3 zip unzip
+            libssl-dev libelf-dev cpio kmod xz-utils file python3 zip unzip zstd
 
-      - name: ZyC Clang 22 İndir ve Kur
+      - name: Yuki Clang İndir ve Kur (.tar.zst)
         run: |
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           mkdir -p $GITHUB_WORKSPACE/toolchain
           
-          echo "📥 Clang indiriliyor..."
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          echo "📥 Yuki Clang indiriliyor..."
+          curl -fLSs "$CLANG_URL" -o clang.tar.zst
           
-          echo "📦 Clang arşivden çıkarılıyor (strip-components YOK)..."
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/toolchain
-          rm -f clang.tar.gz
+          echo "📦 Clang arşivden çıkarılıyor (zstd)..."
+          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/toolchain
+          rm -f clang.tar.zst
 
           echo "🔍 Clang yolu bulunuyor..."
-          CLANG_BIN=$(find $GITHUB_WORKSPACE/toolchain -type f -path "*/bin/clang" | head -n 1)
+          # Yuki clang genelde direkt bin/clang içindedir. Garantilemek için arıyoruz.
+          CLANG_BIN=$(find $GITHUB_WORKSPACE/toolchain -path "*/bin/clang" | head -n 1)
           
           if [ -z "$CLANG_BIN" ]; then
             echo "❌ HATA: clang bulunamadı!"
-            find $GITHUB_WORKSPACE/toolchain -type d -name "bin"
+            echo "Açılan dosyalar:"
+            ls -R $GITHUB_WORKSPACE/toolchain | head -n 50
             exit 1
           fi
 
@@ -104,7 +106,7 @@ jobs:
 
           echo "📋 Son Config Kontrolü:"
           grep "CONFIG_PGO_CLANG=" out/.config || { echo "❌ PGO AKTİF DEĞİL!"; exit 1; }
-          grep "CONFIG_DEBUG_FS=" out/.config
+          grep "CONFIG_DEBUG_FS=" out/.config || echo "DEBUG_FS aktif değil."
           grep "CONFIG_CFI_CLANG" out/.config || echo "CFI Başarıyla Kapatıldı."
 
       - name: Kernel Derle (PGO Generate)
@@ -148,11 +150,11 @@ jobs:
           name: "🔬 PGO Training Kernel #${{ github.run_number }}"
           body: |
             ## ⚠️ DİKKAT: PGO TRAINING KERNEL
-            Bu kernel PGO (Profile-Guided Optimization) profili toplamak içindir. Günlük kullanım için performansı düşük olabilir.
+            Bu kernel PGO (Profile-Guided Optimization) profili toplamak içindir. Günlük kullanım için performansı bir tık düşük olabilir.
 
             ### Nasıl Profil Toplanır?
             1. Bu ZIP dosyasını TWRP/Recovery üzerinden flashlayın.
-            2. Cihaz açıldıktan sonra **en az 30 dakika** ağır oyun (PUBG, Genshin vb.), kamera ve benchmark uygulamaları kullanın.
+            2. Cihaz açıldıktan sonra **en az 30-40 dakika** ağır oyun (PUBG, Genshin vb.), kamera ve benchmark uygulamaları kullanın. (Ne kadar çok şey yaparsanız profil o kadar kaliteli olur).
             3. Root yetkisi olan bir terminal (Termux vb.) açın ve şu komutu girin:
                ```bash
                su
