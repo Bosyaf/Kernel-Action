@@ -31,7 +31,6 @@ jobs:
           sudo apt-get clean
           sudo apt-get autoclean
           sudo apt-get autoremove -y
-          
           df -h /
 
       - name: 📦 Install Dependencies
@@ -47,27 +46,22 @@ jobs:
         run: |
           mkdir -p $HOME/clang
           cd $HOME/clang
-          
           echo "⬇️ Downloading Neutron Clang..."
           curl -L --progress-bar \
             "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst" \
             --output clang.tar.zst
-          
           if [ ! -f "clang.tar.zst" ]; then
             echo "❌ Download failed!"
             exit 1
           fi
-          
           echo "📂 Extracting..."
           tar -xf clang.tar.zst
           rm -f clang.tar.zst
-          
           if [ ! -d "clang/bin" ]; then
             mkdir -p temp
             mv * temp/ 2>/dev/null || true
             mv temp clang || true
           fi
-          
           echo "✅ Clang ready"
           ./clang/bin/clang --version
 
@@ -79,128 +73,72 @@ jobs:
           path: kernel
           fetch-depth: 1
 
-      - name: 🧹 Clean Kernel Source
+      - name: 🧹 Complete Kernel Cleanup
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          
+          echo "🧹 Full cleanup..."
           rm -rf out
+          rm -rf .out
+          rm -rf drivers/ksu
           make ARCH=arm64 mrproper || true
+          make ARCH=arm64 distclean || true
+          echo "✅ Full cleanup done"
 
-      - name: 🔐 Install KernelSU (Proper Method)
+      - name: 🔐 Install KernelSU
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          
           echo "📥 Installing KernelSU..."
-          
-          # Remove old KSU if exists
-          rm -rf drivers/ksu
-          
-          # Clone KernelSU
-          git clone https://github.com/tiann/KernelSU.git ksu_temp
-          
-          # Copy kernel directory properly
+          git clone https://github.com/tiann/KernelSU.git /tmp/ksu_source
           mkdir -p drivers/ksu
-          cp -r ksu_temp/kernel/* drivers/ksu/
-          
-          # Copy include files for uapi
-          if [ -d "ksu_temp/userspace/app_profile" ]; then
-            mkdir -p drivers/ksu/include/uapi
-            cp ksu_temp/userspace/app_profile/app_profile.h drivers/ksu/include/uapi/app_profile.h 2>/dev/null || true
+          cp -r /tmp/ksu_source/kernel/* drivers/ksu/
+          if [ ! -f "drivers/ksu/Kbuild" ]; then
+            echo "❌ KSU Kbuild not found!"
+            exit 1
           fi
-          
-          # Create missing header if needed
-          if [ ! -f "drivers/ksu/include/uapi/app_profile.h" ]; then
-            mkdir -p drivers/ksu/include/uapi
-            cat > drivers/ksu/include/uapi/app_profile.h << 'EOF'
-          #ifndef _UAPI_APP_PROFILE_H_
-          #define _UAPI_APP_PROFILE_H_
-          
-          #include <linux/types.h>
-          
-          struct app_profile {
-            __u32 uid;
-            __u32 flags;
-          };
-          
-          #endif /* _UAPI_APP_PROFILE_H_ */
-          EOF
-          fi
-          
-          rm -rf ksu_temp
-          
+          mkdir -p drivers/ksu/include/uapi
+          printf '#ifndef _UAPI_APP_PROFILE_H_\n#define _UAPI_APP_PROFILE_H_\n#include <linux/types.h>\nstruct app_profile {\n  __u32 uid;\n  __u32 flags;\n};\n#endif\n' > drivers/ksu/include/uapi/app_profile.h
+          rm -rf /tmp/ksu_source
           echo "✅ KernelSU installed"
           ls -la drivers/ksu/
 
       - name: ⚙️ Configure Kernel
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          
           echo "🔧 Configuring kernel..."
-          
           scripts/config --file arch/arm64/configs/gki_defconfig \
             --set-str CONFIG_LOCALVERSION "-CG++-Neutron-KSU" \
             --disable CONFIG_LOCALVERSION_AUTO \
             --enable CONFIG_KSU
-          
           echo "✅ Configuration done"
 
       - name: 🏗️ Build Kernel
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          
           export PATH="$HOME/clang/clang/bin:$PATH"
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
-          
           echo "🔨 Building kernel..."
           clang --version
-          
-          echo ""
           echo "Step 1: Loading defconfig..."
-          make ARCH=arm64 \
-            LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld \
-            AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            O=out gki_defconfig
-          
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip O=out gki_defconfig
           if [ $? -ne 0 ]; then
             echo "❌ Defconfig failed!"
             exit 1
           fi
-          
-          echo ""
           echo "Step 2: Building (30-60 minutes)..."
-          make ARCH=arm64 \
-            LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld \
-            AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            O=out \
-            -j$(nproc --all)
-          
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip O=out -j$(nproc --all)
           BUILD_STATUS=$?
-          
           if [ $BUILD_STATUS -ne 0 ]; then
             echo "❌ Build failed!"
             exit 1
           fi
-          
-          echo ""
           echo "Step 3: Verifying..."
-          
           if [ ! -f "out/arch/arm64/boot/Image" ]; then
             echo "❌ Kernel Image not found!"
             exit 1
           fi
-          
           echo "✅ Build success!"
           ls -lh out/arch/arm64/boot/Image
-          
           mkdir -p $HOME/kernel_out
           cp out/arch/arm64/boot/Image $HOME/kernel_out/
 
@@ -213,26 +151,7 @@ jobs:
       - name: 📝 Configure AnyKernel3
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
-          
-          cat > anykernel.sh << 'EOF'
-          properties() { '
-          kernel.string=CG+ Gaming Kernel (Neutron Clang) + KSU by caglar @ guvenc
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=houji
-          device.name2=shennong
-          device.name3=2311DRN6C
-          device.name4=23116PN5BC
-          supported.versions=14-16
-          '; }
-          . tools/ak3-core.sh
-          dump_boot
-          write_boot
-          EOF
-          
+          printf 'properties() { '"'"'\nkernel.string=CG+ Gaming Kernel (Neutron Clang) + KSU by caglar @ guvenc\ndo.devicecheck=1\ndo.modules=0\ndo.systemless=1\ndo.cleanup=1\ndo.cleanuponabort=0\ndevice.name1=houji\ndevice.name2=shennong\ndevice.name3=2311DRN6C\ndevice.name4=23116PN5BC\nsupported.versions=14-16\n'"'"'; }\n. tools/ak3-core.sh\ndump_boot\nwrite_boot\n' > anykernel.sh
           cp $HOME/kernel_out/Image ./
           echo "✅ AnyKernel3 ready"
 
@@ -240,12 +159,9 @@ jobs:
         id: zip
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
-          
           DATE=$(date +%Y%m%d-%H%M)
           ZIP="${KERNEL_NAME}-Neutron-${DATE}.zip"
-          
           zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
-          
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
@@ -262,4 +178,4 @@ jobs:
           echo "**Kernel:** CG+ Gaming Kernel + KSU" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
           echo "**Compiler:** Neutron Clang" >> $GITHUB_STEP_SUMMARY
-          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARYteps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
