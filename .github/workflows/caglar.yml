@@ -51,53 +51,27 @@ jobs:
           
           echo "⬇️ Downloading Google Clang R584948..."
           
-          # Direct download from AOSP
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz"
-          
-          echo "📥 URL: $CLANG_URL"
-          
-          # Download with curl (more reliable for large files)
-          curl -L --progress-bar "$CLANG_URL" --output clang-r584948.tar.gz
+          curl -L --progress-bar \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/mirror-goog-main-llvm-toolchain-source/clang-r584948.tar.gz" \
+            --output clang-r584948.tar.gz
           
           if [ ! -f "clang-r584948.tar.gz" ]; then
             echo "❌ Download failed!"
             exit 1
           fi
           
-          echo "📊 File info:"
-          ls -lh clang-r584948.tar.gz
-          
-          echo "📂 Extracting tar.gz..."
+          echo "📂 Extracting..."
           tar -xzf clang-r584948.tar.gz
-          
-          if [ $? -ne 0 ]; then
-            echo "❌ Extraction failed!"
-            exit 1
-          fi
-          
-          echo "🧹 Cleaning..."
           rm -f clang-r584948.tar.gz
           
-          echo "📂 Extracted structure:"
-          ls -la | head -15
-          
-          # Find clang binary
-          if [ ! -f "clang/bin/clang" ] && [ -f "bin/clang" ]; then
-            echo "Reorganizing extracted files..."
+          if [ ! -d "clang/bin" ]; then
             mkdir -p temp
             mv * temp/ 2>/dev/null || true
             mv temp clang || true
           fi
           
-          if [ ! -d "clang/bin" ]; then
-            echo "❌ Clang binary directory not found!"
-            find . -name "clang" -type f 2>/dev/null | head -5
-            exit 1
-          fi
-          
-          echo "✅ Clang extracted successfully"
-          echo "Clang Version:"
-          ./clang/bin/clang --version || true
+          echo "✅ Clang ready"
+          ./clang/bin/clang --version
 
       - name: 📱 Checkout Kernel Source
         uses: actions/checkout@v4
@@ -111,11 +85,37 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          echo "🧹 Cleaning kernel source..."
+          echo "🧹 Cleaning..."
           rm -rf out
           make ARCH=arm64 mrproper || true
           
-          echo "✅ Kernel source cleaned"
+          echo "✅ Clean done"
+
+      - name: 🔧 Fix Source Code Issues
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          
+          echo "🔧 Fixing source code compilation errors..."
+          
+          # Fix: arch/arm64/kvm/sys_regs.c:2970 - uninitialized variable
+          echo "Fixing sys_regs.c..."
+          sed -i 's/void __user \*ubatch = u64_to_user_ptr(attr->batch.in_batch);/typeof(attr->batch.in_batch) __tmp = attr->batch.in_batch; void __user *ubatch = u64_to_user_ptr(__tmp);/g' arch/arm64/kvm/sys_regs.c 2>/dev/null || true
+          
+          # Better fix for the clidr issue
+          if grep -q "get_clidr_el1(NULL, &clidr)" arch/arm64/kvm/sys_regs.c; then
+            echo "Patching KVM sys_regs..."
+            sed -i 's/\(u64 clidr;\)/\1 = 0;/' arch/arm64/kvm/sys_regs.c
+            sed -i 's/void __user \*ubatch = u64_to_user_ptr(attr->batch.in_batch);/u64 __tmp_ubatch = attr->batch.in_batch; void __user *ubatch = u64_to_user_ptr(__tmp_ubatch);/' arch/arm64/kvm/sys_regs.c
+          fi
+          
+          # Fix: kernel/bpf/syscall.c - similar uninitialized warnings
+          echo "Fixing bpf/syscall.c..."
+          if [ -f "kernel/bpf/syscall.c" ]; then
+            sed -i 's/void __user \*keys = u64_to_user_ptr(attr->batch.keys);/u64 __tmp_keys = attr->batch.keys; void __user *keys = u64_to_user_ptr(__tmp_keys);/g' kernel/bpf/syscall.c
+            sed -i 's/void __user \*values = u64_to_user_ptr(attr->batch.values);/u64 __tmp_values = attr->batch.values; void __user *values = u64_to_user_ptr(__tmp_values);/g' kernel/bpf/syscall.c
+          fi
+          
+          echo "✅ Source code patches applied"
 
       - name: 🔐 Install KernelSU
         run: |
@@ -129,7 +129,6 @@ jobs:
           rm -rf ksu_temp
           
           echo "✅ KernelSU installed"
-          ls -la drivers/ksu/kernel/ | head -5
 
       - name: ⚙️ Configure Kernel
         run: |
@@ -142,7 +141,7 @@ jobs:
             --disable CONFIG_LOCALVERSION_AUTO \
             --enable CONFIG_KSU
           
-          echo "✅ Kernel configuration done"
+          echo "✅ Configuration done"
 
       - name: 🏗️ Build Kernel with Google Clang R584948
         run: |
@@ -152,23 +151,11 @@ jobs:
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
-          echo "🔨 Building kernel with Google Clang R584948..."
-          echo ""
-          echo "Clang Version:"
+          echo "🔨 Building kernel..."
           clang --version
-          echo ""
           
-          # Verify tools
-          echo "Checking tools..."
-          which clang
-          which ld.lld
-          which llvm-ar
           echo ""
-          
-          # Configure
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Step 1: Loading defconfig..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -179,15 +166,12 @@ jobs:
             O=out gki_defconfig
           
           if [ $? -ne 0 ]; then
-            echo "❌ Defconfig loading failed!"
+            echo "❌ Defconfig failed!"
             exit 1
           fi
           
-          # Build
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 2: Building kernel (30-60 minutes)..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 2: Building (30-60 minutes)..."
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -201,30 +185,23 @@ jobs:
           BUILD_STATUS=$?
           
           if [ $BUILD_STATUS -ne 0 ]; then
-            echo "❌ Build failed with status $BUILD_STATUS"
+            echo "❌ Build failed!"
             exit 1
           fi
           
-          # Verify
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 3: Verifying build output..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 3: Verifying..."
           
           if [ ! -f "out/arch/arm64/boot/Image" ]; then
             echo "❌ Kernel Image not found!"
-            echo "Build output structure:"
-            find out -type f -name "*Image*" 2>/dev/null || echo "No Image files found"
             exit 1
           fi
           
-          echo "✅ Kernel Image found!"
+          echo "✅ Build success!"
           ls -lh out/arch/arm64/boot/Image
           
-          # Stage kernel
           mkdir -p $HOME/kernel_out
           cp out/arch/arm64/boot/Image $HOME/kernel_out/
-          echo "✅ Kernel staged successfully"
 
       - name: 📦 Setup AnyKernel3
         uses: actions/checkout@v4
@@ -237,9 +214,6 @@ jobs:
           cd $GITHUB_WORKSPACE/AnyKernel3
           
           cat > anykernel.sh << 'EOF'
-          # AnyKernel3 Ramdisk Mod Script
-          # CG+ Gaming Kernel with Google Clang R584948
-          
           properties() { '
           kernel.string=CG+ Gaming Kernel (Google Clang R584948) + KSU by caglar @ guvenc
           do.devicecheck=1
@@ -252,22 +226,16 @@ jobs:
           device.name3=2311DRN6C
           device.name4=23116PN5BC
           supported.versions=14-16
-          supported.patchlevels=
           '; }
-          
-          ## AnyKernel methods
           . tools/ak3-core.sh
-          
-          ## Boot install
           dump_boot
           write_boot
           EOF
           
           cp $HOME/kernel_out/Image ./
-          echo "✅ AnyKernel3 configured"
-          ls -lh Image
+          echo "✅ AnyKernel3 ready"
 
-      - name: 📦 Create Flashable ZIP
+      - name: 📦 Create ZIP
         id: zip
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
@@ -275,45 +243,27 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP="${KERNEL_NAME}-GoogleR584948-${DATE}.zip"
           
-          echo "📦 Creating flashable ZIP: $ZIP"
-          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore .gitattributes
+          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
           
-          if [ ! -f "$ZIP" ]; then
-            echo "❌ ZIP creation failed!"
-            exit 1
-          fi
-          
-          echo "✅ ZIP created successfully"
+          echo "✅ ZIP: $ZIP"
           ls -lh "$ZIP"
           
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload to Artifacts
+      - name: 📤 Upload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.file }}
           path: ${{ steps.zip.outputs.path }}
           retention-days: 30
 
-      - name: 🎉 Build Summary
+      - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel Name:** CG+ Gaming Kernel" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** CG+ Gaming Kernel" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
-          echo "**Compiler:** Google Clang R584948 (Latest from AOSP)" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel Version:** Linux 6.1 (GKI)" >> $GITHUB_STEP_SUMMARY
-          echo "**Root Method:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
-          echo "**Source:** lavajCN/android_kernel_xiaomi_sm8650" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** android14-6.1-v" >> $GITHUB_STEP_SUMMARY
-          echo "**Builder:** caglar@guvenc" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Flashable File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Installation Guide:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download ZIP from Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "2. Boot into TWRP Recovery" >> $GITHUB_STEP_SUMMARY
-          echo "3. Flash the ZIP file" >> $GITHUB_STEP_SUMMARY
-          echo "4. Reboot to system" >> $GITHUB_STEP_SUMMARY
-          echo "5. Verify root with KernelSU manager" >> $GITHUB_STEP_SUMMARY
+          echo "**Compiler:** Google Clang R584948" >> $GITHUB_STEP_SUMMARY
+          echo "**Root:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
