@@ -32,7 +32,6 @@ jobs:
           sudo apt-get autoclean
           sudo apt-get autoremove -y
           
-          echo "📊 Disk space:"
           df -h /
 
       - name: 📦 Install Dependencies
@@ -49,53 +48,27 @@ jobs:
           mkdir -p $HOME/clang
           cd $HOME/clang
           
-          echo "⬇️ Downloading Neutron Clang 10032024..."
+          echo "⬇️ Downloading Neutron Clang..."
+          curl -L --progress-bar \
+            "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst" \
+            --output clang.tar.zst
           
-          CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst"
-          
-          echo "📥 URL: $CLANG_URL"
-          curl -L --progress-bar "$CLANG_URL" --output neutron-clang.tar.zst
-          
-          if [ ! -f "neutron-clang.tar.zst" ]; then
+          if [ ! -f "clang.tar.zst" ]; then
             echo "❌ Download failed!"
             exit 1
           fi
           
-          echo "📊 File info:"
-          ls -lh neutron-clang.tar.zst
-          
-          echo "📂 Extracting zstd compressed archive..."
-          tar -xf neutron-clang.tar.zst
-          
-          if [ $? -ne 0 ]; then
-            echo "❌ Extraction failed!"
-            echo "Trying alternative method..."
-            zstd -d neutron-clang.tar.zst -o neutron-clang.tar
-            tar -xf neutron-clang.tar
-          fi
-          
-          echo "🧹 Cleaning..."
-          rm -f neutron-clang.tar.zst neutron-clang.tar
-          
-          echo "📂 Extracted structure:"
-          ls -la | head -20
-          
-          # Find clang binary
-          if [ ! -f "clang/bin/clang" ] && [ -f "bin/clang" ]; then
-            echo "Reorganizing extracted files..."
-            mkdir -p temp_clang
-            mv * temp_clang/ 2>/dev/null || true
-            mv temp_clang clang || true
-          fi
+          echo "📂 Extracting..."
+          tar -xf clang.tar.zst
+          rm -f clang.tar.zst
           
           if [ ! -d "clang/bin" ]; then
-            echo "❌ Clang binary directory not found!"
-            find . -name "clang" -type f 2>/dev/null | head -5
-            exit 1
+            mkdir -p temp
+            mv * temp/ 2>/dev/null || true
+            mv temp clang || true
           fi
           
-          echo "✅ Neutron Clang extracted successfully"
-          echo "Clang Version:"
+          echo "✅ Clang ready"
           ./clang/bin/clang --version
 
       - name: 📱 Checkout Kernel Source
@@ -110,25 +83,53 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          echo "🧹 Cleaning kernel source..."
           rm -rf out
           make ARCH=arm64 mrproper || true
-          
-          echo "✅ Kernel source cleaned"
 
-      - name: 🔐 Install KernelSU
+      - name: 🔐 Install KernelSU (Proper Method)
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
           echo "📥 Installing KernelSU..."
           
-          mkdir -p drivers/ksu/kernel
-          git clone --depth=1 https://github.com/tiann/KernelSU.git ksu_temp
-          cp -r ksu_temp/kernel/* drivers/ksu/kernel/
+          # Remove old KSU if exists
+          rm -rf drivers/ksu
+          
+          # Clone KernelSU
+          git clone https://github.com/tiann/KernelSU.git ksu_temp
+          
+          # Copy kernel directory properly
+          mkdir -p drivers/ksu
+          cp -r ksu_temp/kernel/* drivers/ksu/
+          
+          # Copy include files for uapi
+          if [ -d "ksu_temp/userspace/app_profile" ]; then
+            mkdir -p drivers/ksu/include/uapi
+            cp ksu_temp/userspace/app_profile/app_profile.h drivers/ksu/include/uapi/app_profile.h 2>/dev/null || true
+          fi
+          
+          # Create missing header if needed
+          if [ ! -f "drivers/ksu/include/uapi/app_profile.h" ]; then
+            mkdir -p drivers/ksu/include/uapi
+            cat > drivers/ksu/include/uapi/app_profile.h << 'EOF'
+          #ifndef _UAPI_APP_PROFILE_H_
+          #define _UAPI_APP_PROFILE_H_
+          
+          #include <linux/types.h>
+          
+          struct app_profile {
+            __u32 uid;
+            __u32 flags;
+          };
+          
+          #endif /* _UAPI_APP_PROFILE_H_ */
+          EOF
+          fi
+          
           rm -rf ksu_temp
           
           echo "✅ KernelSU installed"
-          ls -la drivers/ksu/kernel/ | head -5
+          ls -la drivers/ksu/
 
       - name: ⚙️ Configure Kernel
         run: |
@@ -141,9 +142,9 @@ jobs:
             --disable CONFIG_LOCALVERSION_AUTO \
             --enable CONFIG_KSU
           
-          echo "✅ Kernel configuration done"
+          echo "✅ Configuration done"
 
-      - name: 🏗️ Build Kernel with Neutron Clang
+      - name: 🏗️ Build Kernel
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
@@ -151,23 +152,11 @@ jobs:
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
-          echo "🔨 Building kernel with Neutron Clang..."
-          echo ""
-          echo "Clang Version:"
+          echo "🔨 Building kernel..."
           clang --version
-          echo ""
           
-          # Verify tools
-          echo "Checking tools..."
-          which clang
-          which ld.lld
-          which llvm-ar
           echo ""
-          
-          # Configure
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Step 1: Loading defconfig..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -178,15 +167,12 @@ jobs:
             O=out gki_defconfig
           
           if [ $? -ne 0 ]; then
-            echo "❌ Defconfig loading failed!"
+            echo "❌ Defconfig failed!"
             exit 1
           fi
           
-          # Build
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 2: Building kernel (30-60 minutes)..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 2: Building (30-60 minutes)..."
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -200,30 +186,23 @@ jobs:
           BUILD_STATUS=$?
           
           if [ $BUILD_STATUS -ne 0 ]; then
-            echo "❌ Build failed with status $BUILD_STATUS"
+            echo "❌ Build failed!"
             exit 1
           fi
           
-          # Verify
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 3: Verifying build output..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 3: Verifying..."
           
           if [ ! -f "out/arch/arm64/boot/Image" ]; then
             echo "❌ Kernel Image not found!"
-            echo "Build output structure:"
-            find out -type f -name "*Image*" 2>/dev/null || echo "No Image files found"
             exit 1
           fi
           
-          echo "✅ Kernel Image found!"
+          echo "✅ Build success!"
           ls -lh out/arch/arm64/boot/Image
           
-          # Stage kernel
           mkdir -p $HOME/kernel_out
           cp out/arch/arm64/boot/Image $HOME/kernel_out/
-          echo "✅ Kernel staged successfully"
 
       - name: 📦 Setup AnyKernel3
         uses: actions/checkout@v4
@@ -236,9 +215,6 @@ jobs:
           cd $GITHUB_WORKSPACE/AnyKernel3
           
           cat > anykernel.sh << 'EOF'
-          # AnyKernel3 Ramdisk Mod Script
-          # CG+ Gaming Kernel with Neutron Clang
-          
           properties() { '
           kernel.string=CG+ Gaming Kernel (Neutron Clang) + KSU by caglar @ guvenc
           do.devicecheck=1
@@ -251,22 +227,16 @@ jobs:
           device.name3=2311DRN6C
           device.name4=23116PN5BC
           supported.versions=14-16
-          supported.patchlevels=
           '; }
-          
-          ## AnyKernel methods
           . tools/ak3-core.sh
-          
-          ## Boot install
           dump_boot
           write_boot
           EOF
           
           cp $HOME/kernel_out/Image ./
-          echo "✅ AnyKernel3 configured"
-          ls -lh Image
+          echo "✅ AnyKernel3 ready"
 
-      - name: 📦 Create Flashable ZIP
+      - name: 📦 Create ZIP
         id: zip
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
@@ -274,45 +244,22 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP="${KERNEL_NAME}-Neutron-${DATE}.zip"
           
-          echo "📦 Creating flashable ZIP: $ZIP"
-          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore .gitattributes
-          
-          if [ ! -f "$ZIP" ]; then
-            echo "❌ ZIP creation failed!"
-            exit 1
-          fi
-          
-          echo "✅ ZIP created successfully"
-          ls -lh "$ZIP"
+          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
           
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload to Artifacts
+      - name: 📤 Upload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.file }}
           path: ${{ steps.zip.outputs.path }}
           retention-days: 30
 
-      - name: 🎉 Build Summary
+      - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel Name:** CG+ Gaming Kernel" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success!" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** CG+ Gaming Kernel + KSU" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
-          echo "**Compiler:** Neutron Clang 10032024 (Latest)" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel Version:** Linux 6.1 (GKI)" >> $GITHUB_STEP_SUMMARY
-          echo "**Root Method:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
-          echo "**Source:** lavajCN/android_kernel_xiaomi_sm8650" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** android14-6.1-v" >> $GITHUB_STEP_SUMMARY
-          echo "**Builder:** caglar@guvenc" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Flashable File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Installation Guide:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download ZIP from Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "2. Boot into TWRP Recovery" >> $GITHUB_STEP_SUMMARY
-          echo "3. Flash the ZIP file" >> $GITHUB_STEP_SUMMARY
-          echo "4. Reboot to system" >> $GITHUB_STEP_SUMMARY
-          echo "5. Verify root with KernelSU manager app" >> $GITHUB_STEP_SUMMARY
+          echo "**Compiler:** Neutron Clang" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
