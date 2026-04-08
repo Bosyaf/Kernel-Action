@@ -69,6 +69,20 @@ jobs:
           path: kernel
           fetch-depth: 1
 
+      - name: 🧹 Clean Kernel Source Tree
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          
+          echo "🧹 Cleaning kernel source tree..."
+          
+          # Remove old build artifacts
+          rm -rf out
+          
+          # Clean source
+          make ARCH=arm64 mrproper || true
+          
+          echo "✅ Source tree cleaned"
+
       - name: 🔐 Install KernelSU
         run: |
           cd $GITHUB_WORKSPACE/kernel
@@ -90,23 +104,19 @@ jobs:
           
           echo "🔧 Building consolidated defconfig for Houji..."
           
-          # GKI base config
-          cat arch/arm64/configs/gki_defconfig > defconfig_houji
+          # Start with GKI base
+          cp arch/arm64/configs/gki_defconfig arch/arm64/configs/houji_defconfig
           
-          # Add fragments
-          echo "" >> defconfig_houji
-          echo "# Consolidate configs" >> defconfig_houji
-          cat arch/arm64/configs/consolidate.fragment >> defconfig_houji
+          # Append consolidate fragments
+          cat arch/arm64/configs/consolidate.fragment >> arch/arm64/configs/houji_defconfig
           
-          # Add Houji vendor config
-          echo "" >> defconfig_houji
-          echo "# Houji vendor config" >> defconfig_houji
-          cat arch/arm64/configs/vendor/houji_consolidate.config >> defconfig_houji
-          
-          # Move to proper location
-          cp defconfig_houji arch/arm64/configs/houji_defconfig
+          # Append Houji vendor config
+          cat arch/arm64/configs/vendor/houji_consolidate.config >> arch/arm64/configs/houji_defconfig
           
           echo "✅ Defconfig created: houji_defconfig"
+          echo "Lines in config:"
+          wc -l arch/arm64/configs/houji_defconfig
+          
           echo "defconfig=houji_defconfig" >> $GITHUB_OUTPUT
 
       - name: ⚙️ Configure Kernel
@@ -123,6 +133,9 @@ jobs:
             --enable CONFIG_KSU
           
           echo "✅ Config ready"
+          echo ""
+          echo "CONFIG_KSU settings:"
+          grep -i "CONFIG_KSU" arch/arm64/configs/$DEFCONFIG | head -5
 
       - name: 🏗️ Build Kernel
         run: |
@@ -134,10 +147,15 @@ jobs:
           
           DEFCONFIG="${{ steps.defconfig.outputs.defconfig }}"
           
-          echo "🔨 Building kernel..."
+          echo "🔨 Starting kernel build..."
+          echo ""
+          echo "Clang Version:"
           clang --version
+          echo ""
           
-          echo "Step 1: Loading defconfig..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 1: Loading defconfig ($DEFCONFIG)..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -147,8 +165,15 @@ jobs:
             STRIP=llvm-strip \
             O=out $DEFCONFIG
           
+          if [ $? -ne 0 ]; then
+            echo "❌ Defconfig loading failed!"
+            exit 1
+          fi
+          
           echo ""
-          echo "Step 2: Building (30+ minutes)..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 2: Building kernel (this takes 30-60 minutes)..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -158,18 +183,33 @@ jobs:
             STRIP=llvm-strip \
             O=out -j$(nproc --all) 2>&1 | tail -100
           
-          KERNEL_IMG=$(find out -name "Image" -type f | head -n1)
+          BUILD_STATUS=$?
           
-          if [ -z "$KERNEL_IMG" ]; then
-            echo "❌ Build failed"
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "❌ Build failed with status $BUILD_STATUS"
             exit 1
           fi
           
-          echo "✅ Build success!"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Step 3: Verifying build output..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          KERNEL_IMG=$(find out -name "Image" -type f | head -n1)
+          
+          if [ -z "$KERNEL_IMG" ]; then
+            echo "❌ Kernel Image not found!"
+            echo "Searching for any Image files..."
+            find out -name "Image*" -o -name "vmlinux*" 2>/dev/null || true
+            exit 1
+          fi
+          
+          echo "✅ Kernel Image found!"
           ls -lh "$KERNEL_IMG"
           
           mkdir -p $HOME/kernel_out
           cp "$KERNEL_IMG" $HOME/kernel_out/Image
+          echo "✅ Kernel staged for packaging"
 
       - name: 📦 Setup AnyKernel3
         uses: actions/checkout@v4
@@ -182,6 +222,9 @@ jobs:
           cd $GITHUB_WORKSPACE/AnyKernel3
           
           cat > anykernel.sh << 'EOF'
+          # AnyKernel3 Ramdisk Mod Script
+          # CG+ Gaming Kernel - LavaJ QGKI
+          
           properties() { '
           kernel.string=CG+ Gaming Kernel LavaJ QGKI + KSU by caglar @ guvenc
           do.devicecheck=1
@@ -194,16 +237,22 @@ jobs:
           device.name3=2311DRN6C
           device.name4=23116PN5BC
           supported.versions=14-16
+          supported.patchlevels=
           '; }
+          
+          ## AnyKernel methods
           . tools/ak3-core.sh
+          
+          ## Boot install
           dump_boot
           write_boot
           EOF
           
           cp $HOME/kernel_out/Image ./
-          echo "✅ AnyKernel3 ready"
+          echo "✅ AnyKernel3 configured"
+          ls -lh Image
 
-      - name: 📦 Create ZIP
+      - name: 📦 Create Flashable ZIP
         id: zip
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
@@ -211,26 +260,43 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP="${KERNEL_NAME}-${DATE}.zip"
           
-          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
+          echo "📦 Creating flashable ZIP: $ZIP"
+          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore .gitattributes
           
-          echo "✅ ZIP: $ZIP"
+          if [ ! -f "$ZIP" ]; then
+            echo "❌ ZIP creation failed!"
+            exit 1
+          fi
+          
+          echo "✅ ZIP created successfully"
           ls -lh "$ZIP"
           
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload
+      - name: 📤 Upload to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.file }}
           path: ${{ steps.zip.outputs.path }}
           retention-days: 30
 
-      - name: 🎉 Summary
+      - name: 🎉 Build Summary
         run: |
-          echo "### ✅ Build Success - QGKI Kernel + KSU" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel:** CG+ Gaming Kernel (QGKI)" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** CG+ Gaming Kernel (QGKI Edition)" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
-          echo "**Root:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
-          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** lavajCN/kernel_xiaomi_houji-shennong-spec" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel Type:** QGKI (Qualcomm GKI with vendor extensions)" >> $GITHUB_STEP_SUMMARY
+          echo "**Root Method:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
+          echo "**Defconfig:** houji_defconfig (GKI + Consolidate + Houji Vendor)" >> $GITHUB_STEP_SUMMARY
+          echo "**Builder:** caglar@guvenc" >> $GITHUB_STEP_SUMMARY
+          echo "**Flashable File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Installation Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download ZIP from Artifacts section" >> $GITHUB_STEP_SUMMARY
+          echo "2. Boot into TWRP Recovery" >> $GITHUB_STEP_SUMMARY
+          echo "3. Flash the ZIP file" >> $GITHUB_STEP_SUMMARY
+          echo "4. Reboot to system" >> $GITHUB_STEP_SUMMARY
+          echo "5. Grant root access to apps via KernelSU manager" >> $GITHUB_STEP_SUMMARY
