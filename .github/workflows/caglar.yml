@@ -38,62 +38,57 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ca-certificates clang curl \
             flex git libelf-dev libssl-dev \
-            lz4 python3 python3-pip rsync \
-            zip unzip cpio wget \
+            lz4 python3 rsync zip unzip cpio wget \
             llvm lld gcc-aarch64-linux-gnu \
-            zstd libarchive-tools make git-lfs
+            zstd libarchive-tools make
 
       - name: 🔥 Setup ZyCromerZ Clang
         run: |
           mkdir -p $HOME/clang
           cd $HOME/clang
           
-          echo "⬇️ Fetching latest Clang link..."
+          echo "⬇️ Fetching Clang..."
           CLANG_URL=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
           
-          echo "📥 Downloading Clang from: $CLANG_URL"
-          aria2c -x16 -s16 "$CLANG_URL" -o clang.tar.gz || wget -q --show-progress "$CLANG_URL" -O clang.tar.gz
+          echo "📥 Downloading: $CLANG_URL"
+          wget -q --show-progress "$CLANG_URL" -O clang.tar.gz
           
-          echo "📂 Extracting Clang..."
+          echo "📂 Extracting..."
           tar -xf clang.tar.gz
-          rm -f clang.tar.gz
+          rm clang.tar.gz
           
-          echo "✅ Clang installed"
+          echo "✅ Clang ready"
           $HOME/clang/bin/clang --version
 
-      - name: 📱 Clone Kernel Source (Optimized)
+      - name: 📱 Download Kernel Source (Fast Method)
         run: |
           cd $HOME
           
-          echo "🔽 Cloning Xiaomi Mi 14 kernel (optimized)..."
+          echo "📥 Downloading kernel source as tarball..."
+          wget -q --show-progress \
+            https://github.com/mvaisakh/xiaomi14/archive/refs/heads/kplatform.tar.gz \
+            -O kernel.tar.gz
           
-          git clone \
-            --depth=1 \
-            --single-branch \
-            --branch kplatform \
-            --filter=blob:none \
-            https://github.com/mvaisakh/xiaomi14 kernel
+          echo "📂 Extracting kernel source..."
+          tar -xzf kernel.tar.gz
+          mv xiaomi14-kplatform kernel
+          rm kernel.tar.gz
           
           cd kernel
-          
-          echo "✅ Source cloned"
-          echo "Latest commit:"
-          git log -1 --oneline
-          
-          echo "📊 Repository size:"
-          du -sh .
+          echo "✅ Source ready"
+          ls -lah
 
       - name: ⚙️ Configure Kernel
         run: |
           cd $HOME/kernel
           
-          echo "🔧 Setting kernel version string..."
+          echo "🔧 Setting version string..."
           
           scripts/config --file arch/arm64/configs/gki_defconfig \
             --set-str CONFIG_LOCALVERSION "-CG++" \
             --disable CONFIG_LOCALVERSION_AUTO
           
-          echo "✅ Configuration done"
+          echo "✅ Config done"
 
       - name: 🏗️ Build Kernel
         run: |
@@ -103,74 +98,63 @@ jobs:
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
-          echo "🔨 Starting kernel build..."
+          echo "🔨 Building kernel..."
           clang --version
           
-          # Check if Bazel exists
-          if [ -f "tools/bazel" ]; then
-            echo "🔨 Building with Bazel..."
-            tools/bazel run --config=fast --config=stamp //common:kernel_aarch64_dist
-            
-            # Find Image in Bazel output
-            KERNEL_IMG=$(find bazel-bin -name "Image" -type f 2>/dev/null | head -n 1)
-            
-          else
-            echo "🔨 Building with Make..."
-            
-            make ARCH=arm64 \
-              LLVM=1 \
-              LLVM_IAS=1 \
-              CC=clang \
-              LD=ld.lld \
-              AR=llvm-ar \
-              NM=llvm-nm \
-              OBJCOPY=llvm-objcopy \
-              OBJDUMP=llvm-objdump \
-              STRIP=llvm-strip \
-              O=out \
-              gki_defconfig
-            
-            make ARCH=arm64 \
-              LLVM=1 \
-              LLVM_IAS=1 \
-              CC=clang \
-              LD=ld.lld \
-              AR=llvm-ar \
-              NM=llvm-nm \
-              OBJCOPY=llvm-objcopy \
-              OBJDUMP=llvm-objdump \
-              STRIP=llvm-strip \
-              O=out \
-              -j$(nproc --all)
-            
-            KERNEL_IMG="out/arch/arm64/boot/Image"
-          fi
+          # Build with Make (Bazel needs git history)
+          make ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            O=out \
+            gki_defconfig
           
-          # Verify build
-          if [ ! -f "$KERNEL_IMG" ]; then
-            echo "❌ Build failed - Image not found"
+          make ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            O=out \
+            -j$(nproc --all)
+          
+          # Verify
+          if [ ! -f "out/arch/arm64/boot/Image" ]; then
+            echo "❌ Build failed"
             exit 1
           fi
           
           echo "✅ Build completed"
-          ls -lh "$KERNEL_IMG"
+          ls -lh out/arch/arm64/boot/Image
           
-          # Stage kernel
+          # Stage
           mkdir -p $HOME/kernel_out
-          cp "$KERNEL_IMG" $HOME/kernel_out/Image
+          cp out/arch/arm64/boot/Image $HOME/kernel_out/
 
       - name: 📦 Prepare AnyKernel3
         run: |
           cd $HOME
           
-          echo "🔽 Cloning AnyKernel3..."
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          echo "🔽 Downloading AnyKernel3..."
+          wget -q https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.tar.gz
+          tar -xzf master.tar.gz
+          mv AnyKernel3-master AnyKernel3
+          rm master.tar.gz
           
           cd AnyKernel3
           
           cat > anykernel.sh << 'AKEOF'
           # AnyKernel3 Ramdisk Mod Script
-          # osm0sis @ xda-developers
           
           ## AnyKernel setup
           properties() { '
@@ -188,10 +172,10 @@ jobs:
           supported.patchlevels=
           '; }
           
-          ## AnyKernel methods (DO NOT CHANGE)
+          ## AnyKernel methods
           . tools/ak3-core.sh
           
-          ## AnyKernel boot install
+          ## Boot install
           dump_boot
           write_boot
           AKEOF
@@ -200,7 +184,7 @@ jobs:
           
           echo "✅ AnyKernel3 ready"
 
-      - name: 📦 Create Flashable ZIP
+      - name: 📦 Create ZIP
         id: package
         run: |
           cd $HOME/AnyKernel3
@@ -208,26 +192,25 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP_NAME="${KERNEL_NAME}-${DEVICE}-${DATE}.zip"
           
-          zip -r9 "$ZIP_NAME" * -x .git README.md *placeholder .gitignore .gitattributes
+          zip -r9 "$ZIP_NAME" * -x .git README.md *placeholder .gitignore
           
-          echo "✅ ZIP: $ZIP_NAME"
+          echo "✅ $ZIP_NAME"
           ls -lh "$ZIP_NAME"
           
           echo "ZIP_FILE=$ZIP_NAME" >> $GITHUB_OUTPUT
           echo "ZIP_PATH=$HOME/AnyKernel3/$ZIP_NAME" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload Kernel
+      - name: 📤 Upload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.ZIP_FILE }}
           path: ${{ steps.package.outputs.ZIP_PATH }}
-          if-no-files-found: error
 
-      - name: 🎉 Build Summary
+      - name: 🎉 Summary
         run: |
-          echo "### 🎉 Build Completed!" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Build Success!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** CG+ Gaming Kernel" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
-          echo "**Android:** 14-16 (HyperOS 3)" >> $GITHUB_STEP_SUMMARY
+          echo "**Android:** 14-16" >> $GITHUB_STEP_SUMMARY
           echo "**File:** \`${{ steps.package.outputs.ZIP_FILE }}\`" >> $GITHUB_STEP_SUMMARY
