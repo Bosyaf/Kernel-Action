@@ -56,13 +56,13 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 📦 Checkout kaynak kod
+      - name: Checkout kaynak kod
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: 🔧 Sistem bağımlılıkları kur
+      - name: Sistem bagimliliklari kur
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -84,84 +84,53 @@ jobs:
             zip \
             unzip
 
-      - name: 📥 Clang Toolchain indir
-        id: clang
+      - name: Clang Toolchain indir
         run: |
-          echo "::group::Clang kurulumu"
-          mkdir -p ${{ github.workspace }}/clang
-          cd ${{ github.workspace }}/clang
-          
-          # Google Clang 17 (kararlı ve hızlı)
+          mkdir -p $GITHUB_WORKSPACE/clang
+          cd $GITHUB_WORKSPACE/clang
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
           tar -xzf clang-r487747c.tar.gz
-          
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> $GITHUB_ENV
-          echo "LLVM=1" >> $GITHUB_ENV
-          echo "LLVM_IAS=1" >> $GITHUB_ENV
-          echo "PATH=${{ github.workspace }}/clang/bin:$PATH" >> $GITHUB_PATH
-          
-          echo "::endgroup::"
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
-      - name: 📥 GCC aarch64 Toolchain indir
+      - name: GCC Toolchain indir
         run: |
-          echo "::group::GCC kurulumu"
-          mkdir -p ${{ github.workspace }}/gcc
-          cd ${{ github.workspace }}/gcc
-          
-          # Google GCC aarch64
+          mkdir -p $GITHUB_WORKSPACE/gcc
+          cd $GITHUB_WORKSPACE/gcc
           wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/main.tar.gz
           tar -xzf main.tar.gz
-          
-          # GCC arm (32-bit)
-          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/main.tar.gz
-          mkdir -p arm && tar -xzf main.tar.gz -C arm
-          
-          echo "PATH=${{ github.workspace }}/gcc/bin:${{ github.workspace }}/gcc/arm/bin:$PATH" >> $GITHUB_PATH
-          echo "::endgroup::"
+          echo "$GITHUB_WORKSPACE/gcc/bin" >> $GITHUB_PATH
 
-      - name: 📥 AnyKernel3 indir
+      - name: AnyKernel3 indir
         if: ${{ github.event.inputs.upload_anykernel != 'false' }}
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ${{ github.workspace }}/AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $GITHUB_WORKSPACE/AnyKernel3
 
-      - name: ⚙️ Kernel yapılandırma
+      - name: Kernel yapilandirma
         run: |
-          echo "::group::Yapılandırma"
-          
-          # Defconfig seçimi
-          if [ -f "arch/arm64/configs/vendor/xiaomi/${DEVICE}_defconfig" ]; then
-            DEFCONFIG="vendor/xiaomi/${DEVICE}_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/xiaomi/${DEVICE_ALT}_defconfig" ]; then
-            DEFCONFIG="vendor/xiaomi/${DEVICE_ALT}_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/xiaomi/${DEVICE}-${DEVICE_ALT}_defconfig" ]; then
-            DEFCONFIG="vendor/xiaomi/${DEVICE}-${DEVICE_ALT}_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/${DEVICE}_defconfig" ]; then
-            DEFCONFIG="vendor/${DEVICE}_defconfig"
-          elif [ -f "arch/arm64/configs/${DEVICE}_defconfig" ]; then
-            DEFCONFIG="${DEVICE}_defconfig"
+          if [ -f "arch/arm64/configs/vendor/xiaomi/houji_defconfig" ]; then
+            DEFCONFIG="vendor/xiaomi/houji_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/xiaomi/shennong_defconfig" ]; then
+            DEFCONFIG="vendor/xiaomi/shennong_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/xiaomi/houji-shennong_defconfig" ]; then
+            DEFCONFIG="vendor/xiaomi/houji-shennong_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/houji_defconfig" ]; then
+            DEFCONFIG="vendor/houji_defconfig"
+          elif [ -f "arch/arm64/configs/houji_defconfig" ]; then
+            DEFCONFIG="houji_defconfig"
           else
-            echo "❌ Defconfig bulunamadı!"
-            echo "Mevcut konfigürasyonlar:"
-            find arch/arm64/configs -name "*${DEVICE}*" -o -name "*${DEVICE_ALT}*" -o -name "*shennong*" -o -name "*houji*" 2>/dev/null
+            echo "Defconfig bulunamadı!"
+            find arch/arm64/configs -name "*houji*" -o -name "*shennong*" 2>/dev/null
             exit 1
           fi
-          
-          echo "📋 Kullanılan defconfig: $DEFCONFIG"
-          make O=out ARCH=${ARCH} ${DEFCONFIG}
-          
-          echo "::endgroup::"
+          echo "Kullanilan defconfig: $DEFCONFIG"
+          make O=out ARCH=arm64 $DEFCONFIG
 
-      - name: 🔨 Kernel derle
+      - name: Kernel derle
         id: compile
         run: |
-          echo "::group::Derleme başladı"
-          
-          # Build time ölçümü
           START_TIME=$(date +%s)
           
-          make O=out ARCH=${ARCH} \
+          make O=out ARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
@@ -178,142 +147,78 @@ jobs:
           echo "build_status=${BUILD_STATUS}" >> $GITHUB_OUTPUT
           
           if [ ${BUILD_STATUS} -ne 0 ]; then
-            echo "❌ Derleme başarısız!"
-            echo "::error::Kernel derleme hatası"
+            echo "Derleme başarısız!"
             exit 1
           fi
           
-          echo "✅ Derleme başarılı! Süre: $((BUILD_TIME / 60)) dakika $((BUILD_TIME % 60)) saniye"
-          echo "::endgroup::"
+          echo "Derleme başarılı! Süre: $((BUILD_TIME / 60)) dakika $((BUILD_TIME % 60)) saniye"
 
-      - name: 📊 Build bilgileri
+      - name: Build bilgileri
         run: |
-          echo "::group::Build bilgileri"
-          
-          # Kernel sürümü
           if [ -f "out/include/generated/utsrelease.h" ]; then
             KERNEL_VERSION=$(grep UTS_RELEASE out/include/generated/utsrelease.h | cut -d '"' -f2)
-            echo "📱 Kernel sürümü: $KERNEL_VERSION"
+            echo "Kernel surumu: $KERNEL_VERSION"
           fi
-          
-          # Image boyutu
           if [ -f "out/arch/arm64/boot/Image" ]; then
             IMAGE_SIZE=$(du -sh out/arch/arm64/boot/Image | cut -f1)
-            echo "💾 Image boyutu: $IMAGE_SIZE"
+            echo "Image boyutu: $IMAGE_SIZE"
           fi
-          
-          # DTBO bilgisi
           if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
             DTBO_SIZE=$(du -sh out/arch/arm64/boot/dtbo.img | cut -f1)
-            echo "💾 DTBO boyutu: $DTBO_SIZE"
+            echo "DTBO boyutu: $DTBO_SIZE"
           fi
-          
-          # DTB bilgisi
           if [ -f "out/arch/arm64/boot/dtb.img" ]; then
             DTB_SIZE=$(du -sh out/arch/arm64/boot/dtb.img | cut -f1)
-            echo "💾 DTB boyutu: $DTB_SIZE"
+            echo "DTB boyutu: $DTB_SIZE"
           fi
-          
-          # Kernel modülleri
           MODULE_COUNT=$(find out -name "*.ko" 2>/dev/null | wc -l)
-          echo "📦 Kernel modülleri: $MODULE_COUNT adet"
-          
-          echo "::endgroup::"
+          echo "Kernel modulleri: $MODULE_COUNT adet"
 
-      - name: 📦 AnyKernel3 paketle
+      - name: AnyKernel3 paketle
         if: ${{ github.event.inputs.upload_anykernel != 'false' }}
         run: |
-          echo "::group::AnyKernel3 paketleme"
-          
-          cd ${{ github.workspace }}/AnyKernel3
-          
-          # Kernel image kopyala
-          cp ${{ github.workspace }}/out/arch/arm64/boot/Image .
-          
-          # DTBO kopyala
-          if [ -f "${{ github.workspace }}/out/arch/arm64/boot/dtbo.img" ]; then
-            cp ${{ github.workspace }}/out/arch/arm64/boot/dtbo.img .
-          fi
-          
-          # DTB kopyala
-          if [ -f "${{ github/workspace }}/out/arch/arm64/boot/dtb.img" ]; then
-            cp ${{ github.workspace }}/out/arch/arm64/boot/dtb.img .
-          fi
-          
-          # Modülleri kopyala
-          if [ -d "${{ github.workspace }}/out" ]; then
-            mkdir -p modules
-            find ${{ github.workspace }}/out -name "*.ko" -exec cp {} modules/ \; 2>/dev/null || true
-          fi
-          
-          # AnyKernel3.sh düzenle
-          sed -i "s/do.devicecheck=1/do.devicecheck=1/" anykernel.sh
-          
-          # Zip oluştur
+          cd $GITHUB_WORKSPACE/AnyKernel3
+          cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image .
+          [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/dtbo.img" ] && cp $GITHUB_WORKSPACE/out/arch/arm64/boot/dtbo.img .
+          [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/dtb.img" ] && cp $GITHUB_WORKSPACE/out/arch/arm64/boot/dtb.img .
+          mkdir -p modules
+          find $GITHUB_WORKSPACE/out -name "*.ko" -exec cp {} modules/ \; 2>/dev/null || true
           DATE=$(date +%Y%m%d)
-          ZIP_NAME="${{ env.KERNEL_NAME }}-${DEVICE}-${DATE}.zip"
-          
-          zip -r9 "../${ZIP_NAME}" * -x '*.git*' -x '*.md' -x '*.txt'
-          
+          ZIP_NAME="HyperOS-Kernel-houji-${DATE}.zip"
+          zip -r9 "$GITHUB_WORKSPACE/${ZIP_NAME}" * -x '*.git*' -x '*.md' -x '*.txt'
           echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
-          echo "✅ Paket oluşturuldu: ${ZIP_NAME}"
-          
-          echo "::endgroup::"
+          echo "Paket oluşturuldu: ${ZIP_NAME}"
 
-      - name: 📤 Artifact yükle
+      - name: Artifact yukle
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.KERNEL_NAME }}-${{ env.DEVICE }}-${{ github.run_number }}
+          name: HyperOS-Kernel-houji-${{ github.run_number }}
           path: |
-            ${{ github.workspace }}/*.zip
-            ${{ github.workspace }}/out/arch/arm64/boot/Image
-            ${{ github.workspace }}/out/arch/arm64/boot/dtbo.img
-            ${{ github.workspace }}/out/arch/arm64/boot/dtb.img
+            *.zip
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/dtbo.img
+            out/arch/arm64/boot/dtb.img
           retention-days: 30
           if-no-files-found: warn
 
-      - name: 📋 Build özeti
+      - name: Build ozeti
         if: always()
         run: |
-          echo "## 📱 Xiaomi Mi 14 Kernel Build Özeti" >> $GITHUB_STEP_SUMMARY
+          echo "## Xiaomi Mi 14 Kernel Build Ozeti" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Bilgi | Değer |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bilgi | Deger |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 📱 Cihaz | Xiaomi Mi 14 (${DEVICE}/${DEVICE_ALT}) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔧 SoC | Qualcomm SM8650 (Snapdragon 8 Gen3) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📦 Kernel | $(cat out/include/generated/utsrelease.h 2>/dev/null | grep UTS_RELEASE | cut -d '"' -f2 || echo 'N/A') |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🏗️ Build Süresi | ${{ steps.compile.outputs.build_time || 'N/A' }} saniye |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📅 Tarih | $(date '+%Y-%m-%d %H:%M:%S') |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🌿 Branch | ${{ env.BRANCH }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 👤 Builder | ${{ env.KBUILD_BUILD_USER }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ✅ Durum | ${{ job.status == 'success' && '✅ Başarılı' || '❌ Başarısız' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cihaz | Xiaomi Mi 14 (houji/shennong) |" >> $GITHUB_STEP_SUMMARY
+          echo "| SoC | Qualcomm SM8650 (Snapdragon 8 Gen3) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Suresi | ${{ steps.compile.outputs.build_time || 'N/A' }} saniye |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tarih | $(date '+%Y-%m-%d %H:%M:%S') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | houji-shennong-u-oss |" >> $GITHUB_STEP_SUMMARY
+          echo "| Durum | ${{ job.status == 'success' && 'Basarili' || 'Basarisiz' }} |" >> $GITHUB_STEP_SUMMARY
 
-      - name: 🚨 Hata detayları
+      - name: Hata detaylari
         if: failure()
         run: |
-          echo "## ❌ Build Hatası" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Hatasi" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -100 build.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-
-  notify:
-    name: Bildirim
-    needs: build
-    runs-on: ubuntu-22.04
-    if: always()
-
-    steps:
-      - name: 📢 Telegram bildirimi (opsiyonel)
-        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
-        run: |
-          STATUS="${{ needs.build.result == 'success' && '✅ Başarılı' || '❌ Başarısız' }}"
-          MESSAGE="📱 *Xiaomi Mi 14 Kernel Build*\n\n"
-          MESSAGE+="🔹 Durum: ${STATUS}\n"
-          MESSAGE+="🔹 Branch: ${{ env.BRANCH }}\n"
-          MESSAGE+="🔹 Run: #${{ github.run_number }}\n"
-          MESSAGE+="🔹 Zaman: $(date '+%Y-%m-%d %H:%M:%S')\n"
-          
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d parse_mode="Markdown" \
-            -d text="${MESSAGE}"
