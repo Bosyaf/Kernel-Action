@@ -82,15 +82,18 @@ jobs:
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
             zip \
-            unzip
+            unzip \
+            zstd
 
-      - name: Clang Toolchain indir
+      - name: Neutron Clang indir
         run: |
           mkdir -p $GITHUB_WORKSPACE/clang
           cd $GITHUB_WORKSPACE/clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
-          tar -xzf clang-r487747c.tar.gz
+          wget -q https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst
+          tar -I zstd -xf neutron-clang-10032024.tar.zst
+          rm -f neutron-clang-10032024.tar.zst
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+          $GITHUB_WORKSPACE/clang/bin/clang --version
 
       - name: GCC Toolchain indir
         run: |
@@ -210,6 +213,7 @@ jobs:
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Cihaz | Xiaomi Mi 14 (houji/shennong) |" >> $GITHUB_STEP_SUMMARY
           echo "| SoC | Qualcomm SM8650 (Snapdragon 8 Gen3) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Toolchain | Neutron Clang 10032024 |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Suresi | ${{ steps.compile.outputs.build_time || 'N/A' }} saniye |" >> $GITHUB_STEP_SUMMARY
           echo "| Tarih | $(date '+%Y-%m-%d %H:%M:%S') |" >> $GITHUB_STEP_SUMMARY
           echo "| Branch | houji-shennong-u-oss |" >> $GITHUB_STEP_SUMMARY
