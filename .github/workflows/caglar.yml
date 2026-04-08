@@ -1,4 +1,4 @@
-name: CG+ Gaming Kernel - LavaJ QGKI Spec + KSU
+name: CG+ Gaming Kernel - LavaJ Android14 GKI + KSU
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
-      KERNEL_NAME: "CG+GamingKernel-LavaJ-QGKI-KSU"
+      KERNEL_NAME: "CG+GamingKernel-LavaJ-GKI-KSU"
       DEBIAN_FRONTEND: noninteractive
 
     steps:
@@ -65,23 +65,20 @@ jobs:
       - name: 📱 Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: lavajCN/kernel_xiaomi_houji-shennong-spec
+          repository: lavajCN/android_kernel_xiaomi_sm8650
+          ref: android14-6.1-v
           path: kernel
           fetch-depth: 1
 
-      - name: 🧹 Clean Kernel Source Tree
+      - name: 🧹 Clean Kernel Source
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          echo "🧹 Cleaning kernel source tree..."
-          
-          # Remove old build artifacts
+          echo "🧹 Cleaning..."
           rm -rf out
-          
-          # Clean source
           make ARCH=arm64 mrproper || true
           
-          echo "✅ Source tree cleaned"
+          echo "✅ Clean done"
 
       - name: 🔐 Install KernelSU
         run: |
@@ -95,47 +92,19 @@ jobs:
           rm -rf ksu_temp
           
           echo "✅ KernelSU installed"
-          ls -la drivers/ksu/kernel/ | head -10
-
-      - name: 🔧 Build Defconfig (Consolidate Method)
-        id: defconfig
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          
-          echo "🔧 Building consolidated defconfig for Houji..."
-          
-          # Start with GKI base
-          cp arch/arm64/configs/gki_defconfig arch/arm64/configs/houji_defconfig
-          
-          # Append consolidate fragments
-          cat arch/arm64/configs/consolidate.fragment >> arch/arm64/configs/houji_defconfig
-          
-          # Append Houji vendor config
-          cat arch/arm64/configs/vendor/houji_consolidate.config >> arch/arm64/configs/houji_defconfig
-          
-          echo "✅ Defconfig created: houji_defconfig"
-          echo "Lines in config:"
-          wc -l arch/arm64/configs/houji_defconfig
-          
-          echo "defconfig=houji_defconfig" >> $GITHUB_OUTPUT
 
       - name: ⚙️ Configure Kernel
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          DEFCONFIG="${{ steps.defconfig.outputs.defconfig }}"
+          echo "🔧 Configuring..."
           
-          echo "🔧 Configuring with: $DEFCONFIG"
-          
-          scripts/config --file arch/arm64/configs/$DEFCONFIG \
-            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-QGKI" \
+          scripts/config --file arch/arm64/configs/gki_defconfig \
+            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-GKI-KSU" \
             --disable CONFIG_LOCALVERSION_AUTO \
             --enable CONFIG_KSU
           
-          echo "✅ Config ready"
-          echo ""
-          echo "CONFIG_KSU settings:"
-          grep -i "CONFIG_KSU" arch/arm64/configs/$DEFCONFIG | head -5
+          echo "✅ Config done"
 
       - name: 🏗️ Build Kernel
         run: |
@@ -145,17 +114,9 @@ jobs:
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
-          DEFCONFIG="${{ steps.defconfig.outputs.defconfig }}"
-          
-          echo "🔨 Starting kernel build..."
-          echo ""
-          echo "Clang Version:"
+          echo "🔨 Building..."
           clang --version
-          echo ""
           
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 1: Loading defconfig ($DEFCONFIG)..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -163,17 +124,8 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out $DEFCONFIG
+            O=out gki_defconfig
           
-          if [ $? -ne 0 ]; then
-            echo "❌ Defconfig loading failed!"
-            exit 1
-          fi
-          
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 2: Building kernel (this takes 30-60 minutes)..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -181,35 +133,18 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out -j$(nproc --all) 2>&1 | tail -100
+            O=out -j$(nproc --all)
           
-          BUILD_STATUS=$?
-          
-          if [ $BUILD_STATUS -ne 0 ]; then
-            echo "❌ Build failed with status $BUILD_STATUS"
+          if [ ! -f "out/arch/arm64/boot/Image" ]; then
+            echo "❌ Build failed"
             exit 1
           fi
           
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Step 3: Verifying build output..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-          KERNEL_IMG=$(find out -name "Image" -type f | head -n1)
-          
-          if [ -z "$KERNEL_IMG" ]; then
-            echo "❌ Kernel Image not found!"
-            echo "Searching for any Image files..."
-            find out -name "Image*" -o -name "vmlinux*" 2>/dev/null || true
-            exit 1
-          fi
-          
-          echo "✅ Kernel Image found!"
-          ls -lh "$KERNEL_IMG"
+          echo "✅ Build done"
+          ls -lh out/arch/arm64/boot/Image
           
           mkdir -p $HOME/kernel_out
-          cp "$KERNEL_IMG" $HOME/kernel_out/Image
-          echo "✅ Kernel staged for packaging"
+          cp out/arch/arm64/boot/Image $HOME/kernel_out/
 
       - name: 📦 Setup AnyKernel3
         uses: actions/checkout@v4
@@ -222,11 +157,8 @@ jobs:
           cd $GITHUB_WORKSPACE/AnyKernel3
           
           cat > anykernel.sh << 'EOF'
-          # AnyKernel3 Ramdisk Mod Script
-          # CG+ Gaming Kernel - LavaJ QGKI
-          
           properties() { '
-          kernel.string=CG+ Gaming Kernel LavaJ QGKI + KSU by caglar @ guvenc
+          kernel.string=CG+ Gaming Kernel LavaJ GKI + KSU by caglar @ guvenc
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -237,22 +169,16 @@ jobs:
           device.name3=2311DRN6C
           device.name4=23116PN5BC
           supported.versions=14-16
-          supported.patchlevels=
           '; }
-          
-          ## AnyKernel methods
           . tools/ak3-core.sh
-          
-          ## Boot install
           dump_boot
           write_boot
           EOF
           
           cp $HOME/kernel_out/Image ./
-          echo "✅ AnyKernel3 configured"
-          ls -lh Image
+          echo "✅ AnyKernel3 ready"
 
-      - name: 📦 Create Flashable ZIP
+      - name: 📦 Create ZIP
         id: zip
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
@@ -260,43 +186,24 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP="${KERNEL_NAME}-${DATE}.zip"
           
-          echo "📦 Creating flashable ZIP: $ZIP"
-          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore .gitattributes
+          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
           
-          if [ ! -f "$ZIP" ]; then
-            echo "❌ ZIP creation failed!"
-            exit 1
-          fi
-          
-          echo "✅ ZIP created successfully"
+          echo "✅ ZIP: $ZIP"
           ls -lh "$ZIP"
           
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload to Artifacts
+      - name: 📤 Upload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.zip.outputs.file }}
           path: ${{ steps.zip.outputs.path }}
           retention-days: 30
 
-      - name: 🎉 Build Summary
+      - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel:** CG+ Gaming Kernel (QGKI Edition)" >> $GITHUB_STEP_SUMMARY
-          echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
-          echo "**Source:** lavajCN/kernel_xiaomi_houji-shennong-spec" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel Type:** QGKI (Qualcomm GKI with vendor extensions)" >> $GITHUB_STEP_SUMMARY
-          echo "**Root Method:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
-          echo "**Defconfig:** houji_defconfig (GKI + Consolidate + Houji Vendor)" >> $GITHUB_STEP_SUMMARY
-          echo "**Builder:** caglar@guvenc" >> $GITHUB_STEP_SUMMARY
-          echo "**Flashable File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Installation Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download ZIP from Artifacts section" >> $GITHUB_STEP_SUMMARY
-          echo "2. Boot into TWRP Recovery" >> $GITHUB_STEP_SUMMARY
-          echo "3. Flash the ZIP file" >> $GITHUB_STEP_SUMMARY
-          echo "4. Reboot to system" >> $GITHUB_STEP_SUMMARY
-          echo "5. Grant root access to apps via KernelSU manager" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success!" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** CG+ Gaming Kernel (GKI + KSU)" >> $GITHUB_STEP_SUMMARY
+          echo "**Device:** Xiaomi Mi 14" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
