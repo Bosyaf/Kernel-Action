@@ -30,6 +30,7 @@ jobs:
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
+          remove-docker-images: 'true'
 
       - name: 📦 Install Build Dependencies
         run: |
@@ -40,7 +41,7 @@ jobs:
             lz4 python3 python3-pip rsync \
             zip unzip cpio wget \
             llvm lld gcc-aarch64-linux-gnu \
-            zstd libarchive-tools make
+            zstd libarchive-tools make git-lfs
 
       - name: 🔥 Setup ZyCromerZ Clang
         run: |
@@ -51,25 +52,36 @@ jobs:
           CLANG_URL=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
           
           echo "📥 Downloading Clang from: $CLANG_URL"
-          wget -q --show-progress "$CLANG_URL" -O clang.tar.gz
+          aria2c -x16 -s16 "$CLANG_URL" -o clang.tar.gz || wget -q --show-progress "$CLANG_URL" -O clang.tar.gz
           
           echo "📂 Extracting Clang..."
           tar -xf clang.tar.gz
           rm -f clang.tar.gz
           
-          echo "✅ Clang installed successfully"
+          echo "✅ Clang installed"
           $HOME/clang/bin/clang --version
 
-      - name: 📱 Clone Kernel Source
+      - name: 📱 Clone Kernel Source (Optimized)
         run: |
           cd $HOME
-          echo "🔽 Cloning Xiaomi Mi 14 kernel source..."
-          git clone --depth=1 https://github.com/mvaisakh/xiaomi14 -b kplatform kernel
+          
+          echo "🔽 Cloning Xiaomi Mi 14 kernel (optimized)..."
+          
+          git clone \
+            --depth=1 \
+            --single-branch \
+            --branch kplatform \
+            --filter=blob:none \
+            https://github.com/mvaisakh/xiaomi14 kernel
           
           cd kernel
+          
           echo "✅ Source cloned"
           echo "Latest commit:"
           git log -1 --oneline
+          
+          echo "📊 Repository size:"
+          du -sh .
 
       - name: ⚙️ Configure Kernel
         run: |
@@ -77,15 +89,13 @@ jobs:
           
           echo "🔧 Setting kernel version string..."
           
-          # Only modify LOCALVERSION
           scripts/config --file arch/arm64/configs/gki_defconfig \
             --set-str CONFIG_LOCALVERSION "-CG++" \
             --disable CONFIG_LOCALVERSION_AUTO
           
           echo "✅ Configuration done"
-          grep "CONFIG_LOCALVERSION" arch/arm64/configs/gki_defconfig
 
-      - name: 🏗️ Build Kernel with Bazel
+      - name: 🏗️ Build Kernel
         run: |
           cd $HOME/kernel
           
@@ -94,15 +104,18 @@ jobs:
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
           echo "🔨 Starting kernel build..."
-          echo "Clang version:"
           clang --version
           
-          # Use Bazel build (recommended for this kernel)
+          # Check if Bazel exists
           if [ -f "tools/bazel" ]; then
-            echo "🔨 Building with Bazel (Kleaf)..."
+            echo "🔨 Building with Bazel..."
             tools/bazel run --config=fast --config=stamp //common:kernel_aarch64_dist
+            
+            # Find Image in Bazel output
+            KERNEL_IMG=$(find bazel-bin -name "Image" -type f 2>/dev/null | head -n 1)
+            
           else
-            echo "❌ Bazel not found, trying make..."
+            echo "🔨 Building with Make..."
             
             make ARCH=arm64 \
               LLVM=1 \
@@ -129,46 +142,22 @@ jobs:
               STRIP=llvm-strip \
               O=out \
               -j$(nproc --all)
+            
+            KERNEL_IMG="out/arch/arm64/boot/Image"
           fi
           
-          echo "✅ Build completed"
-
-      - name: 🔍 Locate Kernel Files
-        id: locate
-        run: |
-          cd $HOME/kernel
-          
-          echo "🔍 Searching for kernel Image..."
-          
-          # Search in Bazel output first
-          KERNEL_IMG=$(find bazel-bin -name "Image" -type f 2>/dev/null | head -n 1)
-          
-          # Fallback to out directory
-          if [ -z "$KERNEL_IMG" ]; then
-            KERNEL_IMG=$(find out -name "Image" -type f 2>/dev/null | head -n 1)
-          fi
-          
-          # Last resort: search everywhere
-          if [ -z "$KERNEL_IMG" ]; then
-            KERNEL_IMG=$(find . -name "Image" -type f | grep -v ".git" | head -n 1)
-          fi
-          
-          if [ -z "$KERNEL_IMG" ]; then
-            echo "❌ Kernel Image not found!"
-            echo "Directory structure:"
-            ls -R | grep "Image" || true
+          # Verify build
+          if [ ! -f "$KERNEL_IMG" ]; then
+            echo "❌ Build failed - Image not found"
             exit 1
           fi
           
-          echo "✅ Found kernel Image: $KERNEL_IMG"
+          echo "✅ Build completed"
           ls -lh "$KERNEL_IMG"
           
-          # Copy to staging directory
+          # Stage kernel
           mkdir -p $HOME/kernel_out
           cp "$KERNEL_IMG" $HOME/kernel_out/Image
-          
-          echo "📦 Kernel staged successfully"
-          ls -lh $HOME/kernel_out/
 
       - name: 📦 Prepare AnyKernel3
         run: |
@@ -179,7 +168,6 @@ jobs:
           
           cd AnyKernel3
           
-          echo "📝 Configuring AnyKernel3 for Xiaomi Mi 14..."
           cat > anykernel.sh << 'AKEOF'
           # AnyKernel3 Ramdisk Mod Script
           # osm0sis @ xda-developers
@@ -201,24 +189,16 @@ jobs:
           '; }
           
           ## AnyKernel methods (DO NOT CHANGE)
-          # import patching functions/variables - see for reference
           . tools/ak3-core.sh
           
           ## AnyKernel boot install
           dump_boot
-          
-          # begin ramdisk changes
-          
-          # end ramdisk changes
-          
           write_boot
           AKEOF
           
-          echo "📋 Copying kernel Image..."
           cp $HOME/kernel_out/Image ./
           
           echo "✅ AnyKernel3 ready"
-          ls -lh Image
 
       - name: 📦 Create Flashable ZIP
         id: package
@@ -228,10 +208,9 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP_NAME="${KERNEL_NAME}-${DEVICE}-${DATE}.zip"
           
-          echo "📦 Creating flashable ZIP: $ZIP_NAME"
           zip -r9 "$ZIP_NAME" * -x .git README.md *placeholder .gitignore .gitattributes
           
-          echo "✅ ZIP created"
+          echo "✅ ZIP: $ZIP_NAME"
           ls -lh "$ZIP_NAME"
           
           echo "ZIP_FILE=$ZIP_NAME" >> $GITHUB_OUTPUT
@@ -246,17 +225,9 @@ jobs:
 
       - name: 🎉 Build Summary
         run: |
-          echo "### 🎉 Kernel Build Completed!" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Build Completed!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** CG+ Gaming Kernel" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
-          echo "**Android:** 14/15/16 (HyperOS 3 compatible)" >> $GITHUB_STEP_SUMMARY
-          echo "**Builder:** $KBUILD_BUILD_USER@$KBUILD_BUILD_HOST" >> $GITHUB_STEP_SUMMARY
+          echo "**Android:** 14-16 (HyperOS 3)" >> $GITHUB_STEP_SUMMARY
           echo "**File:** \`${{ steps.package.outputs.ZIP_FILE }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Features:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Clean GKI kernel" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ ZyCromerZ Clang (latest)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Custom version string (-CG++)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📥 **Download from Artifacts above**" >> $GITHUB_STEP_SUMMARY
