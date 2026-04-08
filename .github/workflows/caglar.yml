@@ -10,13 +10,14 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 420
+    timeout-minutes: 360
     
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
       KERNEL_NAME: "CG+GamingKernel"
+      DEBIAN_FRONTEND: noninteractive
 
     steps:
       - name: 🔧 Maximize Build Space
@@ -30,18 +31,16 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
 
-      - name: 📦 Install Dependencies
+      - name: 📦 Install Build Dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ca-certificates clang cmake curl \
-            flex git gnupg gperf imagemagick lib32ncurses5-dev \
-            lib32readline-dev lib32z1-dev liblz4-tool libncurses5 \
-            libncurses5-dev libsdl1.2-dev libssl-dev libxml2 \
-            libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
-            xsltproc zip zlib1g-dev libelf-dev pkg-config python3 \
-            python3-pip wget unzip cpio kmod llvm lld gcc-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi libarchive-tools zstd dwarves
+            bc bison build-essential ca-certificates clang curl \
+            flex git libelf-dev libssl-dev \
+            lz4 python3 python3-pip rsync \
+            zip unzip cpio wget \
+            llvm lld gcc-aarch64-linux-gnu \
+            zstd libarchive-tools make
 
       - name: 🔥 Setup ZyCromerZ Clang
         run: |
@@ -51,118 +50,42 @@ jobs:
           echo "⬇️ Fetching latest Clang link..."
           CLANG_URL=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
           
-          echo "📥 Downloading Clang: $CLANG_URL"
+          echo "📥 Downloading Clang from: $CLANG_URL"
           wget -q --show-progress "$CLANG_URL" -O clang.tar.gz
           
           echo "📂 Extracting Clang..."
-          tar -xzf clang.tar.gz
+          tar -xf clang.tar.gz
           rm -f clang.tar.gz
           
-          echo "✅ Clang setup completed"
-          ls -la
+          echo "✅ Clang installed successfully"
+          $HOME/clang/bin/clang --version
 
       - name: 📱 Clone Kernel Source
         run: |
           cd $HOME
           echo "🔽 Cloning Xiaomi Mi 14 kernel source..."
           git clone --depth=1 https://github.com/mvaisakh/xiaomi14 -b kplatform kernel
+          
           cd kernel
-          echo "✅ Source cloned successfully"
-          ls -la
-
-      - name: 🛡️ Setup VortexSU
-        run: |
-          cd $HOME/kernel
-          echo "🔽 Installing VortexSU..."
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-          echo "✅ VortexSU installed"
-
-      - name: 📡 Apply Wi-Fi Patch
-        continue-on-error: true
-        run: |
-          cd $HOME/kernel
-          echo "📥 Downloading Wi-Fi patch..."
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch
-          
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            echo "🔧 Applying Wi-Fi patch..."
-            git apply --check wifi.patch && git apply wifi.patch || patch -p1 < wifi.patch || true
-            echo "✅ Wi-Fi patch applied (or skipped if incompatible)"
-          else
-            echo "⚠️ Wi-Fi patch download failed or empty, skipping..."
-          fi
-
-      - name: 🔐 Setup SUSFS
-        run: |
-          cd $HOME/kernel
-          
-          echo "🔽 Cloning SUSFS..."
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 $HOME/susfs
-          
-          echo "📋 Copying SUSFS files..."
-          cp -rf $HOME/susfs/kernel_patches/fs/* ./fs/ 2>/dev/null || true
-          cp -rf $HOME/susfs/kernel_patches/include/* ./include/ 2>/dev/null || true
-          
-          echo "🔧 Applying SUSFS main patch..."
-          patch -p1 --forward < $HOME/susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          echo "🔽 Cloning build-vortex for additional patches..."
-          git clone --depth=1 https://github.com/Kingfinik98/build-vortex.git $HOME/build-vortex
-          
-          echo "🔧 Applying proc_base patch..."
-          patch -p1 --forward < $HOME/build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "💉 Injecting namespace code..."
-          cat << 'NSEOF' > /tmp/ns_inject.h
-          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-          #include <linux/susfs_def.h>
-          extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
-          static DEFINE_IDA(susfs_mnt_id_ida);
-          static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
-          #endif
-          NSEOF
-          
-          sed -i '/#include "internal.h"/r /tmp/ns_inject.h' ./fs/namespace.c || true
-          
-          echo "🔧 Fixing statfs.c genksyms..."
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c 2>/dev/null || true
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c 2>/dev/null || true
-          
-          echo "✅ SUSFS setup completed"
+          echo "✅ Source cloned"
+          echo "Latest commit:"
+          git log -1 --oneline
 
       - name: ⚙️ Configure Kernel
         run: |
           cd $HOME/kernel
           
-          echo "🔧 Configuring kernel options..."
+          echo "🔧 Setting kernel version string..."
           
-          # SUSFS Features
-          scripts/config --file arch/arm64/configs/gki_defconfig \
-            --enable CONFIG_KSU_SUSFS \
-            --enable CONFIG_KSU_SUSFS_SUS_PATH \
-            --enable CONFIG_KSU_SUSFS_SUS_MOUNT \
-            --enable CONFIG_KSU_SUSFS_SUS_KSTAT \
-            --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS \
-            --enable CONFIG_KSU_SUSFS_TRY_UMOUNT \
-            --enable CONFIG_KSU_SUSFS_SPOOF_UNAME \
-            --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          # Kernel Identity
+          # Only modify LOCALVERSION
           scripts/config --file arch/arm64/configs/gki_defconfig \
             --set-str CONFIG_LOCALVERSION "-CG++" \
             --disable CONFIG_LOCALVERSION_AUTO
           
-          # Disable defconfig check
-          sed -i 's/check_defconfig//' build.config.gki 2>/dev/null || true
-          sed -i 's/check_defconfig//' build.config.gki.aarch64 2>/dev/null || true
-          
-          echo "✅ Kernel configured"
+          echo "✅ Configuration done"
+          grep "CONFIG_LOCALVERSION" arch/arm64/configs/gki_defconfig
 
-      - name: 🏗️ Build Kernel
+      - name: 🏗️ Build Kernel with Bazel
         run: |
           cd $HOME/kernel
           
@@ -170,19 +93,16 @@ jobs:
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
-          echo "🔨 Starting kernel compilation..."
+          echo "🔨 Starting kernel build..."
           echo "Clang version:"
           clang --version
           
-          # Try bazel build first
+          # Use Bazel build (recommended for this kernel)
           if [ -f "tools/bazel" ]; then
-            echo "🔨 Building with Bazel..."
-            tools/bazel run --config=fast --config=stamp //common:kernel_aarch64_dist || BUILD_FAILED=1
-          fi
-          
-          # Fallback to traditional build
-          if [ ! -z "$BUILD_FAILED" ] || [ ! -f "tools/bazel" ]; then
-            echo "🔨 Building with make..."
+            echo "🔨 Building with Bazel (Kleaf)..."
+            tools/bazel run --config=fast --config=stamp //common:kernel_aarch64_dist
+          else
+            echo "❌ Bazel not found, trying make..."
             
             make ARCH=arm64 \
               LLVM=1 \
@@ -211,31 +131,44 @@ jobs:
               -j$(nproc --all)
           fi
           
-          echo "✅ Kernel compilation completed"
+          echo "✅ Build completed"
 
-      - name: 🔍 Locate Kernel Image
+      - name: 🔍 Locate Kernel Files
         id: locate
         run: |
           cd $HOME/kernel
           
-          # Search for Image file
-          KERNEL_IMG=$(find . -name "Image" -type f | head -n 1)
+          echo "🔍 Searching for kernel Image..."
+          
+          # Search in Bazel output first
+          KERNEL_IMG=$(find bazel-bin -name "Image" -type f 2>/dev/null | head -n 1)
+          
+          # Fallback to out directory
+          if [ -z "$KERNEL_IMG" ]; then
+            KERNEL_IMG=$(find out -name "Image" -type f 2>/dev/null | head -n 1)
+          fi
+          
+          # Last resort: search everywhere
+          if [ -z "$KERNEL_IMG" ]; then
+            KERNEL_IMG=$(find . -name "Image" -type f | grep -v ".git" | head -n 1)
+          fi
           
           if [ -z "$KERNEL_IMG" ]; then
             echo "❌ Kernel Image not found!"
+            echo "Directory structure:"
+            ls -R | grep "Image" || true
             exit 1
           fi
           
-          echo "✅ Found kernel: $KERNEL_IMG"
-          echo "KERNEL_PATH=$KERNEL_IMG" >> $GITHUB_OUTPUT
+          echo "✅ Found kernel Image: $KERNEL_IMG"
+          ls -lh "$KERNEL_IMG"
           
-          # Copy to common location
+          # Copy to staging directory
           mkdir -p $HOME/kernel_out
           cp "$KERNEL_IMG" $HOME/kernel_out/Image
           
-          # Also copy dtb/dtbo if exists
-          find . -name "*.dtb" -exec cp {} $HOME/kernel_out/ \; 2>/dev/null || true
-          find . -name "dtbo.img" -exec cp {} $HOME/kernel_out/ \; 2>/dev/null || true
+          echo "📦 Kernel staged successfully"
+          ls -lh $HOME/kernel_out/
 
       - name: 📦 Prepare AnyKernel3
         run: |
@@ -246,7 +179,7 @@ jobs:
           
           cd AnyKernel3
           
-          echo "📝 Configuring AnyKernel3..."
+          echo "📝 Configuring AnyKernel3 for Xiaomi Mi 14..."
           cat > anykernel.sh << 'AKEOF'
           # AnyKernel3 Ramdisk Mod Script
           # osm0sis @ xda-developers
@@ -260,9 +193,10 @@ jobs:
           do.cleanup=1
           do.cleanuponabort=0
           device.name1=houji
-          device.name2=Mi14
+          device.name2=shennong
           device.name3=2311DRN6C
-          supported.versions=14-15
+          device.name4=23116PN5BC
+          supported.versions=14-16
           supported.patchlevels=
           '; }
           
@@ -280,10 +214,11 @@ jobs:
           write_boot
           AKEOF
           
-          echo "📋 Copying kernel files..."
+          echo "📋 Copying kernel Image..."
           cp $HOME/kernel_out/Image ./
           
-          echo "✅ AnyKernel3 prepared"
+          echo "✅ AnyKernel3 ready"
+          ls -lh Image
 
       - name: 📦 Create Flashable ZIP
         id: package
@@ -293,14 +228,16 @@ jobs:
           DATE=$(date +%Y%m%d-%H%M)
           ZIP_NAME="${KERNEL_NAME}-${DEVICE}-${DATE}.zip"
           
-          echo "📦 Creating ZIP: $ZIP_NAME"
-          zip -r9 "$ZIP_NAME" * -x .git README.md *placeholder
+          echo "📦 Creating flashable ZIP: $ZIP_NAME"
+          zip -r9 "$ZIP_NAME" * -x .git README.md *placeholder .gitignore .gitattributes
           
-          echo "✅ ZIP created successfully"
+          echo "✅ ZIP created"
+          ls -lh "$ZIP_NAME"
+          
           echo "ZIP_FILE=$ZIP_NAME" >> $GITHUB_OUTPUT
           echo "ZIP_PATH=$HOME/AnyKernel3/$ZIP_NAME" >> $GITHUB_OUTPUT
 
-      - name: 📤 Upload Kernel ZIP
+      - name: 📤 Upload Kernel
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.ZIP_FILE }}
@@ -309,15 +246,17 @@ jobs:
 
       - name: 🎉 Build Summary
         run: |
-          echo "### 🎉 Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Kernel Build Completed!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** CG+ Gaming Kernel" >> $GITHUB_STEP_SUMMARY
           echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
+          echo "**Android:** 14/15/16 (HyperOS 3 compatible)" >> $GITHUB_STEP_SUMMARY
           echo "**Builder:** $KBUILD_BUILD_USER@$KBUILD_BUILD_HOST" >> $GITHUB_STEP_SUMMARY
-          echo "**File:** ${{ steps.package.outputs.ZIP_FILE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** \`${{ steps.package.outputs.ZIP_FILE }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Features:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ VortexSU Root" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ SUSFS (Full Implementation)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Wi-Fi Patch Applied" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ ZyCromerZ Clang" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Clean GKI kernel" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ZyCromerZ Clang (latest)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Custom version string (-CG++)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 **Download from Artifacts above**" >> $GITHUB_STEP_SUMMARY
