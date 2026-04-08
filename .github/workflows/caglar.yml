@@ -1,4 +1,4 @@
-name: CG+ Gaming Kernel Build
+name: CG+ Gaming Kernel - LavaJ Android14 GKI
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
-      KERNEL_NAME: "CG+GamingKernel"
+      KERNEL_NAME: "CG+GamingKernel-LavaJ-A14-GKI"
       DEBIAN_FRONTEND: noninteractive
 
     steps:
@@ -40,13 +40,12 @@ jobs:
             zip unzip cpio wget llvm lld \
             gcc-aarch64-linux-gnu zstd make
 
-      - name: 🔥 Setup Clang
+      - name: 🔥 Setup ZyCromerZ Clang
         run: |
           mkdir -p $HOME/clang
           cd $HOME/clang
           
           CLANG_URL=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          
           curl -L "$CLANG_URL" | tar -xz
           
           $HOME/clang/bin/clang --version
@@ -54,8 +53,8 @@ jobs:
       - name: 📱 Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: mvaisakh/xiaomi14
-          ref: kplatform
+          repository: lavajCN/android_kernel_xiaomi_sm8650
+          ref: android14-6.1-v
           path: kernel
           fetch-depth: 1
 
@@ -63,8 +62,9 @@ jobs:
         run: |
           cd kernel
           
+          # GKI defconfig kullan (source'ta zaten GKI)
           scripts/config --file arch/arm64/configs/gki_defconfig \
-            --set-str CONFIG_LOCALVERSION "-CG++" \
+            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-GKI" \
             --disable CONFIG_LOCALVERSION_AUTO
 
       - name: 🏗️ Build Kernel
@@ -91,10 +91,9 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out -j$(nproc)
+            O=out -j$(nproc --all)
           
           if [ ! -f "out/arch/arm64/boot/Image" ]; then
-            echo "❌ Build failed"
             exit 1
           fi
           
@@ -112,10 +111,8 @@ jobs:
           cd AnyKernel3
           
           cat > anykernel.sh << 'EOF'
-          # AnyKernel3 Script
-          
           properties() { '
-          kernel.string=CG+ Gaming Kernel by caglar @ guvenc
+          kernel.string=CG+ Gaming Kernel LavaJ GKI by caglar @ guvenc
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -127,9 +124,7 @@ jobs:
           device.name4=23116PN5BC
           supported.versions=14-16
           '; }
-          
           . tools/ak3-core.sh
-          
           dump_boot
           write_boot
           EOF
@@ -140,12 +135,9 @@ jobs:
         id: zip
         run: |
           cd AnyKernel3
-          
           DATE=$(date +%Y%m%d-%H%M)
-          ZIP="${KERNEL_NAME}-${DEVICE}-${DATE}.zip"
-          
-          zip -r9 "$ZIP" * -x .git README.md *placeholder
-          
+          ZIP="${KERNEL_NAME}-${DATE}.zip"
+          zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
@@ -157,5 +149,7 @@ jobs:
 
       - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Success" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success - GKI Kernel" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** lavajCN/android_kernel_xiaomi_sm8650 (GKI)" >> $GITHUB_STEP_SUMMARY
+          echo "**Defconfig:** gki_defconfig" >> $GITHUB_STEP_SUMMARY
           echo "**File:** ${{ steps.zip.outputs.file }}" >> $GITHUB_STEP_SUMMARY
