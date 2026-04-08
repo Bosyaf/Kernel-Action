@@ -17,13 +17,12 @@ jobs:
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
       KERNEL_NAME: "CG+GamingKernel-LavaJ-GKI-KSU"
-      DEBIAN_FRONTEND: noninteractive
 
     steps:
-      - name: 🔧 Maximize & Clean Build Space
+      - name: 🔧 Maximize Space
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache /usr/local/.ghcup
-          sudo apt-get clean && sudo apt-get autoclean && sudo apt-get autoremove -y
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
 
       - name: 📦 Install Dependencies
         run: |
@@ -32,12 +31,17 @@ jobs:
 
       - name: 🔥 Setup Neutron Clang
         run: |
-          mkdir -p $HOME/clang && cd $HOME/clang
-          curl -L "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst" -o clang.tar.zst
-          tar -xf clang.tar.zst && rm clang.tar.zst
-          if [ ! -d "clang/bin" ]; then mv * temp/ 2>/dev/null && mv temp clang; fi
+          mkdir -p $HOME/clang
+          cd $HOME/clang
+          curl -LO "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst"
+          tar --zstd -xf neutron-clang-10032024.tar.zst
+          rm neutron-clang-10032024.tar.zst
+          if [ ! -d "clang" ]; then
+            DIR=$(find . -maxdepth 1 -type d ! -name "." | head -n 1)
+            [ -n "$DIR" ] && mv "$DIR" clang
+          fi
 
-      - name: 📱 Checkout Kernel Source
+      - name: 📱 Checkout Source
         uses: actions/checkout@v4
         with:
           repository: lavajCN/android_kernel_xiaomi_sm8650
@@ -45,58 +49,50 @@ jobs:
           path: kernel
           fetch-depth: 1
 
-      - name: 🧹 Complete Cleanup
+      - name: 🧹 Cleanup
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          rm -rf out .out drivers/ksu
-          make ARCH=arm64 mrproper distclean
+          rm -rf out drivers/ksu
+          make ARCH=arm64 mrproper || true
 
-      - name: 🔐 Install KernelSU (Nuclear Option)
+      - name: 🔐 Install KernelSU
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          find . -name "ksu" -type d -exec rm -rf {} \; 2>/dev/null || true
           rm -rf drivers/ksu /tmp/ksu*
-          git clone --depth=1 https://github.com/tiann/KernelSU.git /tmp/ksu_temp
+          git clone --depth=1 https://github.com/tiann/KernelSU.git /tmp/ksu
           mkdir -p drivers/ksu
-          cp -r /tmp/ksu_temp/kernel/* drivers/ksu/
-          mkdir -p drivers/ksu/include/uapi 2>/dev/null || true
-          printf '#ifndef _UAPI_APP_PROFILE_H_\n#define _UAPI_APP_PROFILE_H_\n#include <linux/types.h>\nstruct app_profile {\n  __u32 uid;\n  __u32 flags;\n};\n#endif\n' > drivers/ksu/include/uapi/app_profile.h
-          rm -rf /tmp/ksu_temp
-          echo "✅ Nuclear KSU install complete"
+          cp -r /tmp/ksu/kernel/* drivers/ksu/
+          mkdir -p drivers/ksu/include/uapi
+          printf '#ifndef _UAPI_APP_PROFILE_H_\n#define _UAPI_APP_PROFILE_H_\n#include <linux/types.h>\nstruct app_profile { __u32 uid; __u32 flags; };\n#endif\n' > drivers/ksu/include/uapi/app_profile.h
+          rm -rf /tmp/ksu
 
-      - name: ⚙️ Configure Kernel
+      - name: ⚙️ Configure
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          scripts/config --file arch/arm64/configs/gki_defconfig --set-str CONFIG_LOCALVERSION "-CG++-Neutron-KSU" --disable CONFIG_LOCALVERSION_AUTO --enable CONFIG_KSU
+          scripts/config --file arch/arm64/configs/gki_defconfig --set-str CONFIG_LOCALVERSION "-CG++-KSU" --disable CONFIG_LOCALVERSION_AUTO --enable CONFIG_KSU
 
-      - name: 🏗️ Build Kernel
+      - name: 🏗️ Build
         run: |
           cd $GITHUB_WORKSPACE/kernel
           export PATH="$HOME/clang/clang/bin:$PATH"
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip O=out gki_defconfig
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip O=out -j$(nproc)
 
-      - name: 📦 Setup AnyKernel3
+      - name: 📦 AnyKernel3
         uses: actions/checkout@v4
         with:
           repository: osm0sis/AnyKernel3
           path: AnyKernel3
 
-      - name: 📝 Configure AnyKernel3
+      - name: 📝 Package
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
-          printf 'properties() { '"'"'kernel.string=CG+ Gaming Kernel + KSU\ndo.devicecheck=1\ndo.modules=0\ndo.systemless=1\ndo.cleanup=1\ndevice.name1=houji\ndevice.name2=shennong\nsupported.versions=14-16\n'"'"'; }\n. tools/ak3-core.sh\ndump_boot\nwrite_boot\n' > anykernel.sh
+          printf 'properties() { '"'"'kernel.string=CG+ Kernel\ndevice.name1=houji\ndevice.name2=shennong\n'"'"'; }\n. tools/ak3-core.sh\ndump_boot\nwrite_boot\n' > anykernel.sh
           cp $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image ./
-
-      - name: 📦 Create ZIP
-        id: zip
-        run: |
-          cd $GITHUB_WORKSPACE/AnyKernel3
-          zip -r9 "CG+GamingKernel.zip" * -x .git README.md *placeholder .gitignore
-          echo "file=CG+GamingKernel.zip" >> $GITHUB_OUTPUT
+          zip -r9 kernel.zip * -x .git README.md
 
       - name: 📤 Upload
         uses: actions/upload-artifact@v4
         with:
-          name: CG+GamingKernel.zip
-          path: $GITHUB_WORKSPACE/AnyKernel3/CG+GamingKernel.zip
+          name: CG-Kernel-ZIP
+          path: $GITHUB_WORKSPACE/AnyKernel3/kernel.zip
