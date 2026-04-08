@@ -1,4 +1,4 @@
-name: CG+ Gaming Kernel - LavaJ QGKI Spec
+name: CG+ Gaming Kernel - LavaJ QGKI Spec + KSU
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
-      KERNEL_NAME: "CG+GamingKernel-LavaJ-QGKI"
+      KERNEL_NAME: "CG+GamingKernel-LavaJ-QGKI-KSU"
       DEBIAN_FRONTEND: noninteractive
 
     steps:
@@ -32,7 +32,7 @@ jobs:
           sudo apt-get autoclean
           sudo apt-get autoremove -y
           
-          echo "📊 Disk space after cleanup:"
+          echo "📊 Disk space:"
           df -h /
 
       - name: 📦 Install Dependencies
@@ -69,41 +69,45 @@ jobs:
           path: kernel
           fetch-depth: 1
 
-      - name: 🔍 Find Correct Defconfig
+      - name: 🔐 Install KernelSU
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          
+          echo "📥 Installing KernelSU..."
+          
+          mkdir -p drivers/ksu/kernel
+          git clone --depth=1 https://github.com/tiann/KernelSU.git ksu_temp
+          cp -r ksu_temp/kernel/* drivers/ksu/kernel/
+          rm -rf ksu_temp
+          
+          echo "✅ KernelSU installed"
+          ls -la drivers/ksu/kernel/ | head -10
+
+      - name: 🔧 Build Defconfig (Consolidate Method)
         id: defconfig
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          echo "🔍 Searching for device defconfig..."
+          echo "🔧 Building consolidated defconfig for Houji..."
           
-          echo "Available configs:"
-          find arch/arm64/configs -type f | head -20
+          # GKI base config
+          cat arch/arm64/configs/gki_defconfig > defconfig_houji
           
-          # Priority order for Houji/Shennong
-          if [ -f "arch/arm64/configs/vendor/kalama-qgki_defconfig" ]; then
-            DEFCONFIG="vendor/kalama-qgki_defconfig"
-            echo "✅ Found: vendor/kalama-qgki_defconfig"
-          elif [ -f "arch/arm64/configs/kalama-qgki_defconfig" ]; then
-            DEFCONFIG="kalama-qgki_defconfig"
-            echo "✅ Found: kalama-qgki_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/houji_defconfig" ]; then
-            DEFCONFIG="vendor/houji_defconfig"
-            echo "✅ Found: vendor/houji_defconfig"
-          elif [ -f "arch/arm64/configs/houji_defconfig" ]; then
-            DEFCONFIG="houji_defconfig"
-            echo "✅ Found: houji_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/kalama_defconfig" ]; then
-            DEFCONFIG="vendor/kalama_defconfig"
-            echo "✅ Found: vendor/kalama_defconfig"
-          elif [ -f "arch/arm64/configs/kalama_defconfig" ]; then
-            DEFCONFIG="kalama_defconfig"
-            echo "✅ Found: kalama_defconfig"
-          else
-            echo "❌ No suitable defconfig found!"
-            exit 1
-          fi
+          # Add fragments
+          echo "" >> defconfig_houji
+          echo "# Consolidate configs" >> defconfig_houji
+          cat arch/arm64/configs/consolidate.fragment >> defconfig_houji
           
-          echo "defconfig=$DEFCONFIG" >> $GITHUB_OUTPUT
+          # Add Houji vendor config
+          echo "" >> defconfig_houji
+          echo "# Houji vendor config" >> defconfig_houji
+          cat arch/arm64/configs/vendor/houji_consolidate.config >> defconfig_houji
+          
+          # Move to proper location
+          cp defconfig_houji arch/arm64/configs/houji_defconfig
+          
+          echo "✅ Defconfig created: houji_defconfig"
+          echo "defconfig=houji_defconfig" >> $GITHUB_OUTPUT
 
       - name: ⚙️ Configure Kernel
         run: |
@@ -115,7 +119,8 @@ jobs:
           
           scripts/config --file arch/arm64/configs/$DEFCONFIG \
             --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-QGKI" \
-            --disable CONFIG_LOCALVERSION_AUTO
+            --disable CONFIG_LOCALVERSION_AUTO \
+            --enable CONFIG_KSU
           
           echo "✅ Config ready"
 
@@ -129,10 +134,10 @@ jobs:
           
           DEFCONFIG="${{ steps.defconfig.outputs.defconfig }}"
           
-          echo "🔨 Building kernel with $DEFCONFIG..."
-          echo "Clang:"
+          echo "🔨 Building kernel..."
           clang --version
           
+          echo "Step 1: Loading defconfig..."
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -142,6 +147,8 @@ jobs:
             STRIP=llvm-strip \
             O=out $DEFCONFIG
           
+          echo ""
+          echo "Step 2: Building (30+ minutes)..."
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -149,18 +156,16 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out -j$(nproc --all) 2>&1 | tail -50
+            O=out -j$(nproc --all) 2>&1 | tail -100
           
-          # Find kernel Image
           KERNEL_IMG=$(find out -name "Image" -type f | head -n1)
           
           if [ -z "$KERNEL_IMG" ]; then
-            echo "❌ Build failed - Image not found"
-            find out -name "Image*" 2>/dev/null || true
+            echo "❌ Build failed"
             exit 1
           fi
           
-          echo "✅ Build success"
+          echo "✅ Build success!"
           ls -lh "$KERNEL_IMG"
           
           mkdir -p $HOME/kernel_out
@@ -178,7 +183,7 @@ jobs:
           
           cat > anykernel.sh << 'EOF'
           properties() { '
-          kernel.string=CG+ Gaming Kernel LavaJ QGKI by caglar @ guvenc
+          kernel.string=CG+ Gaming Kernel LavaJ QGKI + KSU by caglar @ guvenc
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -219,13 +224,13 @@ jobs:
         with:
           name: ${{ steps.zip.outputs.file }}
           path: ${{ steps.zip.outputs.path }}
+          retention-days: 30
 
       - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Success - QGKI Kernel" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success - QGKI Kernel + KSU" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Kernel:** CG+ Gaming Kernel (LavaJ QGKI)" >> $GITHUB_STEP_SUMMARY
-          echo "**Device:** Xiaomi Mi 14 (houji/shennong)" >> $GITHUB_STEP_SUMMARY
-          echo "**Source:** lavajCN/kernel_xiaomi_houji-shennong-spec" >> $GITHUB_STEP_SUMMARY
-          echo "**Defconfig:** \`${{ steps.defconfig.outputs.defconfig }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** CG+ Gaming Kernel (QGKI)" >> $GITHUB_STEP_SUMMARY
+          echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
+          echo "**Root:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
           echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
