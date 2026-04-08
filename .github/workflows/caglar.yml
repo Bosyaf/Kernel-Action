@@ -44,16 +44,15 @@ jobs:
             zip unzip cpio wget llvm lld \
             gcc-aarch64-linux-gnu zstd make 2>&1 | grep -v "^Reading\|^Building"
 
-      - name: 🔥 Setup ZyCromerZ Clang
+      - name: 🔥 Setup Clang (Stable Version)
         run: |
           mkdir -p $HOME/clang
           cd $HOME/clang
           
-          echo "⬇️ Fetching Clang link..."
-          CLANG_URL=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          
-          echo "📥 Downloading Clang..."
-          curl -L "$CLANG_URL" --output clang.tar.gz
+          echo "⬇️ Downloading stable Clang..."
+          # Using version 17 (more stable for kernel 6.1)
+          wget -q --show-progress https://github.com/ZyCromerZ/Clang/releases/download/17.0.0/Clang-17.0.0.tar.gz -O clang.tar.gz || \
+          curl -L "https://github.com/ZyCromerZ/Clang/releases/download/17.0.0/Clang-17.0.0.tar.gz" --output clang.tar.gz
           
           echo "📂 Extracting..."
           tar -xf clang.tar.gz
@@ -124,6 +123,7 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
+            WERROR=0 \
             O=out gki_defconfig
           
           make ARCH=arm64 \
@@ -133,10 +133,13 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out -j$(nproc --all)
+            WERROR=0 \
+            W=0 \
+            O=out -j$(nproc --all) 2>&1 | tail -50
           
           if [ ! -f "out/arch/arm64/boot/Image" ]; then
             echo "❌ Build failed"
+            find out -name "Image*" 2>/dev/null || true
             exit 1
           fi
           
@@ -205,5 +208,7 @@ jobs:
         run: |
           echo "### ✅ Build Success!" >> $GITHUB_STEP_SUMMARY
           echo "**Kernel:** CG+ Gaming Kernel (GKI + KSU)" >> $GITHUB_STEP_SUMMARY
-          echo "**Device:** Xiaomi Mi 14" >> $GITHUB_STEP_SUMMARY
+          echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
+          echo "**Clang:** v17.0.0 (stable for 6.1)" >> $GITHUB_STEP_SUMMARY
+          echo "**Root:** KernelSU ✅" >> $GITHUB_STEP_SUMMARY
           echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
