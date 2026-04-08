@@ -1,4 +1,4 @@
-name: CG+ Gaming Kernel - LavaJ Android14 GKI
+name: CG+ Gaming Kernel - LavaJ QGKI Spec
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
-      KERNEL_NAME: "CG+GamingKernel-LavaJ-A14-GKI"
+      KERNEL_NAME: "CG+GamingKernel-LavaJ-QGKI"
       DEBIAN_FRONTEND: noninteractive
 
     steps:
@@ -53,18 +53,46 @@ jobs:
       - name: 📱 Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: lavajCN/android_kernel_xiaomi_sm8650
-          ref: android14-6.1-v
+          repository: lavajCN/kernel_xiaomi_houji-shennong-spec
           path: kernel
           fetch-depth: 1
+
+      - name: 🔍 Find Correct Defconfig
+        id: defconfig
+        run: |
+          cd kernel
+          
+          echo "🔍 Searching for device defconfig..."
+          
+          # Vendor configs öncelikli
+          if [ -f "arch/arm64/configs/vendor/kalama-qgki_defconfig" ]; then
+            DEFCONFIG="vendor/kalama-qgki_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/kalama_GKI.config" ]; then
+            DEFCONFIG="vendor/kalama_GKI.config"
+          elif [ -f "arch/arm64/configs/vendor/houji_defconfig" ]; then
+            DEFCONFIG="vendor/houji_defconfig"
+          elif [ -f "arch/arm64/configs/kalama_defconfig" ]; then
+            DEFCONFIG="kalama_defconfig"
+          elif [ -f "arch/arm64/configs/houji_defconfig" ]; then
+            DEFCONFIG="houji_defconfig"
+          else
+            echo "❌ No suitable defconfig found!"
+            echo "Available configs:"
+            find arch/arm64/configs -name "*defconfig" -o -name "*.config"
+            exit 1
+          fi
+          
+          echo "✅ Using: $DEFCONFIG"
+          echo "name=$DEFCONFIG" >> $GITHUB_OUTPUT
 
       - name: ⚙️ Configure Kernel
         run: |
           cd kernel
           
-          # GKI defconfig kullan (source'ta zaten GKI)
-          scripts/config --file arch/arm64/configs/gki_defconfig \
-            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-GKI" \
+          DEFCONFIG="${{ steps.defconfig.outputs.name }}"
+          
+          scripts/config --file arch/arm64/configs/$DEFCONFIG \
+            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-QGKI" \
             --disable CONFIG_LOCALVERSION_AUTO
 
       - name: 🏗️ Build Kernel
@@ -75,6 +103,8 @@ jobs:
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
+          DEFCONFIG="${{ steps.defconfig.outputs.name }}"
+          
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -82,7 +112,7 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out gki_defconfig
+            O=out $DEFCONFIG
           
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
@@ -93,12 +123,14 @@ jobs:
             STRIP=llvm-strip \
             O=out -j$(nproc --all)
           
-          if [ ! -f "out/arch/arm64/boot/Image" ]; then
+          KERNEL_IMG=$(find out -name "Image" -o -name "Image.gz" | head -n1)
+          
+          if [ -z "$KERNEL_IMG" ]; then
             exit 1
           fi
           
           mkdir -p $HOME/kernel_out
-          cp out/arch/arm64/boot/Image $HOME/kernel_out/
+          cp "$KERNEL_IMG" $HOME/kernel_out/Image
 
       - name: 📦 Setup AnyKernel3
         uses: actions/checkout@v4
@@ -112,7 +144,7 @@ jobs:
           
           cat > anykernel.sh << 'EOF'
           properties() { '
-          kernel.string=CG+ Gaming Kernel LavaJ GKI by caglar @ guvenc
+          kernel.string=CG+ Gaming Kernel LavaJ QGKI by caglar @ guvenc
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -149,7 +181,7 @@ jobs:
 
       - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Success - GKI Kernel" >> $GITHUB_STEP_SUMMARY
-          echo "**Source:** lavajCN/android_kernel_xiaomi_sm8650 (GKI)" >> $GITHUB_STEP_SUMMARY
-          echo "**Defconfig:** gki_defconfig" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success - QGKI Kernel" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** lavajCN/kernel_xiaomi_houji-shennong-spec" >> $GITHUB_STEP_SUMMARY
+          echo "**Defconfig:** ${{ steps.defconfig.outputs.name }}" >> $GITHUB_STEP_SUMMARY
           echo "**File:** ${{ steps.zip.outputs.file }}" >> $GITHUB_STEP_SUMMARY
