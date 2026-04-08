@@ -1,4 +1,4 @@
-name: CG+ Gaming Kernel - LavaJ QGKI Spec
+name: CG+ Gaming Kernel - LavaJ Android14 GKI
 
 permissions:
   contents: write
@@ -16,94 +16,83 @@ jobs:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
       DEVICE: "houji"
-      KERNEL_NAME: "CG+GamingKernel-LavaJ-QGKI"
+      KERNEL_NAME: "CG+GamingKernel-LavaJ-A14-GKI"
       DEBIAN_FRONTEND: noninteractive
 
     steps:
-      - name: 🔧 Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          swap-size-mb: 8192
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+      - name: 🔧 Maximize & Clean Build Space
+        run: |
+          echo "🧹 Cleaning system..."
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/.ghcup
+          sudo apt-get clean
+          sudo apt-get autoclean
+          sudo apt-get autoremove -y
+          
+          echo "📊 Disk space after cleanup:"
+          df -h /
 
       - name: 📦 Install Dependencies
         run: |
-          sudo apt-get update -qq
+          sudo apt-get update -qq || true
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential clang curl flex git \
             libelf-dev libssl-dev lz4 python3 rsync \
             zip unzip cpio wget llvm lld \
-            gcc-aarch64-linux-gnu zstd make
+            gcc-aarch64-linux-gnu zstd make 2>&1 | grep -v "^Reading\|^Building"
 
       - name: 🔥 Setup ZyCromerZ Clang
         run: |
           mkdir -p $HOME/clang
           cd $HOME/clang
           
+          echo "⬇️ Fetching Clang link..."
           CLANG_URL=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          curl -L "$CLANG_URL" | tar -xz
           
+          echo "📥 Downloading Clang..."
+          curl -L "$CLANG_URL" --output clang.tar.gz
+          
+          echo "📂 Extracting..."
+          tar -xf clang.tar.gz
+          rm -f clang.tar.gz
+          
+          echo "✅ Clang ready"
           $HOME/clang/bin/clang --version
 
       - name: 📱 Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: lavajCN/kernel_xiaomi_houji-shennong-spec
+          repository: lavajCN/android_kernel_xiaomi_sm8650
+          ref: android14-6.1-v
           path: kernel
           fetch-depth: 1
 
-      - name: 🔍 Find Correct Defconfig
-        id: defconfig
-        run: |
-          cd kernel
-          
-          echo "🔍 Searching for device defconfig..."
-          
-          # Vendor configs öncelikli
-          if [ -f "arch/arm64/configs/vendor/kalama-qgki_defconfig" ]; then
-            DEFCONFIG="vendor/kalama-qgki_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/kalama_GKI.config" ]; then
-            DEFCONFIG="vendor/kalama_GKI.config"
-          elif [ -f "arch/arm64/configs/vendor/houji_defconfig" ]; then
-            DEFCONFIG="vendor/houji_defconfig"
-          elif [ -f "arch/arm64/configs/kalama_defconfig" ]; then
-            DEFCONFIG="kalama_defconfig"
-          elif [ -f "arch/arm64/configs/houji_defconfig" ]; then
-            DEFCONFIG="houji_defconfig"
-          else
-            echo "❌ No suitable defconfig found!"
-            echo "Available configs:"
-            find arch/arm64/configs -name "*defconfig" -o -name "*.config"
-            exit 1
-          fi
-          
-          echo "✅ Using: $DEFCONFIG"
-          echo "name=$DEFCONFIG" >> $GITHUB_OUTPUT
-
       - name: ⚙️ Configure Kernel
         run: |
-          cd kernel
+          cd $GITHUB_WORKSPACE/kernel
           
-          DEFCONFIG="${{ steps.defconfig.outputs.name }}"
+          echo "🔧 Setting kernel version string..."
           
-          scripts/config --file arch/arm64/configs/$DEFCONFIG \
-            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-QGKI" \
+          scripts/config --file arch/arm64/configs/gki_defconfig \
+            --set-str CONFIG_LOCALVERSION "-CG++-LavaJ-GKI" \
             --disable CONFIG_LOCALVERSION_AUTO
+          
+          echo "✅ Config ready"
 
       - name: 🏗️ Build Kernel
         run: |
-          cd kernel
+          cd $GITHUB_WORKSPACE/kernel
           
           export PATH="$HOME/clang/bin:$PATH"
           export KBUILD_BUILD_USER="${KBUILD_BUILD_USER}"
           export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST}"
           
-          DEFCONFIG="${{ steps.defconfig.outputs.name }}"
+          echo "🔨 Building kernel..."
+          echo "Clang:"
+          clang --version
           
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
@@ -112,7 +101,7 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out $DEFCONFIG
+            O=out gki_defconfig
           
           make ARCH=arm64 \
             LLVM=1 LLVM_IAS=1 \
@@ -121,16 +110,18 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            O=out -j$(nproc --all)
+            O=out -j$(nproc --all) 2>&1 | tail -50
           
-          KERNEL_IMG=$(find out -name "Image" -o -name "Image.gz" | head -n1)
-          
-          if [ -z "$KERNEL_IMG" ]; then
+          if [ ! -f "out/arch/arm64/boot/Image" ]; then
+            echo "❌ Build failed"
             exit 1
           fi
           
+          echo "✅ Build success"
+          ls -lh out/arch/arm64/boot/Image
+          
           mkdir -p $HOME/kernel_out
-          cp "$KERNEL_IMG" $HOME/kernel_out/Image
+          cp out/arch/arm64/boot/Image $HOME/kernel_out/
 
       - name: 📦 Setup AnyKernel3
         uses: actions/checkout@v4
@@ -140,11 +131,11 @@ jobs:
 
       - name: 📝 Configure AnyKernel3
         run: |
-          cd AnyKernel3
+          cd $GITHUB_WORKSPACE/AnyKernel3
           
           cat > anykernel.sh << 'EOF'
           properties() { '
-          kernel.string=CG+ Gaming Kernel LavaJ QGKI by caglar @ guvenc
+          kernel.string=CG+ Gaming Kernel LavaJ GKI by caglar @ guvenc
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -162,14 +153,21 @@ jobs:
           EOF
           
           cp $HOME/kernel_out/Image ./
+          echo "✅ AnyKernel3 ready"
 
       - name: 📦 Create ZIP
         id: zip
         run: |
-          cd AnyKernel3
+          cd $GITHUB_WORKSPACE/AnyKernel3
+          
           DATE=$(date +%Y%m%d-%H%M)
           ZIP="${KERNEL_NAME}-${DATE}.zip"
+          
           zip -r9 "$ZIP" * -x .git README.md *placeholder .gitignore
+          
+          echo "✅ ZIP: $ZIP"
+          ls -lh "$ZIP"
+          
           echo "file=$ZIP" >> $GITHUB_OUTPUT
           echo "path=$(pwd)/$ZIP" >> $GITHUB_OUTPUT
 
@@ -181,7 +179,11 @@ jobs:
 
       - name: 🎉 Summary
         run: |
-          echo "### ✅ Build Success - QGKI Kernel" >> $GITHUB_STEP_SUMMARY
-          echo "**Source:** lavajCN/kernel_xiaomi_houji-shennong-spec" >> $GITHUB_STEP_SUMMARY
-          echo "**Defconfig:** ${{ steps.defconfig.outputs.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**File:** ${{ steps.zip.outputs.file }}" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Build Success - GKI Kernel" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Kernel:** CG+ Gaming Kernel (LavaJ GKI)" >> $GITHUB_STEP_SUMMARY
+          echo "**Device:** Xiaomi Mi 14 (houji)" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** lavajCN/android_kernel_xiaomi_sm8650" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** android14-6.1-v" >> $GITHUB_STEP_SUMMARY
+          echo "**Defconfig:** gki_defconfig" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** \`${{ steps.zip.outputs.file }}\`" >> $GITHUB_STEP_SUMMARY
