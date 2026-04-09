@@ -39,17 +39,20 @@ jobs:
       - name: Verify Clang
         run: clang --version
 
-      - name: Merge kernel configs
+      - name: Merge and generate kernel config
         run: |
           mkdir -p out
-          ARCH=arm64 scripts/kconfig/merge_config.sh -O out \
-            arch/arm64/configs/gki_defconfig \
-            configs/vendor/pineapple_GKI.config \
-            configs/vendor/houji_GKI.config \
-            configs/vendor/houji_consolidate.config
 
-      - name: Finalize config
-        run: |
+          # Tüm config katmanlarını sırayla birleştir
+          cat arch/arm64/configs/gki_defconfig \
+              configs/vendor/pineapple_GKI.config \
+              configs/vendor/houji_GKI.config \
+              configs/vendor/houji_consolidate.config \
+              > out/merged.config
+
+          # merge_config.sh'in yaptığı şeyin aynısı:
+          # birleşik config'i KCONFIG_ALLCONFIG olarak ver,
+          # eksik sembolleri default ile doldur
           make O=out \
             ARCH=arm64 \
             SUBARCH=arm64 \
@@ -58,7 +61,8 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             LLVM=1 \
             LLVM_IAS=1 \
-            olddefconfig
+            KCONFIG_ALLCONFIG=out/merged.config \
+            alldefconfig
 
       - name: Build kernel
         run: |
