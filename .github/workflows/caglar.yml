@@ -43,9 +43,9 @@ jobs:
           mkdir -p out
 
           cat arch/arm64/configs/gki_defconfig \
-              configs/vendor/pineapple_GKI.config \
-              configs/vendor/houji_GKI.config \
-              configs/vendor/houji_consolidate.config \
+              arch/arm64/configs/vendor/pineapple_GKI.config \
+              arch/arm64/configs/vendor/houji_GKI.config \
+              arch/arm64/configs/vendor/houji_consolidate.config \
               > out/merged.config
 
           make O=out \
