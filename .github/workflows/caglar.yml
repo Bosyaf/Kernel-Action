@@ -5,12 +5,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
+          # Gerçek repo ve branch bilgilerini buraya işledim
           repository: lavajCN/kernel_xiaomi_houji-shennong-spec
           ref: houji-shennong-u-oss
           fetch-depth: 1
@@ -20,66 +21,68 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison flex libssl-dev libelf-dev \
-            binutils-aarch64-linux-gnu \
-            make gcc g++ \
-            libncurses-dev \
-            zstd tar wget \
-            python3 cpio
+            binutils-aarch64-linux-gnu make gcc g++ \
+            libncurses-dev zstd tar wget python3 cpio \
+            lld llvm-ar llvm-nm llvm-objcopy llvm-objdump \
+            llvm-readelf llvm-strip lz4
 
       - name: Download Neutron Clang
         run: |
           mkdir -p $HOME/neutron-clang
-          wget -q \
-            https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst \
-            -O neutron-clang.tar.zst
+          # Snapdragon 8 Gen 3 için güncel Neutron Clang
+          wget -q https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst -O neutron-clang.tar.zst
           tar -I zstd -xf neutron-clang.tar.zst -C $HOME/neutron-clang
           echo "$HOME/neutron-clang/bin" >> $GITHUB_PATH
 
-      - name: Verify Clang
-        run: clang --version
-
-      - name: Merge and generate kernel config
+      - name: Build Kernel
         run: |
-          make ARCH=arm64 mrproper
-
+          # Çıktı klasörü oluştur
           mkdir -p out
+          
+          # Çevresel değişkenleri tanımla
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="$HOME/neutron-clang/bin:$PATH"
+          export KCONFIG_CONFIG=out/.config
+          
+          # 1. Adım: Configleri Düzgünce Birleştir (Merge)
+          # GKI temeli + Pineapple (SD8G3) + Houji (Xiaomi 14) + Consolidate (Xiaomi yamaları)
+          bash scripts/kconfig/merge_config.sh -O out \
+            arch/arm64/configs/gki_defconfig \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/vendor/houji_consolidate.config
 
-          cat arch/arm64/configs/gki_defconfig \
-              arch/arm64/configs/vendor/pineapple_GKI.config \
-              arch/arm64/configs/vendor/houji_GKI.config \
-              arch/arm64/configs/vendor/houji_consolidate.config \
-              > out/merged.config
-
-          make O=out \
+          # 2. Adım: Derlemeyi Başlat
+          make -j$(nproc) O=out \
             ARCH=arm64 \
-            SUBARCH=arm64 \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            READELF=llvm-readelf \
+            AR=llvm-ar \
             LLVM=1 \
             LLVM_IAS=1 \
-            KCONFIG_ALLCONFIG=out/merged.config \
-            alldefconfig
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            Image modules
 
-      - name: Build kernel
+      - name: Package Artifacts
         run: |
-          make O=out \
-            ARCH=arm64 \
-            SUBARCH=arm64 \
-            CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            -j$(nproc) \
-            Image.gz modules 2>&1 | tee out/build.log
+          mkdir -p build_assets
+          # Kernel imajını kopyala
+          cp out/arch/arm64/boot/Image build_assets/
+          
+          # Tüm modülleri (.ko) bul ve kopyala (Xiaomi 14 için şart)
+          find out -name "*.ko" -exec cp {} build_assets/ \;
+          
+          # Her şeyi tek bir zip/tar içinde topla
+          tar -czf xiaomi_14_kernel_build.tar.gz -C build_assets .
 
-      - name: Upload kernel image
+      - name: Upload Kernel Image & Modules
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-houji-${{ github.sha }}
-          path: |
-            out/arch/arm64/boot/Image.gz
-            out/arch/arm64/boot/Image
-            out/build.log
-            
+          name: Xiaomi-14-Houji-Kernel
+          path: xiaomi_14_kernel_build.tar.gz
