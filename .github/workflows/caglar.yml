@@ -40,6 +40,8 @@ jobs:
 
       - name: Merge and generate kernel config
         run: |
+          make ARCH=arm64 mrproper
+
           mkdir -p out
 
           cat arch/arm64/configs/gki_defconfig \
