@@ -15,6 +15,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          ref: houji-shennong-u-oss
 
       - name: Install dependencies
         run: |
@@ -43,16 +44,12 @@ jobs:
         run: |
           mkdir -p out
 
-          # Tüm config katmanlarını sırayla birleştir
           cat arch/arm64/configs/gki_defconfig \
               configs/vendor/pineapple_GKI.config \
               configs/vendor/houji_GKI.config \
               configs/vendor/houji_consolidate.config \
               > out/merged.config
 
-          # merge_config.sh'in yaptığı şeyin aynısı:
-          # birleşik config'i KCONFIG_ALLCONFIG olarak ver,
-          # eksik sembolleri default ile doldur
           make O=out \
             ARCH=arm64 \
             SUBARCH=arm64 \
