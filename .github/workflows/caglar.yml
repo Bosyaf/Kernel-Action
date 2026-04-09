@@ -2,221 +2,83 @@ name: Build Kernel - Xiaomi 14 (houji)
 
 on:
   workflow_dispatch:
-    inputs:
-      config_file:
-        description: 'Config File'
-        required: false
-        default: 'vendor/houji_defconfig'
-        type: choice
-        options:
-          - vendor/houji_defconfig
-          - defconfig
-      ccache:
-        description: 'Enable CCache'
-        required: false
-        default: 'true'
-        type: boolean
-      extra_args:
-        description: 'Extra Make Arguments'
-        required: false
-        default: ''
   push:
     branches:
-      - 'houji-shennong-u-oss'
-      - 'houji-shennong-spec'
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - 'houji-shennong-u-oss'
-      - 'houji-shennong-spec'
-
-env:
-  TZ: Asia/Shanghai
-  KERNEL_REPO: lavajCN/kernel_xiaomi_houji-shennong-spec
-  DEVICE_NAME: Xiaomi 14 (houji)
-  ARCH: arm64
-  CROSS_COMPILE: aarch64-linux-gnu-
-  CLANG_TRIPLE: aarch64-linux-gnu-
+      - houji-shennong-u-oss
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    if: ${{ !contains(github.event.head_commit.message, '[skip build]') }}
-    
+    runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout code
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Prepare environment
-        run: |
-          sudo timedatectl set-timezone Asia/Shanghai
-          echo "=== Environment Info ==="
-          echo "Kernel: ${{ env.KERNEL_REPO }}"
-          echo "Device: ${{ env.DEVICE_NAME }}"
-          echo "Branch: ${{ github.ref_name }}"
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git build-essential bc rsync libncurses-dev flex bison \
-            libssl-dev libelf-dev dwarves zstd lz4 python3 python3-pip \
-            ccache \
-            clang gcc \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu libc6-dev-arm64-cross
+            bc bison flex libssl-dev libelf-dev \
+            binutils-aarch64-linux-gnu \
+            make gcc g++ \
+            libncurses-dev \
+            zstd tar wget \
+            python3 cpio
 
-      - name: Setup CCache
-        if: inputs.ccache != false
+      - name: Download Neutron Clang
         run: |
-          echo "=== CCache Setup ==="
-          ccache -M 10G
-          ccache -z
-          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
-          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+          mkdir -p $HOME/neutron-clang
+          wget -q \
+            https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst \
+            -O neutron-clang.tar.zst
+          tar -I zstd -xf neutron-clang.tar.zst -C $HOME/neutron-clang
+          echo "$HOME/neutron-clang/bin" >> $GITHUB_PATH
 
-      - name: Setup Clang
-        run: |
-          which clang && clang --version || echo "Using GCC"
-          which aarch64-linux-gnu-gcc && aarch64-linux-gnu-gcc --version || echo "GCC cross compiler ready"
+      - name: Verify Clang
+        run: clang --version
 
-      - name: Generate build info
-        id: build_info
+      - name: Merge kernel configs
         run: |
-          TIMESTAMP=$(date +"%Y%m%d-%H%M")
-          COMMIT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG_NAME="${github.ref_name}"
-          else
-            TAG_NAME="build-${TIMESTAMP}-${COMMIT_SHA}"
-          fi
-          
-          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
-          echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
-          echo "sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
-          
-          echo "=== Build Info ==="
-          echo "Tag: ${TAG_NAME}"
-          echo "Timestamp: ${TIMESTAMP}"
-          echo "Commit: ${COMMIT_SHA}"
+          mkdir -p out
+          ARCH=arm64 scripts/kconfig/merge_config.sh -O out \
+            arch/arm64/configs/gki_defconfig \
+            configs/vendor/pineapple_GKI.config \
+            configs/vendor/houji_GKI.config \
+            configs/vendor/houji_consolidate.config
+
+      - name: Finalize config
+        run: |
+          make O=out \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            olddefconfig
 
       - name: Build kernel
         run: |
-          set -e
-          echo "=== Starting Kernel Build ==="
-          
-          CONFIG_FILE="${{ inputs.config_file || 'vendor/houji_defconfig' }}"
-          
-          # Clean previous builds
-          make clean 2>/dev/null || true
-          make mrproper 2>/dev/null || true
-          
-          echo "=== Using config: ${CONFIG_FILE} ==="
-          
-          # Generate .config from defconfig
-          make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- ${CONFIG_FILE}
-          
-          # Build kernel image
-          make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-            Image.gz-dtbs \
-            2>&1 | tee build.log
-          
-          echo "=== Build Completed ==="
+          make O=out \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            -j$(nproc) \
+            Image.gz modules 2>&1 | tee out/build.log
 
-      - name: Check build output
-        run: |
-          echo "=== Checking Build Output ==="
-          
-          if [ -f arch/arm64/boot/Image.gz ]; then
-            echo "✓ Image.gz created: $(ls -lh arch/arm64/boot/Image.gz)"
-          else
-            echo "✗ Image.gz not found!"
-            cat build.log | tail -100
-            exit 1
-          fi
-          
-          if [ -f vmlinux ]; then
-            echo "✓ Vmlinux created: $(ls -lh vmlinux)"
-          fi
-
-      - name: Setup artifacts directory
-        run: |
-          mkdir -p artifact
-          
-          # Copy Image.gz
-          cp arch/arm64/boot/Image.gz artifact/
-          
-          # Copy DTBs if exist
-          find arch/arm64/boot/dts -name "*.dtb" -exec cp {} artifact/ \; 2>/dev/null || true
-          
-          # Create build info
-          cat > artifact/build_info.txt << EOF
-          Kernel Build Info
-          =================
-          Device: ${{ env.DEVICE_NAME }}
-          Tag: ${{ steps.build_info.outputs.tag }}
-          Timestamp: ${{ steps.build_info.outputs.timestamp }}
-          Commit: ${{ steps.build_info.outputs.sha }}
-          Architecture: ${{ env.ARCH }}
-          Config: ${{ inputs.config_file || 'vendor/houji_defconfig' }}
-          Compiler: $(clang --version | head -1 || gcc --version | head -1)
-          Kernel Version: $(make kernelversion)
-          EOF
-          
-          echo "=== Artifacts ==="
-          ls -lh artifact/
-
-      - name: Generate tarball
-        run: |
-          cd artifact
-          tar -cvzf kernel-${{ steps.build_info.outputs.tag }}.tar.gz *
-          echo "=== Tarball Created ==="
-          ls -lh *.tar.gz
-          cd ..
-
-      - name: Upload artifacts
+      - name: Upload kernel image
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ steps.build_info.outputs.tag }}
+          name: kernel-houji-${{ github.sha }}
           path: |
-            artifact/Image.gz
-            artifact/*.dtb
-            artifact/build_info.txt
-            artifact/*.tar.gz
-            build.log
-          retention-days: 7
-
-      - name: Show CCache stats
-        if: inputs.ccache != false
-        run: |
-          echo "=== CCache Statistics ==="
-          ccache -s
-
-      - name: Create Release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.build_info.outputs.tag }}
-          name: "Kernel Build ${{ steps.build_info.outputs.tag }}"
-          body: |
-            ## Build Information
-            - **Device:** ${{ env.DEVICE_NAME }}
-            - **Timestamp:** ${{ steps.build_info.outputs.timestamp }}
-            - **Commit:** ${{ steps.build_info.outputs.sha }}
-            - **Architecture:** ${{ env.ARCH }}
-            - **Config:** ${{ inputs.config_file || 'vendor/houji_defconfig' }}
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image
+            out/build.log
             
-            ## Included Files
-            - Image.gz (kernel + device tree)
-            - Device Tree Blobs (.dtb)
-            - Full tarball for flashing
-          files: |
-            artifact/Image.gz
-            artifact/*.tar.gz
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
