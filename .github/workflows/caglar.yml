@@ -2,9 +2,6 @@ name: Build Kernel - Xiaomi 14 (houji)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - houji-shennong-u-oss
 
 jobs:
   build:
@@ -14,8 +11,9 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          repository: lavajCN/kernel_xiaomi_houji-shennong-spec
           ref: houji-shennong-u-oss
+          fetch-depth: 1
 
       - name: Install dependencies
         run: |
