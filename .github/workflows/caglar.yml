@@ -2,231 +2,81 @@ name: Build Xiaomi Mi 14 Kernel
 
 on:
   workflow_dispatch:
-    inputs:
-      kernel_name:
-        description: 'Kernel adı (zip dosyası için)'
-        required: false
-        default: 'HyperOS-Kernel'
-      build_type:
-        description: 'Build tipi'
-        required: true
-        default: 'perf'
-        type: choice
-        options:
-          - perf
-          - user
-          - userdebug
-      clean_build:
-        description: 'Temiz build yap'
-        required: false
-        default: false
-        type: boolean
-      upload_anykernel:
-        description: 'AnyKernel3 zip olarak yükle'
-        required: false
-        default: true
-        type: boolean
-
-  push:
-    branches:
-      - houji-shennong-u-oss
-    paths:
-      - 'arch/arm64/configs/**'
-      - 'drivers/**'
-      - 'net/**'
-      - 'sound/**'
-
-env:
-  DEVICE: houji
-  DEVICE_ALT: shennong
-  KERNEL_NAME: ${{ github.event.inputs.kernel_name || 'HyperOS-Kernel' }}
-  BUILD_TYPE: ${{ github.event.inputs.build_type || 'perf' }}
-  ARCH: arm64
-  SUBARCH: arm64
-  PLATFORM_VERSION: 14
-  ANDROID_MAJOR_VERSION: u
-  BRANCH: houji-shennong-u-oss
-  KBUILD_BUILD_USER: HyperOS-Bot
-  KBUILD_BUILD_HOST: GitHub-Actions
 
 jobs:
   build:
-    name: Build Kernel
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
     steps:
-      - name: Checkout kaynak kod
+      - name: Checkout Source
         uses: actions/checkout@v4
         with:
+          repository: lavajCN/kernel_xiaomi_houji-shennong-spec
+          ref: houji-shennong-u-oss
           fetch-depth: 0
-          submodules: recursive
 
-      - name: Sistem bagimliliklari kur
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            bc \
-            cpio \
-            kmod \
-            flex \
-            libelf-dev \
-            libssl-dev \
-            bison \
-            rsync \
-            dwarves \
-            lz4 \
-            xz-utils \
-            zlib1g-dev \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            zip \
-            unzip \
-            zstd
+            git build-essential bc rsync libncurses-dev flex bison \
+            libssl-dev libelf-dev dwarves zstd lz4 python3 \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu libc6-dev-arm64-cross \
+            zip unzip
 
-      - name: Neutron Clang indir
+      - name: Install Neutron Clang
         run: |
-          mkdir -p $GITHUB_WORKSPACE/clang
-          cd $GITHUB_WORKSPACE/clang
-          wget -q https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst
+          mkdir -p clang
+          cd clang
+          wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst
           tar -I zstd -xf neutron-clang-10032024.tar.zst
-          rm -f neutron-clang-10032024.tar.zst
+          rm neutron-clang-10032024.tar.zst
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-          $GITHUB_WORKSPACE/clang/bin/clang --version
 
-      - name: GCC Toolchain indir
+      - name: Build Kernel
         run: |
-          mkdir -p $GITHUB_WORKSPACE/gcc
-          cd $GITHUB_WORKSPACE/gcc
-          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/main.tar.gz
-          tar -xzf main.tar.gz
-          echo "$GITHUB_WORKSPACE/gcc/bin" >> $GITHUB_PATH
-
-      - name: AnyKernel3 indir
-        if: ${{ github.event.inputs.upload_anykernel != 'false' }}
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $GITHUB_WORKSPACE/AnyKernel3
-
-      - name: Kernel yapilandirma
-        run: |
-          if [ -f "arch/arm64/configs/vendor/xiaomi/houji_defconfig" ]; then
-            DEFCONFIG="vendor/xiaomi/houji_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/xiaomi/shennong_defconfig" ]; then
-            DEFCONFIG="vendor/xiaomi/shennong_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/xiaomi/houji-shennong_defconfig" ]; then
-            DEFCONFIG="vendor/xiaomi/houji-shennong_defconfig"
-          elif [ -f "arch/arm64/configs/vendor/houji_defconfig" ]; then
-            DEFCONFIG="vendor/houji_defconfig"
-          elif [ -f "arch/arm64/configs/houji_defconfig" ]; then
-            DEFCONFIG="houji_defconfig"
-          else
-            echo "Defconfig bulunamadı!"
-            find arch/arm64/configs -name "*houji*" -o -name "*shennong*" 2>/dev/null
-            exit 1
-          fi
-          echo "Kullanilan defconfig: $DEFCONFIG"
-          make O=out ARCH=arm64 $DEFCONFIG
-
-      - name: Kernel derle
-        id: compile
-        run: |
-          START_TIME=$(date +%s)
-          
-          make O=out ARCH=arm64 \
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          make -j$(nproc --all) ARCH=arm64 \
             CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
             LLVM_IAS=1 \
-            -j$(nproc --all) \
             Image dtbo.img dtb.img 2>&1 | tee build.log
-          
-          BUILD_STATUS=${PIPESTATUS[0]}
-          END_TIME=$(date +%s)
-          BUILD_TIME=$((END_TIME - START_TIME))
-          
-          echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
-          echo "build_status=${BUILD_STATUS}" >> $GITHUB_OUTPUT
-          
-          if [ ${BUILD_STATUS} -ne 0 ]; then
-            echo "Derleme başarısız!"
-            exit 1
-          fi
-          
-          echo "Derleme başarılı! Süre: $((BUILD_TIME / 60)) dakika $((BUILD_TIME % 60)) saniye"
 
-      - name: Build bilgileri
+      - name: Package with AnyKernel3
         run: |
-          if [ -f "out/include/generated/utsrelease.h" ]; then
-            KERNEL_VERSION=$(grep UTS_RELEASE out/include/generated/utsrelease.h | cut -d '"' -f2)
-            echo "Kernel surumu: $KERNEL_VERSION"
-          fi
-          if [ -f "out/arch/arm64/boot/Image" ]; then
-            IMAGE_SIZE=$(du -sh out/arch/arm64/boot/Image | cut -f1)
-            echo "Image boyutu: $IMAGE_SIZE"
-          fi
-          if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
-            DTBO_SIZE=$(du -sh out/arch/arm64/boot/dtbo.img | cut -f1)
-            echo "DTBO boyutu: $DTBO_SIZE"
-          fi
-          if [ -f "out/arch/arm64/boot/dtb.img" ]; then
-            DTB_SIZE=$(du -sh out/arch/arm64/boot/dtb.img | cut -f1)
-            echo "DTB boyutu: $DTB_SIZE"
-          fi
-          MODULE_COUNT=$(find out -name "*.ko" 2>/dev/null | wc -l)
-          echo "Kernel modulleri: $MODULE_COUNT adet"
-
-      - name: AnyKernel3 paketle
-        if: ${{ github.event.inputs.upload_anykernel != 'false' }}
-        run: |
-          cd $GITHUB_WORKSPACE/AnyKernel3
-          cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image .
-          [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/dtbo.img" ] && cp $GITHUB_WORKSPACE/out/arch/arm64/boot/dtbo.img .
-          [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/dtb.img" ] && cp $GITHUB_WORKSPACE/out/arch/arm64/boot/dtb.img .
-          mkdir -p modules
-          find $GITHUB_WORKSPACE/out -name "*.ko" -exec cp {} modules/ \; 2>/dev/null || true
+          git clone https://github.com/osm0sis/AnyKernel3.git
+          cp arch/arm64/boot/Image AnyKernel3/
+          cp arch/arm64/boot/dtbo.img AnyKernel3/ 2>/dev/null || true
+          cp arch/arm64/boot/dtb.img AnyKernel3/ 2>/dev/null || true
+          cd AnyKernel3
           DATE=$(date +%Y%m%d)
-          ZIP_NAME="HyperOS-Kernel-houji-${DATE}.zip"
-          zip -r9 "$GITHUB_WORKSPACE/${ZIP_NAME}" * -x '*.git*' -x '*.md' -x '*.txt'
-          echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
-          echo "Paket oluşturuldu: ${ZIP_NAME}"
+          zip -r9 ../HyperOS-Kernel-houji-${DATE}.zip *
 
-      - name: Artifact yukle
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HyperOS-Kernel-houji-${{ github.run_number }}
-          path: |
-            *.zip
-            out/arch/arm64/boot/Image
-            out/arch/arm64/boot/dtbo.img
-            out/arch/arm64/boot/dtb.img
+          name: kernel-houji-${{ github.run_number }}
+          path: "*.zip"
           retention-days: 30
-          if-no-files-found: warn
 
-      - name: Build ozeti
+      - name: Build Summary
         if: always()
         run: |
-          echo "## Xiaomi Mi 14 Kernel Build Ozeti" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Bilgi | Deger |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Cihaz | Xiaomi Mi 14 (houji/shennong) |" >> $GITHUB_STEP_SUMMARY
-          echo "| SoC | Qualcomm SM8650 (Snapdragon 8 Gen3) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Toolchain | Neutron Clang 10032024 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Suresi | ${{ steps.compile.outputs.build_time || 'N/A' }} saniye |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tarih | $(date '+%Y-%m-%d %H:%M:%S') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | houji-shennong-u-oss |" >> $GITHUB_STEP_SUMMARY
-          echo "| Durum | ${{ job.status == 'success' && 'Basarili' || 'Basarisiz' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Ozeti" >> $GITHUB_STEP_SUMMARY
+          echo "- Source: https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: houji-shennong-u-oss" >> $GITHUB_STEP_SUMMARY
+          echo "- Clang: https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst" >> $GITHUB_STEP_SUMMARY
+          echo "- Device: Xiaomi Mi 14 (houji/shennong)" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
 
-      - name: Hata detaylari
+      - name: Error Log
         if: failure()
         run: |
-          echo "## Build Hatasi" >> $GITHUB_STEP_SUMMARY
+          echo "## Hata" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ -f "build.log" ]; then
-            tail -100 build.log >> $GITHUB_STEP_SUMMARY
-          else
-            echo "build.log bulunamadı" >> $GITHUB_STEP_SUMMARY
-          fi
+          tail -200 build.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
