@@ -1,4 +1,4 @@
-name: CG+ Neutron Gaming Kernel
+name: CG+ Yuki Gaming Kernel
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve NEUTRON CLANG Çekimi (Gizli Tünel)
+      - name: 1. Paketler ve YUKI CLANG Çekimi (Gizli Tünel)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,15 +35,15 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Neutron Clang Linki Çekiliyor..."
-          CLANG_LINK="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst"
+          echo "🔥 Yuki Clang Linki Çekiliyor..."
+          CLANG_LINK="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
           echo "İndirilecek Link: $CLANG_LINK"
           
           curl -L -o clang.tar.zst "$CLANG_LINK"
           
           echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-neutron
-          tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-neutron
+          mkdir -p $GITHUB_WORKSPACE/clang-yuki
+          tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
 
       - name: 2. Kaynakları Çek (Yeni Staging Dalı)
@@ -97,7 +97,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-neutron/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -193,7 +193,7 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-neutron/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           echo "🔍 WALT / governor config kontrolü:"
           grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
@@ -219,24 +219,24 @@ jobs:
             -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
-          echo "BOOTHASH=Neutron-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Neutron Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Neutron-Balanced-Pro.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Neutron Clang (Balanced Pro - Altın Denge)"
+          name: "CG+ Yuki Clang (Balanced Pro - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
