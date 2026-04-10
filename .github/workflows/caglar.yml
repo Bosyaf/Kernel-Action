@@ -142,6 +142,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_OPTIMIZE_FOR_SIZE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
@@ -179,22 +184,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          # ===== ZRAM & LZ4 OPTIMIZATION (YENİ EKLENEN) =====
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSMALLOC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ZRAM_DEF_COMP_LZORLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ZRAM_DEF_COMP_LZO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4HC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_COMPRESS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_DECOMPRESS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSMALLOC_STAT
-          
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -216,22 +205,18 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+sha3+crc+dotprod \
+            KCFLAGS="-march=armv9.2-a+crypto+sha3+crc+dotprod \
             -falign-functions=32 \
-            -fno-asynchronous-unwind-tables \
-            -fno-unwind-tables \
-            -fno-math-errno \
-            -fmerge-all-constants \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -mllvm -enable-ext-tsp-block-placement=1 \
+            -fno-math-errno \
+            -fno-trapping-math \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
-            -Wl,--icf=all" \
+            -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
           echo "BOOTHASH=Neutron-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
