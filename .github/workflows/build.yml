@@ -46,10 +46,10 @@ jobs:
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-neutron
           rm -f clang.tar.zst
 
-      - name: 2. Kaynakları Çek (Yeni Staging Dalı)
+      - name: 2. Kaynakları Çek (Yeni Dal)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          git clone -b android14-6.1 https://github.com/ahmed-alnassif/android_kernel_common-6.1-lts.git --depth=1 common
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
@@ -147,6 +147,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          # Config ayarları
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SM8650
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IRQ_SBALANCE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_SBALANCE_EXCLUDE_CPUS "2,3,4,5,6,7"
@@ -169,9 +170,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          /scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
-          /scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BRUTAL
-          /scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BRUTAL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BIC
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
