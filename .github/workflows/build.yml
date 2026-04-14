@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (Castorice)
+name: CG+ Yuki Gaming Kernel (Vortex)
 
 permissions:
   contents: write
@@ -46,10 +46,10 @@ jobs:
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
 
-      - name: 2. Kaynakları Çek (Castorice Stable)
+      - name: 2. Kaynakları Çek (Vortex Staging)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b castorice-stable https://github.com/Anything-at-25-00/kernel_common_android14-6.1.git --depth=1 common
+          git clone -b android14-6.1-staging https://github.com/Kingfinik98/vortex-kernel-common-android14-6.1.git --depth=1 common
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
@@ -152,7 +152,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
@@ -227,24 +226,24 @@ jobs:
             -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
-          echo "BOOTHASH=Yuki-Castorice-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-Vortex-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (Castorice)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (Vortex)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro-Castorice.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro-Vortex.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Clang (Castorice - Altın Denge)"
+          name: "CG+ Yuki Clang (Vortex - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
