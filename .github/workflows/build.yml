@@ -174,6 +174,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ZRAM_DEF_COMP_LZORLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
