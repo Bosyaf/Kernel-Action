@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (Vortex)
+name: Mythralis-X Kernel (Yuki Clang)
 
 permissions:
   contents: write
@@ -9,6 +9,7 @@ on:
 
 jobs:
   build-kernel:
+    name: Build with Yuki Clang
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
@@ -161,7 +162,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
@@ -186,6 +186,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
@@ -199,10 +200,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Mythralis-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
-
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -239,21 +240,25 @@ jobs:
             -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-Vortex-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-MythralisX-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (Vortex)/' anykernel.sh
+          sed -i "s/kernel.string=.*/kernel.string=Mythralis-X Kernel (Yuki Clang)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro-Vortex.zip" ./*
+          zip -r "../Mythralis-X-Yuki.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Clang (Vortex 
+          name: "Mythralis-X (Yuki Clang)"
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
