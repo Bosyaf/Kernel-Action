@@ -1,4 +1,4 @@
-name: Mythralis-X Kernel (Yuki Clang)
+name: Mythralis-X Kernel (ZyCromerZ Clang)
 
 permissions:
   contents: write
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-kernel:
-    name: Build with Yuki Clang
+    name: Build with ZyCromerZ Clang
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve YUKI CLANG Çekimi (Gizli Tünel)
+      - name: 1. Paketler ve ZYC CLANG Çekimi (Gizli Tünel)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -36,13 +36,16 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Yuki Clang Linki Çekiliyor..."
-          CLANG_LINK="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
           
-          curl -L -o clang.tar.zst "$CLANG_LINK"
-          mkdir -p $GITHUB_WORKSPACE/clang-yuki
-          tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
-          rm -f clang.tar.zst
+          curl -L -o clang.tar.gz "$CLANG_LINK"
+          
+          echo "Arşiv Çıkarılıyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          rm -f clang.tar.gz
 
       - name: 2. Kaynakları Çek (Vortex Staging)
         run: |
@@ -116,7 +119,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -212,7 +215,7 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_TCP_CONG_BBR|CONFIG_DEFAULT_TCP_CONG|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=" out/.config || true
@@ -240,24 +243,24 @@ jobs:
             -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-MythralisX-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Zyc-MythralisX-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i "s/kernel.string=.*/kernel.string=Mythralis-X Kernel (Yuki Clang)/" anykernel.sh
+          sed -i "s/kernel.string=.*/kernel.string=Mythralis-X Kernel (ZyCromerZ Clang)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Mythralis-X-Yuki.zip" ./*
+          zip -r "../Mythralis-X-Zyc.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Mythralis-X (Yuki Clang)"
+          name: "Mythralis-X (ZyCromerZ Clang)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
