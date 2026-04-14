@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel
+name: CG+ Yuki Gaming Kernel (Castorice)
 
 permissions:
   contents: write
@@ -46,25 +46,34 @@ jobs:
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
 
-      - name: 2. Kaynakları Çek (Yeni Staging Dalı)
+      - name: 2. Kaynakları Çek (Castorice Stable)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          git clone -b castorice-stable https://github.com/Anything-at-25-00/kernel_common_android14-6.1.git --depth=1 common
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
-      - name: 4. Wi-Fi ve Asya Yamaları
+      - name: 4. Wi-Fi, Asya ve BBRv3 Yamaları
         run: |
           cd common
+          # Wi-Fi Patch
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
+          
+          # Baseband Guard
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+          
+          # BBRv3 Patch Eklenmesi
+          curl -fLSs https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/patches/bbrv3.patch > bbrv3.patch || true
+          if [ -s bbrv3.patch ] && grep -q "diff" bbrv3.patch; then
+            patch -p1 --forward < bbrv3.patch || true
+          fi
 
       - name: 5. SUSFS Master Formülü
         run: |
@@ -181,7 +190,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Mithrond-X"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Mythralis-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -190,7 +199,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme
+      - name: 7. Kernel Derleme (Polly Temizlendi)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -215,31 +224,27 @@ jobs:
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-mllvm,-polly \
-            -Wl,-mllvm,-polly-vectorizer=stripmine \
-            -Wl,-mllvm,-vectorizer-maximize-bandwidth \
-            -Wl,-mllvm,-enable-ext-tsp-block-placement=1" \
+            -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
-          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-Castorice-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (Castorice)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro-Castorice.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Clang (Balanced Pro - Altın Denge)"
+          name: "CG+ Yuki Clang (Castorice - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
