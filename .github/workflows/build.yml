@@ -47,10 +47,10 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
           rm -f clang.tar.gz
 
-      - name: 2. Kaynakları Çek (Vortex Staging)
+      - name: 2. Kaynakları Çek (staging)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/Kingfinik98/vortex-kernel-common-android14-6.1.git --depth=1 common
+          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       - name: 3. SADECE VortexSU Kurulumu
         run: |
@@ -185,6 +185,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_HTCP
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
@@ -264,4 +267,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
