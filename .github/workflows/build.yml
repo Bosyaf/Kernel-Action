@@ -197,8 +197,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFG80211
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_WCNSS_CTRL
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CFG80211 y
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_MAC80211 y
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCA_CLD_WLAN || true
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nerathor-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO            
           sed -i 's/check_defconfig//' build.config.gki || true
