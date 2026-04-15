@@ -163,9 +163,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FW_LOADER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FW_LOADER_USER_HELPER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FW_LOADER_PAGED_BUF
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_WCNSS_CTRL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
