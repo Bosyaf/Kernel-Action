@@ -197,38 +197,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-
-              echo "🔥 WiFi ayarları aktive ediliyor..."
-
-              # Temel WiFi (bunlar kesin olmalı)
-             ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFG80211 || echo "⚠️ CFG80211 bulunamadı!"
-             ./scripts/config --file $CONFIG_FILE --enable CONFIG_MAC80211 || echo "⚠️ MAC80211 bulunamadı!"
-             ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIRELESS || true
-             ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETDEVICES || true
-             ./scripts/config --file $CONFIG_FILE --enable CONFIG_WLAN || true
-
-             # WEXT (varsa aktive et)
-            ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFG80211_WEXT || true
-            ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIRELESS_EXT || true
-            ./scripts/config --file $CONFIG_FILE --enable CONFIG_WEXT_CORE || true
-            ./scripts/config --file $CONFIG_FILE --enable CONFIG_WEXT_PROC || true
-            ./scripts/config --file $CONFIG_FILE --enable CONFIG_WEXT_SPY || true
-            ./scripts/config --file $CONFIG_FILE --enable CONFIG_WEXT_PRIV || true
-
-            # Qualcomm (varsa)
-           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_WCNSS_CTRL || true
-           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WCNSS_MEM_PRE_ALLOC || true
-           ./scripts/config --file $CONFIG_FILE --module CONFIG_QCA_CLD_WLAN || true
-           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WLAN_FIRMWARE_SERVICE || true
-           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WLAN_VENDOR_QUALCOMM || true
-
-             # Kontrol et
-             echo "✅ Aktif WiFi ayarları:"
-            grep -E "^CONFIG_(CFG80211|MAC80211|WIRELESS|WLAN)=" out/.config || echo "❌ Temel WiFi ayarları YOK!"
-          
-           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nerathor-X"
-           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO            
-            sed -i 's/check_defconfig//' build.config.gki || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFG80211
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_WCNSS_CTRL
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nerathor-X"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO            
+          sed -i 's/check_defconfig//' build.config.gki || true
           
             make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
