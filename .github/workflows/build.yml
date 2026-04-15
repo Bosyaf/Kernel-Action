@@ -61,12 +61,6 @@ jobs:
         run: |
           cd common
           
-          # Wi-Fi Patch
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          
           # Baseband Guard
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
@@ -169,6 +163,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FW_LOADER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FW_LOADER_USER_HELPER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_FW_LOADER_PAGED_BUF
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
