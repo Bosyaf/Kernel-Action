@@ -74,8 +74,7 @@ jobs:
         run: |
           cd common
           git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git
-          cd ReSukiSU
-          bash kernel/setup.sh
+          bash ReSukiSU/kernel/setup.sh
           echo "✅ ReSukiSU entegre edildi"
 
       - name: 5.5. Özel Performans ve SUSFS Yamaları (Bosyaf Patches)
