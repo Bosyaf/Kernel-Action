@@ -37,8 +37,11 @@ jobs:
           
           echo "🔥 Yuki Clang Linki Çekiliyor..."
           CLANG_LINK="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "İndirilecek Link: $CLANG_LINK"
           
           curl -L -o clang.tar.zst "$CLANG_LINK"
+          
+          echo "Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-yuki
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
@@ -48,8 +51,13 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      # ✅ WiFi önce
-      - name: 3. Wi-Fi ve Asya Yamaları
+      - name: 3. VortexSU Kurulumu
+        run: |
+          cd common
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
+          echo "✅ VortexSU entegre edildi"
+
+      - name: 4. Wi-Fi ve Asya Yamaları
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
@@ -59,27 +67,23 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      # ✅ SUSFS ikinci
-      - name: 4. SUSFS Kurulumu (R27)
+      - name: 5. SUSFS Master Formülü (Veilkernel Fix)
         run: |
-         cd common
-
-         echo "🔥 SUSFS R27 indiriliyor..."
-
-         git clone https://gitlab.com/simonpunk/susfs4ksu.git ../susfs
-         cd ../susfs
-         git checkout v1.5.3-R27
-
-         cd ../common
-
-         echo "🔥 SUSFS patch uygulanıyor..."
-
-         cp -R ../susfs/kernel_patches/fs/* ./fs/
-         cp -R ../susfs/kernel_patches/include/* ./include/
-
-         patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-
-         echo "✅ SUSFS R27 entegre edildi"
+          cd common
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
+          
+          # Veilkernel namespace fix (Hunk hatasını çözer)
+          git clone --depth=1 https://github.com/Kingfinik98/Veilkernel.git ../veil
+          if [ -f ../veil/kernel-patches/fs_namespace.patch ]; then
+            patch -p1 --forward < ../veil/kernel-patches/fs_namespace.patch || true
+          fi
+          
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -97,19 +101,8 @@ jobs:
           rm -f .ns_inject_tmp
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
-
-      # ✅ KernelSU EN SON
-      - name: 5. KernelSU (Official) Kurulumu
-        run: |
-          cd common
-    
-          echo "🔥 Official KernelSU indiriliyor..."
-          git clone --depth=1 https://github.com/tiann/KernelSU.git kernelsu
- 
-          echo "🔥 KernelSU patch uygulanıyor..."
-          bash kernelsu/kernel/setup.sh
-
-          echo "✅ KernelSU entegre edildi"
+          
+          echo "✅ SUSFS entegre edildi"
 
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
@@ -190,6 +183,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -220,25 +214,31 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=32 \
+            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc \
+            -falign-functions=64 \
+            -falign-loops=64 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
+            -fno-math-errno \
+            -fno-trapping-math \
+            -fno-stack-protector \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -fvectorize \
             -fslp-vectorize \
             -finline-functions \
+            -funroll-loops \
             -fno-common \
-            -Wno-constant-logical-operand" \
+            -fno-signed-zeros \
+            -Wno-constant-logical-operand \
+            -Wno-unused-function" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe \
-            -Wl,-z,now \
-            -Wl,-O2" \
-            Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
+            -Wl,-z,now" \
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
@@ -261,4 +261,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
