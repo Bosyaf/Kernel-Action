@@ -61,7 +61,7 @@ jobs:
 
       # ✅ SUSFS ikinci
       - name: 4. SUSFS Kurulumu (R27)
-       run: |
+        run: |
          cd common
 
          echo "🔥 SUSFS R27 indiriliyor..."
