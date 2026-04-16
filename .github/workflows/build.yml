@@ -60,18 +60,26 @@ jobs:
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
       # ✅ SUSFS ikinci
-      - name: 4. SUSFS Kurulumu
-        run: |
-          cd common
+      - name: 4. SUSFS Kurulumu (R27)
+       run: |
+         cd common
 
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+         echo "🔥 SUSFS R27 indiriliyor..."
 
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
+         git clone https://gitlab.com/simonpunk/susfs4ksu.git ../susfs
+         cd ../susfs
+         git checkout v1.5.3-R27
 
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+         cd ../common
 
-          echo "✅ SUSFS entegre edildi"
+         echo "🔥 SUSFS patch uygulanıyor..."
+
+         cp -R ../susfs/kernel_patches/fs/* ./fs/
+         cp -R ../susfs/kernel_patches/include/* ./include/
+
+         patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+
+         echo "✅ SUSFS R27 entegre edildi"
           
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
