@@ -12,8 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
-      KBUILD_BUILD_USER: "mustafa"
-      KBUILD_BUILD_HOST: "doruk"
+      KBUILD_BUILD_USER: "caglar"
+      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
       - name: Maximize Space
@@ -67,24 +67,21 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü (Veilkernel Fix)
+      - name: 5. SUSFS Master Formülü
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           
-          # Veilkernel namespace fix (Hunk hatasını çözer)
-          git clone --depth=1 https://github.com/Kingfinik98/Veilkernel.git ../veil
-          if [ -f ../veil/kernel-patches/fs_namespace.patch ]; then
-            patch -p1 --forward < ../veil/kernel-patches/fs_namespace.patch || true
-          fi
-          
+          # SUSFS ana yama (1 hunk fail normal, 9/10 başarılı)
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
+          # build-vortex fs_proc_base.c fix (bu çalışıyor!)
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
+          # Manual namespace injection (asıl bu çalıştırıyor)
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -192,7 +189,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Mustafa-Doruk"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
