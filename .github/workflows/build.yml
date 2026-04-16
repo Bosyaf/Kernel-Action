@@ -51,20 +51,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. ReSukiSU (RSKSU) Kurulumu
-        run: |
-          cd common
-
-          echo "🔥 ReSukiSU indiriliyor..."
-          git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git rsksu
-
-          echo "🔥 Kernel entegrasyonu yapılıyor..."
-          cd rsksu/kernel
-          bash setup.sh
-
-          echo "✅ ReSukiSU entegre edildi"
-
-      - name: 4. Wi-Fi ve Asya Yamaları
+      - name: 3. Wi-Fi ve Asya Yamaları
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
@@ -74,16 +61,22 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Kurulumu
+      - name: 4. SUSFS Kurulumu
         run: |
           cd common
-
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
-
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          echo "✅ SUSFS entegre edildi"
+
+      - name: 5. ReSukiSU Kurulumu
+        run: |
+          cd common
+          git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git
+          cd ReSukiSU
+          bash kernel/setup.sh
+          echo "✅ ReSukiSU entegre edildi"
 
       - name: 5.5. Özel Performans ve SUSFS Yamaları (Bosyaf Patches)
         run: |
@@ -93,28 +86,20 @@ jobs:
           PATCH_DIR="../patches"
           
           if [ ! -d "$PATCH_DIR" ]; then
-            echo "❌ HATA: $PATCH_DIR dizini bulunamadı! 'actions/checkout' ile repodaki dosyaların geldiğinden emin olun."
+            echo "❌ HATA: $PATCH_DIR dizini bulunamadı!"
           else
-            # Yamaları sırayla uygula ve sonuçları detaylıca logla
             for patch_file in "$PATCH_DIR"/*.patch; do
-              # Dosya adını temizle
               filename=$(basename "$patch_file")
               echo "----------------------------------------------------"
               echo "📦 İşleniyor: $filename"
-              
-              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
-                echo "⚠️ DİKKAT: SUSFS ekstra yaması algılandı, sisteme entegre ediliyor..."
-              fi
-              
-              # Yamayı uygula ve sonucuna göre log yazdır (|| true ile akışı bozmasını engelliyoruz)
               if patch -p1 --forward < "$patch_file"; then
                 echo "✅ BAŞARILI: $filename kernela sorunsuz işlendi."
               else
-                echo "❌ HATA / ATLANDI: $filename uygulanamadı! (Kod çakışması, eksik dizin veya zaten ekli olabilir)"
+                echo "❌ HATA / ATLANDI: $filename uygulanamadı!"
               fi
             done
             echo "----------------------------------------------------"
-            echo "🎉 Tüm özel yamaların kontrolü tamamlandı. Derleme aşamasına geçiliyor."
+            echo "🎉 Tüm özel yamaların kontrolü tamamlandı."
           fi
 
       - name: 6. Full Kernel Config & Derleme Hazırlığı
@@ -194,6 +179,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS_REDIRECT_DIR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS_INDEX
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -203,12 +190,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_FUNCTION_TRACER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS_REDIRECT_DIR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS_INDEX
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimriel-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -256,11 +240,9 @@ jobs:
       - name: 7.5 Apply KPM Patch
         run: |
           cd common/out/arch/arm64/boot
-
           curl -LO https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/latest/download/patch_linux
           chmod +x patch_linux
           ./patch_linux
-
           mv -f oImage Image
 
       - name: 8. AnyKernel3
@@ -282,4 +264,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
