@@ -51,16 +51,9 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. VorteXSU Kurulumu ve KSU Config Enjeksiyonu
+      - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
-          
-          echo "🔥 KSU & SuSFS configleri enjekte ediliyor..."
-          wget -qO inject.sh https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/inject_ksu/gki-deconfig-6.1.sh
-          bash inject.sh
-          rm -f inject.sh
-
-          echo "🔥 VorteXSU Kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
 
       - name: 4. Wi-Fi ve Asya Yamaları
@@ -73,55 +66,65 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü (build.sh Entegrasyonu)
+      - name: 5. SUSFS Master Formülü
         run: |
           cd common
-          
-          echo "🔥 Yama Kaynakları Çekiliyor..."
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          echo "🔥 Ana SUSFS Yaması Uygulanıyor..."
-          patch -p1 < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          echo "🔥 6.1 Özel fs_proc_base.c Yaması Uygulanıyor..."
-          patch -p1 < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "🔥 Namespace.c Özel Enjeksiyonu Uygulanıyor..."
           cat << 'EOF' > .ns_inject_tmp
-
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
-
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-
-          #define DEFAULT_KSU_MNT_ID 100000
-          #define DEFAULT_KSU_MNT_GROUP_ID 100000
-          #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT BIT(24)
           #define CL_COPY_MNT_NS BIT(25)
           #endif
-
           EOF
-          
-          if ! grep -q "static DEFINE_IDA(susfs_mnt_id_ida);" ./fs/namespace.c; then
-            sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
-            echo "✅ SUSFS namespace.c enjeksiyonu eklendi."
-          else
-            echo "✅ SUSFS namespace.c enjeksiyonu zaten mevcut."
-          fi
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
-
-          echo "🔥 Statfs CRC Fix (GKI 6.1) Uygulanıyor..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+
+      - name: 5.5. Özel Performans ve SUSFS Yamaları (Bosyaf Patches)
+        run: |
+          cd common
+          echo "🔥 Repo içerisindeki özel yamalar (patches klasörü) uygulanıyor..."
+          
+          PATCH_DIR="../patches"
+          
+          if [ ! -d "$PATCH_DIR" ]; then
+            echo "❌ HATA: $PATCH_DIR dizini bulunamadı! 'actions/checkout' ile repodaki dosyaların geldiğinden emin olun."
+          else
+            # Yamaları sırayla uygula ve sonuçları detaylıca logla
+            for patch_file in "$PATCH_DIR"/*.patch; do
+              # Dosya adını temizle
+              filename=$(basename "$patch_file")
+              echo "----------------------------------------------------"
+              echo "📦 İşleniyor: $filename"
+              
+              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
+                echo "⚠️ DİKKAT: SUSFS ekstra yaması algılandı, sisteme entegre ediliyor..."
+              fi
+              
+              # Yamayı uygula ve sonucuna göre log yazdır (|| true ile akışı bozmasını engelliyoruz)
+              if patch -p1 --forward < "$patch_file"; then
+                echo "✅ BAŞARILI: $filename kernela sorunsuz işlendi."
+              else
+                echo "❌ HATA / ATLANDI: $filename uygulanamadı! (Kod çakışması, eksik dizin veya zaten ekli olabilir)"
+              fi
+            done
+            echo "----------------------------------------------------"
+            echo "🎉 Tüm özel yamaların kontrolü tamamlandı. Derleme aşamasına geçiliyor."
+          fi
 
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
@@ -210,7 +213,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimriel-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -219,7 +222,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme & KPM Yaması
+      - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -232,51 +235,25 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc \
-            -falign-functions=64 \
-            -falign-loops=64 \
+            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
+            -falign-functions=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-math-errno \
-            -fno-trapping-math \
-            -fno-stack-protector \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -fvectorize \
             -fslp-vectorize \
             -finline-functions \
-            -funroll-loops \
             -fno-common \
-            -fno-signed-zeros \
-            -Wno-constant-logical-operand \
-            -Wno-unused-function" \
+            -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
-            -Wl,--strip-all \
-            -Wl,--icf=all \
-            -Wl,-z,now" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
-          echo "🔥 VorteXSU KPM Yaması Uygulanıyor..."
-          cd out/arch/arm64/boot
-          if [ -f Image ]; then
-            echo "✅ Image bulundu, KPM yaması yapılıyor..."
-            curl -LSs "https://github.com/Kingfinik98/SukiSU_patch/raw/refs/heads/main/kpm/patch_linux" -o patch
-            chmod 777 patch
-            ./patch
-            if [ -f oImage ]; then
-              mv -f oImage Image
-              ls -lh Image
-              echo "✅ KPM Patch başarıyla uygulandı."
-            else
-              echo "⚠️ oImage bulunamadı!"
-            fi
-          else
-            echo "⚠️ Image dosyası bulunamadı, KPM atlanıyor."
-          fi
-          cd ../../../../
+            -Wl,--icf=safe \
+            -Wl,-z,now \
+            -Wl,-O2" \
+            Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
           echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
