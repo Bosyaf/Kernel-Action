@@ -68,14 +68,19 @@ jobs:
           cp -R ../susfs/kernel_patches/fs/* ./fs/
           cp -R ../susfs/kernel_patches/include/* ./include/
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          echo "✅ SUSFS entegre edildi"
 
-      - name: 5. ReSukiSU Kurulumu
-        run: |
-          cd common
-          git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git
-          bash ReSukiSU/kernel/setup.sh
-          echo "✅ ReSukiSU entegre edildi"
+          # Hunk #1 FAILED sorununu manuel düzelt
+          # namespace.c başına susfs_def.h include ekle
+          if ! grep -q "susfs_def.h" fs/namespace.c; then
+            sed -i '1s/^/#include <linux\/susfs_def.h>\n/' fs/namespace.c
+          fi
+
+          # susfs_def.h içindeki IDA tanımlarını namespace.c'ye ekle
+          if ! grep -q "susfs_mnt_id_ida" fs/namespace.c; then
+            sed -i '/^#include <linux\/susfs_def.h>/a static DEFINE_IDA(susfs_mnt_id_ida);\nstatic DEFINE_IDA(susfs_mnt_group_ida);' fs/namespace.c
+          fi
+
+          echo "✅ SUSFS entegre edildi"
 
       - name: 5.5. Özel Performans ve SUSFS Yamaları (Bosyaf Patches)
         run: |
