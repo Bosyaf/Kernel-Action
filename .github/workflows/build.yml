@@ -215,23 +215,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=32 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
-            -fno-unwind-tables \
-            -fno-asynchronous-unwind-tables \
-            -fvectorize \
-            -fslp-vectorize \
-            -finline-functions \
-            -fno-common \
-            -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-z,now \
-            -Wl,-O2" \
+            -falign-functions=32" \
             Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
           echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
