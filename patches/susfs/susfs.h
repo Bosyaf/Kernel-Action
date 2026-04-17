@@ -203,6 +203,7 @@ void susfs_update_sus_kstat(void __user **user_info);
 
 /* spoof_uname */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+extern bool is_susfs_uname_set;
 void susfs_set_uname(void __user **user_info);
 void susfs_spoof_uname(struct new_utsname* tmp);
 #endif
