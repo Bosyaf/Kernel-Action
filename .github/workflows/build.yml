@@ -41,7 +41,7 @@ jobs:
           echo "🔥 Yuki Clang indiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-yuki
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
-          echo "✅ Clang indirildi ve cache'lendi!"
+          echo "✅ Clang cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -65,12 +65,18 @@ jobs:
           bash $GITHUB_WORKSPACE/patches/ksu/setup.sh dev-susfs
           echo "✅ KernelSU-Next tamamlandı!"
 
+      - name: 3.5. Multi-Manager Desteği (KowSU, MKSU, VortexSU, ReSukiSU)
+        run: |
+          cd common/KernelSU-Next
+          echo "🔥 Multi-manager patchi uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
+          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU desteği eklendi!"
+
       - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
           echo "🔥 SUSFS dosyaları kopyalanıyor..."
           
-          # SUSFS kaynak dosyaları
           cp $GITHUB_WORKSPACE/patches/susfs/susfs.c ./fs/susfs.c
           mkdir -p ./include/linux
           cp $GITHUB_WORKSPACE/patches/susfs/susfs.h ./include/linux/susfs.h
@@ -120,7 +126,7 @@ jobs:
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
-          echo "🔥 Repo içerisindeki özel yamalar (patches klasörü) uygulanıyor..."
+          echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
           
           PATCH_DIR="../patches"
           
@@ -133,7 +139,7 @@ jobs:
               echo "📦 İşleniyor: $filename"
               
               if [ "$filename" == "susfs_dentry_checks.patch" ]; then
-                echo "⚠️ SUSFS ekstra yaması algıtı, sisteme entegre ediliyor..."
+                echo "⚠️ SUSFS ekstra yaması algılandı, entegre ediliyor..."
               fi
               
               if patch -p1 --forward < "$patch_file"; then
@@ -234,6 +240,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-RivendellX"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
