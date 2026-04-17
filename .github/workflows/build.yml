@@ -51,6 +51,14 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
+      - name: 2.5. ReSukiSU (RSKSU) Kurulumu
+        run: |
+          cd common
+          git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git
+          # Root dizininde kalıp setup çalıştırıyoruz ki path hatası vermesin
+          bash ReSukiSU/kernel/setup.sh
+          echo "✅ ReSukiSU entegre edildi."
+
       - name: 3. Yeni Root Sistemi (KernelSU) ve Çoklu Manager Yaması
         run: |
           cd common
