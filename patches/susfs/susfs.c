@@ -599,7 +599,7 @@ out_spoof_kstat:
 /* spoof_uname */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 static struct st_susfs_uname my_uname = {0};
-static bool is_susfs_uname_set = false;
+bool is_susfs_uname_set = false;
 static DEFINE_SEQLOCK(susfs_uname_seqlock);
 
 void susfs_set_uname(void __user **user_info) {
