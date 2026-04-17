@@ -51,41 +51,51 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           echo "✅ Kernel source: 6.1-staging (ramabondanp)"
 
-      - name: 3. SUSFS Entegrasyonu (ÖNCE - Header Dosyaları Dahil)
+      - name: 3. SUSFS Entegrasyonu (ADIM 1/2 - ÖNCE)
         run: |
           cd common
-          echo "🔥 SUSFS4KSU patchleri indiriliyor (gki-android14-6.1)..."
+          echo "🔥 SUSFS4KSU (pershoot fork) indiriliyor..."
           
-          # SUSFS repo klonla
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1 ../susfs
+          # pershoot'un güncel fork'unu kullan (daha stabil)
+          git clone --depth=3 --no-tags https://gitlab.com/pershoot/susfs4ksu.git -b gki-android14-6.1-dev ../susfs
           
           # FS dosyalarını kopyala
           echo "📦 FS dosyaları kopyalanıyor..."
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -p ../susfs/kernel_patches/fs/* ./fs/
           
-          # Include dosyalarını kopyala (KRİTİK!)
+          # Include dosyalarını kopyala
           echo "📦 Include dosyaları kopyalanıyor..."
-          mkdir -p ./include/linux
-          cp -R ../susfs/kernel_patches/include/linux/* ./include/linux/
+          cp -p ../susfs/kernel_patches/include/linux/* ./include/linux/
           
-          # Ana SUSFS patchini uygula
+          # Patch dosyalarını kopyala
+          echo "📦 Patch dosyaları kopyalanıyor..."
+          cp -p ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch .
+          cp -p ../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch .
+          
+          # Patchleri uygula (-ui flag ile: unified + input)
           echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ Patch zaten uygulanmış"
+          patch -p1 -ui 50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ Patch zaten uygulanmış"
           
-          # Scope-minimized manual hooks patchi
-          if [ -f "../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch" ]; then
-            echo "📦 Manual hooks patchi uygulanıyor..."
-            patch -p1 --forward < ../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch || echo "⚠️ Patch zaten uygulanmış"
-          fi
+          echo "📦 Manual hooks patchi uygulanıyor..."
+          patch -p1 -ui 60_scope-minimized_manual_hooks.patch || echo "⚠️ Patch zaten uygulanmış"
+          
+          # Patch dosyalarını temizle
+          rm -f 50_add_susfs_in_gki-android14-6.1.patch 60_scope-minimized_manual_hooks.patch
           
           echo "✅ SUSFS temel entegrasyonu tamamlandı!"
           rm -rf ../susfs
 
-      - name: 4. KernelSU-Next Kurulumu (SONRA - setup.sh)
+      - name: 4. KernelSU-Next Kurulumu (ADIM 2/2 - SONRA)
         run: |
           cd common
           echo "🔥 KernelSU-Next (next-susfs branch) kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
+          
+          # protected_exports temizle (Wi-Fi/Bluetooth için KRİTİK!)
+          echo "📦 protected_exports temizleniyor (Wi-Fi fix)..."
+          sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' BUILD.bazel || true
+          rm -f android/abi_gki_protected_exports_* || true
+          
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
 
       - name: 5. Wi-Fi ve Baseband Yamaları
@@ -155,24 +165,17 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          # CMDLINE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
-          # HZ
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          
-          # Preempt
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          # CPU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
@@ -184,40 +187,28 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-          
-          # Thermal
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          
-          # Scheduler
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # Kprobes
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-          
-          # LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          
-          # Debug
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # Network
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -229,13 +220,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          
-          # Filesystem
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-          # KernelSU-Next + SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -247,11 +234,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          
-          # Local Version
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Yuki-KSUN"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
           sed -i 's/check_defconfig//' build.config.gki || true
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -301,9 +285,9 @@ jobs:
             
             ### ✨ Özellikler:
             - 🔑 **Root:** KernelSU-Next (pershoot/next-susfs)
-            - 🛡️ **Root Hiding:** SUSFS v2 (gki-android14-6.1)
+            - 🛡️ **Root Hiding:** SUSFS v2 (pershoot/gki-android14-6.1-dev)
             - ⚡ **Clang:** Yuki Clang + BOLT
-            - 📡 **Wi-Fi:** OnePlus 12 patchleri
+            - 📡 **Wi-Fi:** OnePlus 12 patchleri + protected_exports fix
             - 🎯 **Governor:** WALT
             - 🔒 **Baseband Guard:** Aktif
             - 📱 **Kernel:** 6.1-staging (ramabondanp)
@@ -318,10 +302,11 @@ jobs:
             1. **KernelSU-Next Manager APK** yükleyin
             2. Bu ZIP'i custom recovery ile flashlayın
             3. Cihazı yeniden başlatın
+            4. **SUSFS Module** yükleyin (opsiyonel ama önerilir)
             
             ### 🔗 Linkler:
             - KernelSU-Next Manager: https://github.com/KernelSU-Next/KernelSU-Next/releases
-            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module
+            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module/releases
             - KernelSU-Next Telegram: https://t.me/ksunext
           files: "*.zip"
         env:
