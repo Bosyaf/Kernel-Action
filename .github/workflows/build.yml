@@ -32,7 +32,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CLANG_DIR }}
-          key: clang-yuki-${{ hashFiles('clang-version.txt') }}
+          key: clang-yuki-bolt-20260124
           restore-keys: |
             clang-yuki-
 
@@ -44,25 +44,70 @@ jobs:
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $CLANG_DIR
           echo "✅ Clang cache'lendi!"
 
-      - name: 1. Kaynakları Çek (ramabondanp 6.1-staging)
+      - name: 1. Kaynakları Çek
         run: |
-          echo "🔥 Kernel source çekiliyor..."
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-          echo "✅ Kernel source: 6.1-staging (ramabondanp)"
-
-      - name: 2. build-vortex Patchlerini İndir
-        run: |
-          echo "🔥 build-vortex kernel-patches indiriliyor..."
           git clone -b 6.x --depth=1 https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          echo "✅ build-vortex patchleri hazır!"
+
+      - name: 2. SUSFS Entegrasyonu (simonpunk/susfs4ksu)
+        run: |
+          cd common
+          echo "🔥 susfs4ksu (gki-android14-6.1) indiriliyor..."
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+
+          echo "📦 FS dosyaları kopyalanıyor..."
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+
+          echo "📦 Include dosyaları kopyalanıyor..."
+          cp -R ../susfs/kernel_patches/include/* ./include/
+
+          echo "📦 Ana SUSFS patchi uygulanıyor..."
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ Patch zaten uygulanmış"
+
+          echo "📦 namespace.c SUSFS inject yapılıyor..."
+          NS_INJECT_FILE=$(mktemp)
+          cat > $NS_INJECT_FILE <<'INJECT'
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #define DEFAULT_KSU_MNT_ID 100000
+          #define DEFAULT_KSU_MNT_GROUP_ID 100000
+          #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT BIT(24)
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          INJECT
+
+          if ! grep -q "static DEFINE_IDA(susfs_mnt_id_ida);" ./fs/namespace.c; then
+            sed -i '/#include "internal.h"/r '"$NS_INJECT_FILE"'' ./fs/namespace.c
+            echo "✅ namespace.c inject başarılı!"
+          else
+            echo "⚠️ namespace.c zaten inject edilmiş"
+          fi
+          rm -f "$NS_INJECT_FILE"
+
+          echo "📦 statfs.c __GENKSYMS__ fix..."
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+
+          echo "📦 build-vortex fs_proc_base.c fix..."
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || echo "⚠️ Zaten uygulanmış"
+
+          echo "🔍 Header kontrolü:"
+          ls -la include/linux/susfs*.h && echo "✅ SUSFS header bulundu!"
+
+          rm -rf ../susfs
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
-          echo "🔥 KernelSU-Next (dev-susfs branch) kuruluyor..."
-          
-          # Önce eski KernelSU klasörlerini temizle
+          echo "🔥 KernelSU-Next kuruluyor..."
+
           for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
             if [ -d "$KSU_PATH" ]; then
               KSU_DIR=$(dirname "$KSU_PATH")
@@ -72,125 +117,67 @@ jobs:
               echo "  → Temizlendi: $KSU_PATH"
             fi
           done
-          
-          # KernelSU-Next kurulumu
+
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-          echo "✅ KernelSU-Next kurulumu tamamlandı!"
+          echo "✅ KernelSU-Next kuruldu!"
 
-      - name: 4. SUSFS Header ve Dosyaları Kopyala (KRİTİK!)
+      - name: 4. Wi-Fi ve Baseband Yamaları
         run: |
           cd common
-          echo "🔥 SUSFS header dosyaları kopyalanıyor..."
-          
-          # build-vortex'ten SUSFS dosyalarını al
-          SUSFS_SRC="../build-vortex/kernel-patches/susfs"
-          
-          # include/linux/ klasörüne SUSFS header'larını kopyala
-          if [ -d "$SUSFS_SRC/include" ]; then
-            echo "📦 include/ dosyaları kopyalanıyor..."
-            cp -Rv "$SUSFS_SRC/include/"* ./include/
-          fi
-          
-          # fs/ klasörüne SUSFS dosyalarını kopyala
-          if [ -d "$SUSFS_SRC/fs" ]; then
-            echo "📦 fs/ dosyaları kopyalanıyor..."
-            cp -Rv "$SUSFS_SRC/fs/"* ./fs/
-          fi
-          
-          # SUSFS patchlerini uygula
-          echo "📦 SUSFS patchleri uygulanıyor..."
-          
-          if [ -f "$SUSFS_SRC/namespace.c_fix.patch" ]; then
-            patch -p1 --forward < "$SUSFS_SRC/namespace.c_fix.patch" || echo "⚠️ Zaten uygulanmış"
-          fi
-          
-          if [ -f "$SUSFS_SRC/fs_proc_base.c-fix-k6.1.patch" ]; then
-            patch -p1 --forward < "$SUSFS_SRC/fs_proc_base.c-fix-k6.1.patch" || echo "⚠️ Zaten uygulanmış"
-          fi
-          
-          if [ -f "$SUSFS_SRC/fix-statfs-crc-mismatch-susfs.patch" ]; then
-            patch -p1 --forward < "$SUSFS_SRC/fix-statfs-crc-mismatch-susfs.patch" || echo "⚠️ Zaten uygulanmış"
-          fi
-          
-          if [ -f "$SUSFS_SRC/task_mmu.c_fix.patch" ]; then
-            patch -p1 --forward < "$SUSFS_SRC/task_mmu.c_fix.patch" || echo "⚠️ Zaten uygulanmış"
-          fi
-          
-          # Header kontrolü
-          echo "🔍 SUSFS header kontrolü:"
-          ls -la include/linux/susfs*.h 2>/dev/null && echo "✅ SUSFS header bulundu!" || echo "❌ SUSFS header eksik!"
-          
-          echo "✅ SUSFS entegrasyonu tamamlandı!"
-
-      - name: 5. Multi-Manager Patchleri
-        run: |
-          cd common
-          echo "🔥 Multi-manager patchleri uygulanıyor..."
-          
-          PATCH_DIR="../build-vortex/kernel-patches/ksu"
-          
-          if [ -f "$PATCH_DIR/ksu-add-manager.patch" ]; then
-            patch -p1 --forward < "$PATCH_DIR/ksu-add-manager.patch" || echo "⚠️ Zaten uygulanmış"
-          fi
-          
-          if [ -f "$PATCH_DIR/ksun-add-more-managers-support.patch" ]; then
-            patch -p1 --forward < "$PATCH_DIR/ksun-add-more-managers-support.patch" || echo "⚠️ Zaten uygulanmış"
-          fi
-          
-          echo "✅ Multi-manager patchleri tamamlandı!"
-
-      - name: 6. Wi-Fi ve Baseband Yamaları
-        run: |
-          cd common
-          echo "📡 Wi-Fi ve Baseband yamaları uygulanıyor..."
-          
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
           rm -f wifi.patch
-          
+
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-          
-          echo "✅ Wi-Fi ve Baseband yamaları tamamlandı!"
 
-      - name: 7. Inject Config (build-vortex)
+      - name: 5. Özel Performans Yamaları
         run: |
           cd common
-          echo "🔥 KernelSU + SUSFS config enjeksiyonu..."
-          
-          wget -qO inject.sh https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/inject_ksu/gki-deconfig-6.1.sh
-          
+          PATCH_DIR="../patches"
+          if [ -d "$PATCH_DIR" ]; then
+            for patch_file in "$PATCH_DIR"/*.patch; do
+              filename=$(basename "$patch_file")
+              if echo "$filename" | grep -qi "susfs\|kernelsu"; then
+                echo "⚠️ ATLANDI: $filename"
+                continue
+              fi
+              patch -p1 --forward < "$patch_file" || echo "❌ ATLANDI: $filename"
+            done
+          fi
+
+      - name: 6. Inject Config (build-vortex gki-deconfig-6.1.sh)
+        run: |
+          cd common
           export KSU="yes"
           export KSU_SUSFS="true"
-          
+          wget -qO inject.sh https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/inject_ksu/gki-deconfig-6.1.sh
           bash inject.sh
           rm -f inject.sh
-          
-          echo "✅ Config enjeksiyonu tamamlandı!"
 
-      - name: 8. Full Kernel Config & Derleme Hazırlığı
+      - name: 7. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$CLANG_DIR/bin:$PATH"
-          
+
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-          
+
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-          
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-            
+
           CONFIG_FILE="out/.config"
-          
+
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -245,7 +232,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
@@ -269,17 +255,17 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 9. Kernel Derleme
+      - name: 8. Kernel Derleme
         run: |
           cd common
           export PATH="$CLANG_DIR/bin:$PATH"
-          
+
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
-          
-          echo "🔍 Header kontrolü:"
-          ls -la include/linux/susfs*.h 2>/dev/null && echo "✅ SUSFS header bulundu!" || echo "❌ SUSFS header eksik!"
-          
+
+          echo "🔍 SUSFS header:"
+          ls -la include/linux/susfs*.h 2>/dev/null || echo "⚠️ Header eksik!"
+
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -287,51 +273,47 @@ jobs:
             KCFLAGS="-O2 -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse -falign-functions=32 -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fvectorize -fslp-vectorize -finline-functions -fno-common -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-debug -Wl,--icf=safe -Wl,-z,now -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
+
           echo "BOOTHASH=Yuki-KSUN-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 10. AnyKernel3 Paketleme
+      - name: 9. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (KernelSU-Next + SUSFS)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          
+
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Yuki-Gaming-KSUN.zip" ./*
 
-      - name: 11. Release Yükle
+      - name: 10. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
           name: "CG+ Yuki Gaming (KernelSU-Next + SUSFS)"
           body: |
             ## 🎮 CG+ Yuki Gaming Kernel
-            
-            ### ✨ Özellikler:
+
             - 🔑 **Root:** KernelSU-Next (pershoot/dev-susfs)
-            - 🛡️ **Root Hiding:** SUSFS v2 (build-vortex 6.x)
-            - ⚡ **Clang:** Yuki Clang + BOLT (cached)
-            - 📡 **Wi-Fi:** OnePlus 12 patchleri
+            - 🛡️ **Root Hiding:** SUSFS v2 (build-vortex method)
+            - ⚡ **Clang:** Yuki Clang + BOLT
             - 🎯 **Governor:** WALT
-            - 🔒 **Baseband Guard:** Aktif
             - 📱 **Kernel:** 6.1-staging (ramabondanp)
-            
+
             ### 📱 Desteklenen Cihazlar:
             - Xiaomi 13 Pro (houji)
             - Xiaomi 13 (shennong)
             - Xiaomi 14 (aurora)
             - Xiaomi 14 Pro (xiaomi14)
-            
+
             ### 📥 Kurulum:
-            1. **KernelSU-Next Manager APK** yükleyin
-            2. Bu ZIP'i custom recovery ile flashlayın
-            3. Cihazı yeniden başlatın
-            
+            1. KernelSU-Next Manager APK yükleyin
+            2. ZIP'i flashlayın
+
             ### 🔗 Linkler:
-            - KernelSU-Next Manager: https://github.com/KernelSU-Next/KernelSU-Next/releases
-            - build-vortex: https://github.com/Kingfinik98/build-vortex
+            - KernelSU-Next: https://github.com/KernelSU-Next/KernelSU-Next/releases
+            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module/releases
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
