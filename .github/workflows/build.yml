@@ -267,7 +267,6 @@ jobs:
             -fslp-vectorize \
             -fno-common \
             -fno-delete-null-pointer-checks \
-            -frename-registers \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
