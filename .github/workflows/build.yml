@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (KernelSU-Next + SUSFS)
+name: CG+ Yuki Gaming Kernel
 
 permissions:
   contents: write
@@ -14,7 +14,6 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      CLANG_DIR: ${{ github.workspace }}/.clang
 
     steps:
       - name: Maximize Space
@@ -27,47 +26,52 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Clang
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CLANG_DIR }}
-          key: clang-yuki-bolt-20260124
-          restore-keys: |
-            clang-yuki-
-
-      - name: Download Clang (if not cached)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
+      - name: 1. Paketler ve YUKI CLANG Çekimi (Gizli Tünel)
         run: |
-          echo "🔥 Yuki Clang indiriliyor..."
-          mkdir -p $CLANG_DIR
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $CLANG_DIR
-          echo "✅ Clang cache'lendi!"
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            lld llvm pkg-config zstd
+          
+          echo "🔥 Yuki Clang Linki Çekiliyor..."
+          CLANG_LINK="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "İndirilecek Link: $CLANG_LINK"
+          
+          curl -L -o clang.tar.zst "$CLANG_LINK"
+          
+          echo "Arşiv Çıkarılıyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-yuki
+          tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
+          rm -f clang.tar.zst
 
-      - name: 1. Kaynakları Çek
+      - name: 2. Kaynakları Çek (Yeni Staging Dalı)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-          git clone -b 6.x --depth=1 https://github.com/Kingfinik98/build-vortex.git ../build-vortex
 
-      - name: 2. SUSFS Entegrasyonu (simonpunk/susfs4ksu)
+      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
-          echo "🔥 susfs4ksu (gki-android14-6.1) indiriliyor..."
+          echo "🔥 KernelSU-Next (dev-susfs branch) kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+          echo "✅ KernelSU-Next kurulumu tamamlandı!"
+
+      - name: 4. SUSFS Entegrasyonu (simonpunk + build-vortex fix)
+        run: |
+          cd common
+          echo "🔥 SUSFS4KSU çekiliyor..."
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-
-          echo "📦 FS dosyaları kopyalanıyor..."
+          
           cp -R ../susfs/kernel_patches/fs/* ./fs/
-
-          echo "📦 Include dosyaları kopyalanıyor..."
           cp -R ../susfs/kernel_patches/include/* ./include/
-
-          echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ Patch zaten uygulanmış"
-
-          echo "📦 namespace.c SUSFS inject yapılıyor..."
-          NS_INJECT_FILE=$(mktemp)
-          cat > $NS_INJECT_FILE <<'INJECT'
+          
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          echo "🔥 namespace.c SUSFS inject..."
+          NS_FILE=$(mktemp)
+          cat > $NS_FILE <<'INJECT'
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
@@ -82,102 +86,80 @@ jobs:
           #define CL_COPY_MNT_NS BIT(25)
           #endif
           INJECT
-
-          if ! grep -q "static DEFINE_IDA(susfs_mnt_id_ida);" ./fs/namespace.c; then
-            sed -i '/#include "internal.h"/r '"$NS_INJECT_FILE"'' ./fs/namespace.c
-            echo "✅ namespace.c inject başarılı!"
-          else
-            echo "⚠️ namespace.c zaten inject edilmiş"
+          if ! grep -q "susfs_mnt_id_ida" ./fs/namespace.c; then
+            sed -i '/#include "internal.h"/r '"$NS_FILE"'' ./fs/namespace.c
           fi
-          rm -f "$NS_INJECT_FILE"
-
-          echo "📦 statfs.c __GENKSYMS__ fix..."
+          rm -f "$NS_FILE"
+          
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+          
+          echo "🔥 build-vortex fs_proc_base fix..."
+          git clone -b 6.x --depth=1 https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          rm -rf ../susfs ../build-vortex
 
-          echo "📦 build-vortex fs_proc_base.c fix..."
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || echo "⚠️ Zaten uygulanmış"
-
-          echo "🔍 Header kontrolü:"
-          ls -la include/linux/susfs*.h && echo "✅ SUSFS header bulundu!"
-
-          rm -rf ../susfs
-
-      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
-        run: |
-          cd common
-          echo "🔥 KernelSU-Next kuruluyor..."
-
-          for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
-            if [ -d "$KSU_PATH" ]; then
-              KSU_DIR=$(dirname "$KSU_PATH")
-              [ -f "$KSU_DIR/Kconfig" ] && sed -i '/kernelsu/d' $KSU_DIR/Kconfig
-              [ -f "$KSU_DIR/Makefile" ] && sed -i '/kernelsu/d' $KSU_DIR/Makefile
-              rm -rf "$KSU_PATH"
-              echo "  → Temizlendi: $KSU_PATH"
-            fi
-          done
-
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-          echo "✅ KernelSU-Next kuruldu!"
-
-      - name: 4. Wi-Fi ve Baseband Yamaları
+      - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
-          rm -f wifi.patch
-
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. Özel Performans Yamaları
+      - name: 5.5. Özel Performans  (Bosyaf Patches)
         run: |
           cd common
+          echo "🔥 Repo içerisindeki özel yamalar (patches klasörü) uygulanıyor..."
+          
           PATCH_DIR="../patches"
-          if [ -d "$PATCH_DIR" ]; then
+          
+          if [ ! -d "$PATCH_DIR" ]; then
+            echo "❌ HATA: $PATCH_DIR dizini bulunamadı! 'actions/checkout' ile repodaki dosyaların geldiğinden emin olun."
+          else
             for patch_file in "$PATCH_DIR"/*.patch; do
               filename=$(basename "$patch_file")
-              if echo "$filename" | grep -qi "susfs\|kernelsu"; then
-                echo "⚠️ ATLANDI: $filename"
-                continue
+              echo "----------------------------------------------------"
+              echo "📦 İşleniyor: $filename"
+              
+              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
+                echo "⚠️ DİKKAT: SUSFS ekstra yaması algılandı, sisteme entegre ediliyor..."
               fi
-              patch -p1 --forward < "$patch_file" || echo "❌ ATLANDI: $filename"
+              
+              if patch -p1 --forward < "$patch_file"; then
+                echo "✅ BAŞARILI: $filename kernela sorunsuz işlendi."
+              else
+                echo "❌ HATA / ATLANDI: $filename uygulanamadı! (Kod çakışması, eksik dizin veya zaten ekli olabilir)"
+              fi
             done
+            echo "----------------------------------------------------"
+            echo "🎉 Tüm özel yamaların kontrolü tamamlandı. Derleme aşamasına geçiliyor."
           fi
 
-      - name: 6. Inject Config (build-vortex gki-deconfig-6.1.sh)
+      - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export KSU="yes"
-          export KSU_SUSFS="true"
-          wget -qO inject.sh https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/inject_ksu/gki-deconfig-6.1.sh
-          bash inject.sh
-          rm -f inject.sh
-
-      - name: 7. Full Kernel Config & Derleme Hazırlığı
-        run: |
-          cd common
-          export PATH="$CLANG_DIR/bin:$PATH"
-
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-
+          
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-
+            
           CONFIG_FILE="out/.config"
-
+          
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -232,11 +214,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -245,8 +226,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Yuki-KSUN"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimriel-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -255,65 +235,57 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 8. Kernel Derleme
+      - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$CLANG_DIR/bin:$PATH"
-
-          echo "🔍 Config kontrolü:"
-          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
-
-          echo "🔍 SUSFS header:"
-          ls -la include/linux/susfs*.h 2>/dev/null || echo "⚠️ Header eksik!"
-
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          
+          echo "🔍 WALT / governor config kontrolü:"
+          grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse -falign-functions=32 -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fvectorize -fslp-vectorize -finline-functions -fno-common -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-debug -Wl,--icf=safe -Wl,-z,now -Wl,-O2" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
+            -falign-functions=32 \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
+            -fvectorize \
+            -fslp-vectorize \
+            -finline-functions \
+            -fno-common \
+            -Wno-constant-logical-operand" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-z,now \
+            -Wl,-O2" \
+            Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
+          
+          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-          echo "BOOTHASH=Yuki-KSUN-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
-      - name: 9. AnyKernel3 Paketleme
+      - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (KernelSU-Next + SUSFS)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-
+          
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Gaming-KSUN.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
 
-      - name: 10. Release Yükle
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Gaming (KernelSU-Next + SUSFS)"
-          body: |
-            ## 🎮 CG+ Yuki Gaming Kernel
-
-            - 🔑 **Root:** KernelSU-Next (pershoot/dev-susfs)
-            - 🛡️ **Root Hiding:** SUSFS v2 (build-vortex method)
-            - ⚡ **Clang:** Yuki Clang + BOLT
-            - 🎯 **Governor:** WALT
-            - 📱 **Kernel:** 6.1-staging (ramabondanp)
-
-            ### 📱 Desteklenen Cihazlar:
-            - Xiaomi 13 Pro (houji)
-            - Xiaomi 13 (shennong)
-            - Xiaomi 14 (aurora)
-            - Xiaomi 14 Pro (xiaomi14)
-
-            ### 📥 Kurulum:
-            1. KernelSU-Next Manager APK yükleyin
-            2. ZIP'i flashlayın
-
-            ### 🔗 Linkler:
-            - KernelSU-Next: https://github.com/KernelSU-Next/KernelSU-Next/releases
-            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module/releases
+          name: "CG+ Yuki Clang (Balanced Pro - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
