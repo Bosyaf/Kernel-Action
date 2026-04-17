@@ -51,43 +51,27 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           echo "✅ Kernel source: 6.1-staging (ramabondanp)"
 
-      - name: 3. ReSukiSU Kurulumu (Resmi setup.sh)
+      - name: 3. ReSukiSU Kurulumu (Resmi setup.sh - SUSFS Dahili)
         run: |
           cd common
-          echo "🔥 ReSukiSU kuruluyor..."
+          echo "🔥 ReSukiSU kuruluyor (SUSFS dahili)..."
+          echo "⚠️ NOT: ReSukiSU zaten SUSFS içerir, ayrı patch GEREKSIZ!"
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+          
+          # Header dosyalarının varlığını kontrol et
+          echo "📦 Header dosyaları kontrol ediliyor..."
+          if [ -f "include/linux/susfs_def.h" ]; then
+            echo "✅ susfs_def.h bulundu!"
+          else
+            echo "⚠️ susfs_def.h bulunamadı, ReSukiSU klasöründen kopyalanıyor..."
+            if [ -d "KernelSU" ] && [ -f "KernelSU/kernel/include/linux/susfs_def.h" ]; then
+              cp -R KernelSU/kernel/include/linux/* ./include/linux/
+              echo "✅ Header dosyaları kopyalandı!"
+            fi
+          fi
           echo "✅ ReSukiSU kurulumu tamamlandı!"
 
-      - name: 4. SUSFS Entegrasyonu (gki-android14-6.1)
-        run: |
-          cd common
-          echo "🔥 SUSFS4KSU patchleri indiriliyor ve uygulanıyor..."
-          
-          # SUSFS repo klonla (gki-android14-6.1 branch - 6.1 kernel için)
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1 ../susfs
-          
-          # FS dosyalarını kopyala
-          echo "📦 FS dosyaları kopyalanıyor..."
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          
-          # Include dosyalarını kopyala
-          echo "📦 Include dosyaları kopyalanıyor..."
-          cp -R ../susfs/kernel_patches/include/linux/* ./include/linux/
-          
-          # Ana SUSFS patchini uygula
-          echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ Patch zaten uygulanmış"
-          
-          # Scope-minimized manual hooks patchi (varsa)
-          if [ -f "../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch" ]; then
-            echo "📦 Manual hooks patchi uygulanıyor..."
-            patch -p1 --forward < ../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch || echo "⚠️ Patch zaten uygulanmış"
-          fi
-          
-          echo "✅ SUSFS entegrasyonu tamamlandı!"
-          rm -rf ../susfs
-
-      - name: 5. Wi-Fi ve Baseband Yamaları
+      - name: 4. Wi-Fi ve Baseband Yamaları
         run: |
           cd common
           echo "📡 Wi-Fi ve Baseband yamaları uygulanıyor..."
@@ -105,7 +89,7 @@ jobs:
           
           echo "✅ Wi-Fi ve Baseband yamaları tamamlandı!"
 
-      - name: 6. Özel Performans Yamaları (Patches Klasörü)
+      - name: 5. Özel Performans Yamaları (Patches Klasörü)
         run: |
           cd common
           echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
@@ -120,6 +104,7 @@ jobs:
               echo "----------------------------------------------------"
               echo "📦 İşleniyor: $filename"
               
+              # SUSFS patchlerini ATLA (ReSukiSU zaten içerir)
               if echo "$filename" | grep -qi "susfs"; then
                 echo "⚠️ ATLANDI: $filename (SUSFS zaten entegre)"
                 continue
@@ -135,7 +120,7 @@ jobs:
             echo "🎉 Özel yamalar tamamlandı!"
           fi
 
-      - name: 7. Full Kernel Config & Derleme Hazırlığı
+      - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -236,11 +221,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ReSukiSU Config
+          # ReSukiSU Config (SUSFS dahili)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
-          
-          # SUSFS Config (ReSukiSU ile uyumlu)
+          # SUSFS - ReSukiSU içinde zaten var, sadece enable ediyoruz
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -262,13 +246,16 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 8. Kernel Derleme
+      - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           echo "🔍 Config kontrolü (ReSukiSU ve SUSFS):"
           grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
+          
+          echo "🔍 Header dosyaları kontrolü:"
+          ls -la include/linux/susfs*.h 2>/dev/null || echo "⚠️ susfs header bulunamadı!"
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -280,7 +267,7 @@ jobs:
           
           echo "BOOTHASH=Yuki-ReSuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 9. AnyKernel3 Paketleme
+      - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (ReSukiSU + SUSFS)/' anykernel.sh
@@ -291,7 +278,7 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Yuki-ReSukiSU.zip" ./*
 
-      - name: 10. Release Yükle
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
@@ -300,8 +287,8 @@ jobs:
             ## 🎮 CG+ Yuki Gaming Kernel
             
             ### ✨ Özellikler:
-            - 🔑 **Root:** ReSukiSU (SukiSU-Ultra fork)
-            - 🛡️ **Root Hiding:** SUSFS v2 (gki-android14-6.1)
+            - 🔑 **Root:** ReSukiSU (SUSFS dahili)
+            - 🛡️ **Root Hiding:** SUSFS v2
             - ⚡ **Clang:** Yuki Clang + BOLT
             - 📡 **Wi-Fi:** OnePlus 12 patchleri
             - 🎯 **Governor:** WALT
@@ -321,7 +308,6 @@ jobs:
             
             ### 🔗 Linkler:
             - ReSukiSU Manager: https://github.com/ReSukiSU/ReSukiSU/releases
-            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module
             - ReSukiSU Telegram: https://t.me/ReSukisu
           files: "*.zip"
         env:
