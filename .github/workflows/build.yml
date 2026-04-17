@@ -58,10 +58,10 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
 
-      - name: 4. SUSFS Entegrasyonu (simonpunk + build-vortex fix)
+      - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
-          echo "🔥 SUSFS4KSU çekiliyor..."
+          echo "🔥 SUSFS çekiliyor..."
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
           
           cp -R ../susfs/kernel_patches/fs/* ./fs/
@@ -69,9 +69,8 @@ jobs:
           
           patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          echo "🔥 namespace.c SUSFS inject..."
-          NS_FILE=$(mktemp)
-          cat > $NS_FILE <<'INJECT'
+          echo "🔥 namespace.c inject..."
+          cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
@@ -80,21 +79,16 @@ jobs:
           extern bool susfs_is_sdcard_android_data_decrypted;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-          #define DEFAULT_KSU_MNT_ID 100000
-          #define DEFAULT_KSU_MNT_GROUP_ID 100000
-          #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT BIT(24)
           #define CL_COPY_MNT_NS BIT(25)
           #endif
-          INJECT
-          if ! grep -q "susfs_mnt_id_ida" ./fs/namespace.c; then
-            sed -i '/#include "internal.h"/r '"$NS_FILE"'' ./fs/namespace.c
-          fi
-          rm -f "$NS_FILE"
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          rm -f .ns_inject_tmp
           
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
           
-          echo "🔥 build-vortex fs_proc_base fix..."
+          echo "🔥 build-vortex fix..."
           git clone -b 6.x --depth=1 https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
