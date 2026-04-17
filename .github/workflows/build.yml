@@ -37,8 +37,6 @@ jobs:
           
           echo "🔥 Yuki Clang Linki Çekiliyor..."
           CLANG_LINK="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
-          echo "İndirilecek Link: $CLANG_LINK"
-          
           curl -L -o clang.tar.zst "$CLANG_LINK"
           
           echo "Arşiv Çıkarılıyor..."
@@ -51,15 +49,34 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next Kurulumu (Güncel Root + SUSFS Dahili)
+      - name: 3. KernelSU-Next Kurulumu (Resmi setup.sh)
         run: |
           cd common
           echo "🔥 KernelSU-Next (next-susfs branch) kuruluyor..."
-          echo "⚠️ NOT: KernelSU-Next zaten SUSFS içerir, ayrı patch GEREKSIZ!"
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
-          echo "✅ KernelSU-Next kurulumu tamamlandı (SUSFS dahili)!"
+          echo "✅ KernelSU-Next temel kurulumu tamamlandı!"
 
-      - name: 4. Wi-Fi ve Baseband Yamaları
+      - name: 4. SUSFS Entegrasyonu (yapixel patchleri - GÜVENLİ)
+        run: |
+          cd common
+          echo "🔥 SUSFS patchleri yapixel reposundan indiriliyor..."
+          
+          # yapixel reposundan SUSFS patchlerini indir
+          curl -LSs "https://raw.githubusercontent.com/yapixel/android14-6.1.162-common-2026-03/dev/.github/patches/next/10_enable_susfs_for_ksu.patch" > susfs_enable.patch
+          
+          # KernelSU-Next dizinine SUSFS enable patchini uygula
+          if [ -d "KernelSU-Next" ] && [ -s "susfs_enable.patch" ]; then
+            echo "📦 SUSFS enable patchi uygulanıyor..."
+            cd KernelSU-Next
+            patch -p1 --forward < ../susfs_enable.patch || true
+            cd ..
+            echo "✅ SUSFS entegrasyonu tamamlandı!"
+          else
+            echo "⚠️ KernelSU-Next dizini bulunamadı veya patch boş!"
+          fi
+          rm -f susfs_enable.patch
+
+      - name: 5. Wi-Fi ve Baseband Yamaları
         run: |
           cd common
           echo "📡 Wi-Fi ve Baseband yamaları uygulanıyor..."
@@ -76,7 +93,7 @@ jobs:
           
           echo "✅ Wi-Fi ve Baseband yamaları tamamlandı!"
 
-      - name: 5. Özel Performans Yamaları (Patches Klasörü)
+      - name: 6. Özel Performans Yamaları (Patches Klasörü)
         run: |
           cd common
           echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
@@ -91,9 +108,9 @@ jobs:
               echo "----------------------------------------------------"
               echo "📦 İşleniyor: $filename"
               
-              # SUSFS patchlerini ATLA (KernelSU-Next zaten içeriyor)
+              # SUSFS patchlerini ATLA (yapixel'den zaten uygulandı)
               if echo "$filename" | grep -qi "susfs"; then
-                echo "⚠️ ATLANDI: $filename (KernelSU-Next zaten SUSFS içerir)"
+                echo "⚠️ ATLANDI: $filename (SUSFS zaten entegre)"
                 continue
               fi
               
@@ -107,7 +124,7 @@ jobs:
             echo "🎉 Özel yamalar tamamlandı!"
           fi
 
-      - name: 6. Full Kernel Config & Derleme Hazırlığı
+      - name: 7. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -211,7 +228,7 @@ jobs:
           # KernelSU-Next Config (SUSFS dahili)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
-          # SUSFS - KernelSU-Next içinde zaten var, sadece enable ediyoruz
+          # SUSFS - yapixel patchleri ile entegre
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -233,7 +250,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme
+      - name: 8. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -268,7 +285,7 @@ jobs:
           
           echo "BOOTHASH=Yuki-KSUN-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3 Paketleme
+      - name: 9. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (KernelSU-Next + SUSFS)/' anykernel.sh
@@ -279,7 +296,7 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Yuki-Gaming-KSUN.zip" ./*
 
-      - name: 9. Release Yükle
+      - name: 10. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
@@ -289,7 +306,7 @@ jobs:
             
             ### ✨ Özellikler:
             - 🔑 **Root:** KernelSU-Next (next-susfs branch)
-            - 🛡️ **Root Hiding:** SUSFS v2 (dahili)
+            - 🛡️ **Root Hiding:** SUSFS v2 (yapixel patchleri)
             - ⚡ **Clang:** Yuki Clang + BOLT
             - 📡 **Wi-Fi:** OnePlus 12 patchleri
             - 🎯 **Governor:** WALT
@@ -307,6 +324,7 @@ jobs:
             
             ### 🔗 Linkler:
             - KernelSU-Next Manager: https://github.com/KernelSU-Next/KernelSU-Next/releases
+            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
