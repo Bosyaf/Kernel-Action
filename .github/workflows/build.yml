@@ -234,7 +234,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimriel-X"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-RivendellX"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -265,14 +265,14 @@ jobs:
             -fno-asynchronous-unwind-tables \
             -fvectorize \
             -fslp-vectorize \
-            -finline-functions \
             -fno-common \
+            -fno-delete-null-pointer-checks \
+            -frename-registers \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe \
-            -Wl,-z,now \
             -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
