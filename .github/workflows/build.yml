@@ -51,48 +51,63 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
+      - name: 3. KernelSU-Next Kurulumu (Repo'dan setup.sh)
         run: |
           cd common
           echo "🔥 KernelSU-Next (dev-susfs branch) kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+          bash $GITHUB_WORKSPACE/ksu/setup.sh dev-susfs
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
 
-      - name: 4. SUSFS Entegrasyonu
+      - name: 4. SUSFS Entegrasyonu (Repo Dosyaları)
         run: |
           cd common
-          echo "🔥 SUSFS çekiliyor..."
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          echo "🔥 SUSFS dosyaları repodan kopyalanıyor..."
           
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
+          # susfs.c -> fs/
+          cp $GITHUB_WORKSPACE/susfs/susfs.c ./fs/
+          echo "✅ susfs.c kopyalandı"
           
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          # susfs.h + susfs_def.h -> include/linux/
+          cp $GITHUB_WORKSPACE/susfs/susfs.h ./include/linux/
+          cp $GITHUB_WORKSPACE/susfs/susfs_def.h ./include/linux/
+          echo "✅ susfs.h ve susfs_def.h kopyalandı"
           
-          echo "🔥 namespace.c inject..."
-          cat << 'EOF' > .ns_inject_tmp
+          # Ana SUSFS patchini uygula
+          echo "📦 Ana SUSFS patchi uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          # namespace.c Hunk #1 manual inject (patch başarısız olursa)
+          echo "📦 namespace.c inject yapılıyor..."
+          cat << 'INJECT' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_current_zygote_domain(void);
-          extern bool susfs_is_boot_completed_triggered;
-          extern bool susfs_is_sdcard_android_data_decrypted;
+          extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
+          
+          #define CL_COPY_MNT_NS BIT(25)
+          
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-          #define CL_COPY_MNT_NS BIT(25)
+          
           #endif
-          EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          INJECT
+          if ! grep -q "susfs_mnt_id_ida" ./fs/namespace.c; then
+            sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+            echo "✅ namespace.c inject başarılı!"
+          else
+            echo "⚠️ namespace.c zaten inject edilmiş"
+          fi
           rm -f .ns_inject_tmp
           
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+          # build-vortex fs_proc_base fix
+          echo "📦 fs_proc_base.c fix uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/ksu/fs_proc_base.c-fix-k6.1.patch || true
           
-          echo "🔥 build-vortex fix..."
-          git clone -b 6.x --depth=1 https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          rm -rf ../susfs ../build-vortex
+          # Header kontrolü
+          echo "🔍 SUSFS header kontrolü:"
+          ls -la include/linux/susfs*.h && echo "✅ SUSFS header dosyaları bulundu!"
+          echo "🔍 namespace.c kontrolü:"
+          grep -c "susfs_mnt_id_ida" ./fs/namespace.c && echo "✅ namespace.c inject doğrulandı!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
@@ -236,6 +251,9 @@ jobs:
           
           echo "🔍 WALT / governor config kontrolü:"
           grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
+          
+          echo "🔍 KernelSU + SUSFS config kontrolü:"
+          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS" out/.config || true
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
