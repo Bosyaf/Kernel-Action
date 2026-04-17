@@ -44,31 +44,33 @@ jobs:
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
 
-      - name: 2. Kaynakları Çek (GKI Android 14 6.1 Staging)
+      - name: 2. Kaynakları Çek (yapixel 6.1.162)
         run: |
+          echo "🔥 yapixel Android 14 - Kernel 6.1.162 çekiliyor..."
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          git clone -b dev https://github.com/yapixel/android14-6.1.162-common-2026-03.git --depth=1 common
+          echo "✅ Kernel source: 6.1.162 (yapixel)"
 
-      - name: 3. KernelSU-Next Kurulumu (Resmi setup.sh)
+      - name: 3. KernelSU-Next Kurulumu
         run: |
           cd common
           echo "🔥 KernelSU-Next (next-susfs branch) kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
-          echo "✅ KernelSU-Next temel kurulumu tamamlandı!"
+          echo "✅ KernelSU-Next kurulumu tamamlandı!"
 
-      - name: 4. SUSFS Entegrasyonu (yapixel patchleri - GÜVENLİ)
+      - name: 4. SUSFS Entegrasyonu (yapixel patchleri)
         run: |
           cd common
           echo "🔥 SUSFS patchleri yapixel reposundan indiriliyor..."
           
-          # yapixel reposundan SUSFS patchlerini indir
+          # yapixel reposundan SUSFS enable patchini indir
           curl -LSs "https://raw.githubusercontent.com/yapixel/android14-6.1.162-common-2026-03/dev/.github/patches/next/10_enable_susfs_for_ksu.patch" > susfs_enable.patch
           
           # KernelSU-Next dizinine SUSFS enable patchini uygula
           if [ -d "KernelSU-Next" ] && [ -s "susfs_enable.patch" ]; then
             echo "📦 SUSFS enable patchi uygulanıyor..."
             cd KernelSU-Next
-            patch -p1 --forward < ../susfs_enable.patch || true
+            patch -p1 --forward < ../susfs_enable.patch || echo "⚠️ Patch zaten uygulanmış olabilir"
             cd ..
             echo "✅ SUSFS entegrasyonu tamamlandı!"
           else
@@ -86,6 +88,7 @@ jobs:
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
+          rm -f wifi.patch
           
           # Baseband guard
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
@@ -162,7 +165,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
-          # CPU Idle
+          # CPU Idle & Frequency
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
@@ -311,6 +314,7 @@ jobs:
             - 📡 **Wi-Fi:** OnePlus 12 patchleri
             - 🎯 **Governor:** WALT
             - 🔒 **Baseband Guard:** Aktif
+            - 📱 **Kernel:** 6.1.162 (yapixel)
             
             ### 📱 Desteklenen Cihazlar:
             - Xiaomi 13 Pro (houji)
