@@ -14,9 +14,7 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
       CLANG_DIR: ${{ github.workspace }}/.clang
-      GAS_DIR: ${{ github.workspace }}/.gas
 
     steps:
       - name: Maximize Space
@@ -46,44 +44,20 @@ jobs:
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $CLANG_DIR
           echo "✅ Clang cache'lendi!"
 
-      - name: Cache GNU Assembler
-        id: cache-gas
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.GAS_DIR }}
-          key: gas-linux-x86-${{ hashFiles('gas-version.txt') }}
-          restore-keys: |
-            gas-linux-x86-
-
-      - name: Clone GNU Assembler (if not cached)
-        if: steps.cache-gas.outputs.cache-hit != 'true'
-        run: |
-          echo "🔥 GNU Assembler klonlanıyor..."
-          git clone --depth=1 -q https://android.googlesource.com/platform/prebuilts/gas/linux-x86 $GAS_DIR
-          echo "✅ GAS cache'lendi!"
-
-      - name: Cache CCACHE
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ github.sha }}
-          restore-keys: |
-            ccache-
-
-      - name: 2. Kaynakları Çek (ramabondanp 6.1-staging)
+      - name: 1. Kaynakları Çek (ramabondanp 6.1-staging)
         run: |
           echo "🔥 Kernel source çekiliyor..."
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           echo "✅ Kernel source: 6.1-staging (ramabondanp)"
 
-      - name: 3. build-vortex Patchlerini İndir
+      - name: 2. build-vortex Patchlerini İndir
         run: |
           echo "🔥 build-vortex kernel-patches indiriliyor..."
           git clone -b 6.x --depth=1 https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           echo "✅ build-vortex patchleri hazır!"
 
-      - name: 4. KernelSU-Next Kurulumu (pershoot/dev-susfs)
+      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
           echo "🔥 KernelSU-Next (dev-susfs branch) kuruluyor..."
@@ -99,65 +73,73 @@ jobs:
             fi
           done
           
-          # KernelSU-Next kurulumu (pershoot/dev-susfs)
+          # KernelSU-Next kurulumu
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
 
-      - name: 5. SUSFS Entegrasyonu (build-vortex patchleri)
+      - name: 4. SUSFS Header ve Dosyaları Kopyala (KRİTİK!)
         run: |
           cd common
-          echo "🔥 SUSFS patchleri uygulanıyor (build-vortex)..."
+          echo "🔥 SUSFS header dosyaları kopyalanıyor..."
           
-          PATCH_DIR="../build-vortex/kernel-patches/susfs"
+          # build-vortex'ten SUSFS dosyalarını al
+          SUSFS_SRC="../build-vortex/kernel-patches/susfs"
           
-          # namespace.c fix (KRİTİK!)
-          if [ -f "$PATCH_DIR/namespace.c_fix.patch" ]; then
-            echo "📦 namespace.c_fix.patch uygulanıyor..."
-            patch -p1 --forward < "$PATCH_DIR/namespace.c_fix.patch" || echo "⚠️ Zaten uygulanmış"
+          # include/linux/ klasörüne SUSFS header'larını kopyala
+          if [ -d "$SUSFS_SRC/include" ]; then
+            echo "📦 include/ dosyaları kopyalanıyor..."
+            cp -Rv "$SUSFS_SRC/include/"* ./include/
           fi
           
-          # fs_proc_base.c fix (6.1 için)
-          if [ -f "$PATCH_DIR/fs_proc_base.c-fix-k6.1.patch" ]; then
-            echo "📦 fs_proc_base.c-fix-k6.1.patch uygulanıyor..."
-            patch -p1 --forward < "$PATCH_DIR/fs_proc_base.c-fix-k6.1.patch" || echo "⚠️ Zaten uygulanmış"
+          # fs/ klasörüne SUSFS dosyalarını kopyala
+          if [ -d "$SUSFS_SRC/fs" ]; then
+            echo "📦 fs/ dosyaları kopyalanıyor..."
+            cp -Rv "$SUSFS_SRC/fs/"* ./fs/
           fi
           
-          # statfs CRC fix
-          if [ -f "$PATCH_DIR/fix-statfs-crc-mismatch-susfs.patch" ]; then
-            echo "📦 fix-statfs-crc-mismatch-susfs.patch uygulanıyor..."
-            patch -p1 --forward < "$PATCH_DIR/fix-statfs-crc-mismatch-susfs.patch" || echo "⚠️ Zaten uygulanmış"
+          # SUSFS patchlerini uygula
+          echo "📦 SUSFS patchleri uygulanıyor..."
+          
+          if [ -f "$SUSFS_SRC/namespace.c_fix.patch" ]; then
+            patch -p1 --forward < "$SUSFS_SRC/namespace.c_fix.patch" || echo "⚠️ Zaten uygulanmış"
           fi
           
-          # task_mmu.c fix
-          if [ -f "$PATCH_DIR/task_mmu.c_fix.patch" ]; then
-            echo "📦 task_mmu.c_fix.patch uygulanıyor..."
-            patch -p1 --forward < "$PATCH_DIR/task_mmu.c_fix.patch" || echo "⚠️ Zaten uygulanmış"
+          if [ -f "$SUSFS_SRC/fs_proc_base.c-fix-k6.1.patch" ]; then
+            patch -p1 --forward < "$SUSFS_SRC/fs_proc_base.c-fix-k6.1.patch" || echo "⚠️ Zaten uygulanmış"
           fi
           
-          echo "✅ SUSFS patchleri tamamlandı!"
+          if [ -f "$SUSFS_SRC/fix-statfs-crc-mismatch-susfs.patch" ]; then
+            patch -p1 --forward < "$SUSFS_SRC/fix-statfs-crc-mismatch-susfs.patch" || echo "⚠️ Zaten uygulanmış"
+          fi
+          
+          if [ -f "$SUSFS_SRC/task_mmu.c_fix.patch" ]; then
+            patch -p1 --forward < "$SUSFS_SRC/task_mmu.c_fix.patch" || echo "⚠️ Zaten uygulanmış"
+          fi
+          
+          # Header kontrolü
+          echo "🔍 SUSFS header kontrolü:"
+          ls -la include/linux/susfs*.h 2>/dev/null && echo "✅ SUSFS header bulundu!" || echo "❌ SUSFS header eksik!"
+          
+          echo "✅ SUSFS entegrasyonu tamamlandı!"
 
-      - name: 6. KernelSU Multi-Manager Patchleri
+      - name: 5. Multi-Manager Patchleri
         run: |
           cd common
           echo "🔥 Multi-manager patchleri uygulanıyor..."
           
           PATCH_DIR="../build-vortex/kernel-patches/ksu"
           
-          # ksu-add-manager.patch
           if [ -f "$PATCH_DIR/ksu-add-manager.patch" ]; then
-            echo "📦 ksu-add-manager.patch uygulanıyor..."
             patch -p1 --forward < "$PATCH_DIR/ksu-add-manager.patch" || echo "⚠️ Zaten uygulanmış"
           fi
           
-          # ksun-add-more-managers-support.patch
           if [ -f "$PATCH_DIR/ksun-add-more-managers-support.patch" ]; then
-            echo "📦 ksun-add-more-managers-support.patch uygulanıyor..."
             patch -p1 --forward < "$PATCH_DIR/ksun-add-more-managers-support.patch" || echo "⚠️ Zaten uygulanmış"
           fi
           
           echo "✅ Multi-manager patchleri tamamlandı!"
 
-      - name: 7. Wi-Fi ve Baseband Yamaları
+      - name: 6. Wi-Fi ve Baseband Yamaları
         run: |
           cd common
           echo "📡 Wi-Fi ve Baseband yamaları uygulanıyor..."
@@ -173,15 +155,13 @@ jobs:
           
           echo "✅ Wi-Fi ve Baseband yamaları tamamlandı!"
 
-      - name: 8. Inject Config (build-vortex gki-deconfig-6.1.sh)
+      - name: 7. Inject Config (build-vortex)
         run: |
           cd common
           echo "🔥 KernelSU + SUSFS config enjeksiyonu..."
           
-          # build-vortex inject scriptini kullan
           wget -qO inject.sh https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/inject_ksu/gki-deconfig-6.1.sh
           
-          # KSU_SUSFS=true olarak ayarla
           export KSU="yes"
           export KSU_SUSFS="true"
           
@@ -190,18 +170,10 @@ jobs:
           
           echo "✅ Config enjeksiyonu tamamlandı!"
 
-      - name: 9. Full Kernel Config & Derleme Hazırlığı
+      - name: 8. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$CLANG_DIR/bin:$GAS_DIR:$PATH"
-          export CCACHE_DIR="$CCACHE_DIR"
-          export CCACHE_COMPILERCHECK="content"
-          export CCACHE_COMPRESS="1"
-          export CCACHE_COMPRESSLEVEL="6"
-          export CCACHE_MAXSIZE="2G"
-          
-          # CCACHE istatistikleri
-          ccache -s || true
+          export PATH="$CLANG_DIR/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -219,24 +191,17 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          # CMDLINE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
-          # HZ
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          
-          # Preempt
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          # CPU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
@@ -248,40 +213,28 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-          
-          # Thermal
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          
-          # Scheduler
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # Kprobes
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-          
-          # LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          
-          # Debug
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # Network
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -293,13 +246,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          
-          # Filesystem
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-          # KernelSU-Next + SUSFS (zaten inject.sh ile eklendi, teyit)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -311,11 +260,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          
-          # Local Version
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Yuki-KSUN"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
           sed -i 's/check_defconfig//' build.config.gki || true
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -323,35 +269,28 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 10. Kernel Derleme (CCACHE ile)
+      - name: 9. Kernel Derleme
         run: |
           cd common
-          export PATH="$CLANG_DIR/bin:$GAS_DIR:$PATH"
-          export CCACHE_DIR="$CCACHE_DIR"
+          export PATH="$CLANG_DIR/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
           
           echo "🔍 Header kontrolü:"
-          ls -la include/linux/susfs*.h 2>/dev/null || echo "⚠️ susfs header bulunamadı!"
-          
-          echo "🔍 CCACHE istatistikleri:"
-          ccache -s || true
+          ls -la include/linux/susfs*.h 2>/dev/null && echo "✅ SUSFS header bulundu!" || echo "❌ SUSFS header eksik!"
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="ccache clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse -falign-functions=32 -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fvectorize -fslp-vectorize -finline-functions -fno-common -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-debug -Wl,--icf=safe -Wl,-z,now -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "🔍 CCACHE sonrası istatistikler:"
-          ccache -s || true
-          
           echo "BOOTHASH=Yuki-KSUN-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 11. AnyKernel3 Paketleme
+      - name: 10. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (KernelSU-Next + SUSFS)/' anykernel.sh
@@ -362,7 +301,7 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Yuki-Gaming-KSUN.zip" ./*
 
-      - name: 12. Release Yükle
+      - name: 11. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
@@ -372,13 +311,12 @@ jobs:
             
             ### ✨ Özellikler:
             - 🔑 **Root:** KernelSU-Next (pershoot/dev-susfs)
-            - 🛡️ **Root Hiding:** SUSFS v2 (build-vortex patchleri)
+            - 🛡️ **Root Hiding:** SUSFS v2 (build-vortex 6.x)
             - ⚡ **Clang:** Yuki Clang + BOLT (cached)
             - 📡 **Wi-Fi:** OnePlus 12 patchleri
             - 🎯 **Governor:** WALT
             - 🔒 **Baseband Guard:** Aktif
             - 📱 **Kernel:** 6.1-staging (ramabondanp)
-            - 🔧 **Method:** build-vortex 6.x
             
             ### 📱 Desteklenen Cihazlar:
             - Xiaomi 13 Pro (houji)
@@ -390,17 +328,10 @@ jobs:
             1. **KernelSU-Next Manager APK** yükleyin
             2. Bu ZIP'i custom recovery ile flashlayın
             3. Cihazı yeniden başlatın
-            4. **SUSFS Module** yükleyin (önerilir)
             
             ### 🔗 Linkler:
             - KernelSU-Next Manager: https://github.com/KernelSU-Next/KernelSU-Next/releases
-            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module/releases
             - build-vortex: https://github.com/Kingfinik98/build-vortex
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 13. CCACHE İstatistikleri
-        run: |
-          echo "🔍 Final CCACHE istatistikleri:"
-          ccache -s || true
