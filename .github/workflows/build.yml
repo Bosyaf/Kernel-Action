@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel
+name: CG+ Yuki Gaming Kernel (ReSukiSU + SUSFS)
 
 permissions:
   contents: write
@@ -44,127 +44,50 @@ jobs:
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
 
-      - name: 2. Kaynakları Çek (Kendi Source Repo)
+      - name: 2. Kaynakları Çek (ramabondanp 6.1-staging)
         run: |
           echo "🔥 Kernel source çekiliyor..."
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-          echo "✅ Kernel source hazır!"
+          echo "✅ Kernel source: 6.1-staging (ramabondanp)"
 
-      - name: 3. yapixel/kernel_patches İndir (TÜM Root Yöntemleri)
-        run: |
-          echo "🔥 yapixel/kernel_patches reposu indiriliyor..."
-          git clone -b dev https://github.com/yapixel/kernel_patches.git kernel_patches
-          echo "✅ kernel_patches indirildi!"
-          echo "📂 Klasörler:"
-          ls -la kernel_patches/
-
-      - name: 4. KernelSU-Next Kurulumu + SUSFS Patchi
+      - name: 3. ReSukiSU Kurulumu (Resmi setup.sh)
         run: |
           cd common
-          echo "🔥 KernelSU-Next (next-susfs branch) kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
-          
-          # yapixel next/ patchlerini uygula
-          if [ -d "../kernel_patches/next" ] && [ -d "KernelSU-Next" ]; then
-            echo "📦 KernelSU-Next için yapixel patchleri uygulanıyor..."
-            cd KernelSU-Next
-            for patch_file in ../kernel_patches/next/*.patch; do
-              if [ -f "$patch_file" ]; then
-                patchname=$(basename "$patch_file")
-                echo "  → Uygulanıyor: $patchname"
-                patch -p1 --forward < "$patch_file" || echo "  ⚠️ $patchname zaten uygulanmış"
-              fi
-            done
-            cd ..
-            echo "✅ KernelSU-Next + SUSFS tamamlandı!"
-          fi
+          echo "🔥 ReSukiSU kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+          echo "✅ ReSukiSU kurulumu tamamlandı!"
 
-      - name: 5. MKSU Kurulumu + SUSFS Patchi
+      - name: 4. SUSFS Entegrasyonu (gki-android14-6.1)
         run: |
           cd common
-          echo "🔥 MKSU kuruluyor..."
+          echo "🔥 SUSFS4KSU patchleri indiriliyor ve uygulanıyor..."
           
-          # MKSU için gerekli dosyaları kopyala
-          if [ -d "../kernel_patches/mksu" ]; then
-            echo "📦 MKSU patchleri uygulanıyor..."
-            
-            # MKSU klasörünü oluştur ve patchleri uygula
-            mkdir -p MKSU
-            cd MKSU
-            
-            for patch_file in ../kernel_patches/mksu/*.patch; do
-              if [ -f "$patch_file" ]; then
-                patchname=$(basename "$patch_file")
-                echo "  → Uygulanıyor: $patchname"
-                patch -p1 --forward < "$patch_file" || echo "  ⚠️ $patchname zaten uygulanmış"
-              fi
-            done
-            
-            cd ..
-            echo "✅ MKSU patchleri tamamlandı!"
-          else
-            echo "⚠️ MKSU patchleri bulunamadı!"
-          fi
-
-      - name: 6. SuKisu Kurulumu + SUSFS Patchi
-        run: |
-          cd common
-          echo "🔥 SuKisu kuruluyor..."
+          # SUSFS repo klonla (gki-android14-6.1 branch - 6.1 kernel için)
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1 ../susfs
           
-          # SuKisu için gerekli dosyaları kopyala
-          if [ -d "../kernel_patches/sukisu" ]; then
-            echo "📦 SuKisu patchleri uygulanıyor..."
-            
-            # Ana SUSFS patchini uygula (sukisu klasöründen)
-            if [ -f "../kernel_patches/sukisu/50_add_susfs_in_gki-android14-6.1.patch" ]; then
-              echo "  → Ana SUSFS patchi uygulanıyor..."
-              patch -p1 --forward < ../kernel_patches/sukisu/50_add_susfs_in_gki-android14-6.1.patch || echo "  ⚠️ Patch zaten uygulanmış"
-            fi
-            
-            # sukisu specific patchler
-            for patch_file in ../kernel_patches/sukisu/*.patch; do
-              if [ -f "$patch_file" ]; then
-                patchname=$(basename "$patch_file")
-                if [ "$patchname" != "50_add_susfs_in_gki-android14-6.1.patch" ]; then
-                  echo "  → Uygulanıyor: $patchname"
-                  patch -p1 --forward < "$patch_file" || echo "  ⚠️ $patchname zaten uygulanmış"
-                fi
-              fi
-            done
-            
-            echo "✅ SuKisu patchleri tamamlandı!"
-          else
-            echo "⚠️ SuKisu patchleri bulunamadı!"
-          fi
-
-      - name: 7. KowSU Kurulumu + SUSFS Patchi
-        run: |
-          cd common
-          echo "🔥 KowSU kuruluyor..."
+          # FS dosyalarını kopyala
+          echo "📦 FS dosyaları kopyalanıyor..."
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
           
-          # KowSU için gerekli dosyaları kopyala
-          if [ -d "../kernel_patches/kowsu" ]; then
-            echo "📦 KowSU patchleri uygulanıyor..."
-            
-            mkdir -p KowSU
-            cd KowSU
-            
-            for patch_file in ../kernel_patches/kowsu/*.patch; do
-              if [ -f "$patch_file" ]; then
-                patchname=$(basename "$patch_file")
-                echo "  → Uygulanıyor: $patchname"
-                patch -p1 --forward < "$patch_file" || echo "  ⚠️ $patchname zaten uygulanmış"
-              fi
-            done
-            
-            cd ..
-            echo "✅ KowSU patchleri tamamlandı!"
-          else
-            echo "⚠️ KowSU patchleri bulunamadı!"
+          # Include dosyalarını kopyala
+          echo "📦 Include dosyaları kopyalanıyor..."
+          cp -R ../susfs/kernel_patches/include/linux/* ./include/linux/
+          
+          # Ana SUSFS patchini uygula
+          echo "📦 Ana SUSFS patchi uygulanıyor..."
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ Patch zaten uygulanmış"
+          
+          # Scope-minimized manual hooks patchi (varsa)
+          if [ -f "../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch" ]; then
+            echo "📦 Manual hooks patchi uygulanıyor..."
+            patch -p1 --forward < ../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch || echo "⚠️ Patch zaten uygulanmış"
           fi
+          
+          echo "✅ SUSFS entegrasyonu tamamlandı!"
+          rm -rf ../susfs
 
-      - name: 8. Wi-Fi ve Baseband Yamaları
+      - name: 5. Wi-Fi ve Baseband Yamaları
         run: |
           cd common
           echo "📡 Wi-Fi ve Baseband yamaları uygulanıyor..."
@@ -182,7 +105,7 @@ jobs:
           
           echo "✅ Wi-Fi ve Baseband yamaları tamamlandı!"
 
-      - name: 9. Özel Performans Yamaları (Patches Klasörü)
+      - name: 6. Özel Performans Yamaları (Patches Klasörü)
         run: |
           cd common
           echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
@@ -190,30 +113,29 @@ jobs:
           PATCH_DIR="../patches"
           
           if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ UYARI: $PATCH_DIR dizini bulunamadı. Özel yamalar atlanıyor."
+            echo "⚠️ UYARI: $PATCH_DIR dizini bulunamadı."
           else
             for patch_file in "$PATCH_DIR"/*.patch; do
               filename=$(basename "$patch_file")
               echo "----------------------------------------------------"
               echo "📦 İşleniyor: $filename"
               
-              # SUSFS patchlerini ATLA (yapixel'den zaten uygulandı)
               if echo "$filename" | grep -qi "susfs"; then
                 echo "⚠️ ATLANDI: $filename (SUSFS zaten entegre)"
                 continue
               fi
               
               if patch -p1 --forward < "$patch_file"; then
-                echo "✅ BAŞARILI: $filename kernela işlendi."
+                echo "✅ BAŞARILI: $filename"
               else
-                echo "❌ ATLANDI: $filename uygulanamadı!"
+                echo "❌ ATLANDI: $filename"
               fi
             done
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
 
-      - name: 10. Full Kernel Config & Derleme Hazırlığı
+      - name: 7. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -234,24 +156,24 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          # CMDLINE Ayarları
+          # CMDLINE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
-          # HZ Ayarları
+          # HZ
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           
-          # Preempt Ayarları
+          # Preempt
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
-          # CPU Idle & Frequency
+          # CPU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
@@ -278,7 +200,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           
-          # Kprobes (TÜM Root yöntemleri için gerekli)
+          # Kprobes (ReSukiSU için gerekli)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
@@ -289,7 +211,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           
-          # Debug Info
+          # Debug
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
@@ -314,11 +236,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # TÜM Root Yöntemleri Config (yapixel kernel_patches ile)
-          # KernelSU-Next
+          # ReSukiSU Config
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
-          # SUSFS (TÜM root yöntemleri için ortak)
+          
+          # SUSFS Config (ReSukiSU ile uyumlu)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -330,7 +252,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
           
           # Local Version
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Yuki-ALL"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Yuki-ReSuki"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -340,68 +262,51 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 11. Kernel Derleme
+      - name: 8. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
-          echo "🔍 Config kontrolü (Root ve SUSFS):"
-          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=" out/.config || true
+          echo "🔍 Config kontrolü (ReSukiSU ve SUSFS):"
+          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=32 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
-            -fno-unwind-tables \
-            -fno-asynchronous-unwind-tables \
-            -fvectorize \
-            -fslp-vectorize \
-            -finline-functions \
-            -fno-common \
-            -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-z,now \
-            -Wl,-O2" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse -falign-functions=32 -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fvectorize -fslp-vectorize -finline-functions -fno-common -Wno-constant-logical-operand" \
+            KLDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-debug -Wl,--icf=safe -Wl,-z,now -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-ALL-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-ReSuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 12. AnyKernel3 Paketleme
+      - name: 9. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (ALL Root + SUSFS)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (ReSukiSU + SUSFS)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Gaming-ALL.zip" ./*
+          zip -r "../CG-Yuki-ReSukiSU.zip" ./*
 
-      - name: 13. Release Yükle
+      - name: 10. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Gaming (ALL Root + SUSFS)"
+          name: "CG+ Yuki Gaming (ReSukiSU + SUSFS)"
           body: |
             ## 🎮 CG+ Yuki Gaming Kernel
             
             ### ✨ Özellikler:
-            - 🔑 **Root:** KernelSU-Next + MKSU + SuKisu + KowSU (HEPSİ)
-            - 🛡️ **Root Hiding:** SUSFS v2 (yapixel kernel_patches)
+            - 🔑 **Root:** ReSukiSU (SukiSU-Ultra fork)
+            - 🛡️ **Root Hiding:** SUSFS v2 (gki-android14-6.1)
             - ⚡ **Clang:** Yuki Clang + BOLT
             - 📡 **Wi-Fi:** OnePlus 12 patchleri
             - 🎯 **Governor:** WALT
             - 🔒 **Baseband Guard:** Aktif
-            - 📱 **Kernel:** 6.1.x (ramabondanp)
+            - 📱 **Kernel:** 6.1-staging (ramabondanp)
             
             ### 📱 Desteklenen Cihazlar:
             - Xiaomi 13 Pro (houji)
@@ -410,20 +315,14 @@ jobs:
             - Xiaomi 14 Pro (xiaomi14)
             
             ### 📥 Kurulum:
-            1. İstediğiniz Root APK'yı yükleyin (KSUN/MKSU/SuKisu/KowSU)
+            1. **ReSukiSU Manager APK** yükleyin
             2. Bu ZIP'i custom recovery ile flashlayın
+            3. Cihazı yeniden başlatın
             
             ### 🔗 Linkler:
-            - KernelSU-Next: https://github.com/KernelSU-Next/KernelSU-Next/releases
-            - MKSU: https://github.com/5ec1cff/KernelSU/releases
-            - SuKisu: https://github.com/risssaxx/SuKisu/releases
-            - KowSU: https://github.com/KOWX712/KowSU/releases
-            - yapixel kernel_patches: https://github.com/yapixel/kernel_patches
+            - ReSukiSU Manager: https://github.com/ReSukiSU/ReSukiSU/releases
+            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module
+            - ReSukiSU Telegram: https://t.me/ReSukisu
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 14. Temizlik
-        run: |
-          rm -rf kernel_patches
-          echo "✅ Temizlik tamamlandı!"
