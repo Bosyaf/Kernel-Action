@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve YUKI CLANG Çekimi (Gizli Tünel)
+      - name: 1. Paketler ve YUKI CLANG Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -46,163 +46,92 @@ jobs:
           tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
           rm -f clang.tar.zst
 
-      - name: 2. Kaynakları Çek (Yeni Staging Dalı)
+      - name: 2. Kaynakları Çek (GKI Android 14 6.1 Staging)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 2.5. ReSukiSU (RSKSU) Kurulumu
+      - name: 3. KernelSU-Next Kurulumu (Güncel Root - next-susfs)
         run: |
           cd common
-          git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git
-          # Root dizininde kalıp setup çalıştırıyoruz ki path hatası vermesin
-          bash ReSukiSU/kernel/setup.sh
-          echo "✅ ReSukiSU entegre edildi."
+          echo "🔥 KernelSU-Next (next-susfs branch) kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
+          echo "✅ KernelSU-Next kurulumu tamamlandı!"
 
-      - name: 3. Yeni Root Sistemi (KernelSU) ve Çoklu Manager Yaması
+      - name: 4. SUSFS4KSU Entegrasyonu (Güncel - gki-android14-6.1)
         run: |
           cd common
-          echo "🔥 Official KernelSU çekiliyor (Vortex İptal Edildi)..."
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-          HASH_FILE="KernelSU/kernel/manager_hash.h"
+          echo "🔥 SUSFS4KSU patchleri indiriliyor ve uygulanıyor..."
           
-          export PYTHON_CODE='
-          import sys
-          import os
+          # SUSFS repo klonla (güncel branch)
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1 ../susfs
+          
+          # FS dosyalarını kopyala
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          
+          # Include dosyalarını kopyala
+          cp -R ../susfs/kernel_patches/include/linux/* ./include/linux/
+          
+          # Ana SUSFS patchini uygula
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          # Scope-minimized manual hooks patchi (güncel)
+          if [ -f ../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch ]; then
+            patch -p1 --forward < ../susfs/kernel_patches/60_scope-minimized_manual_hooks.patch || true
+          fi
+          
+          # KernelSU-Next için SUSFS enable patch
+          if [ -f ../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
+            cd KernelSU-Next
+            patch -p1 --forward < ../../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch || true
+            cd ..
+          fi
+          
+          echo "✅ SUSFS entegrasyonu tamamlandı!"
 
-          path = sys.argv[1]
-          if not os.path.exists(path):
-              print("⚠️ UYARI: manager_hash.h bulunamadı. Hash yaması atlanıyor.")
-              sys.exit(0)
-
-          with open(path, "r") as f:
-              src = f.read()
-
-          new_entries = """
-          	// KSU
-          	{
-          		.size = 0x033b,
-          		.hash = "c371061b19d8c7d7d6133c6a9bafe198fa944e50c1b31c9d8daa8d7f1fc2d2d6",
-          	},
-          	// RKSU
-          	{
-          		.size = 0x396,
-          		.hash = "f415f4ed9435427e1fdf7f1fccd4dbc07b3d6b8751e4dbcec6f19671f427870b",
-          	},
-          	// SukiSU-Ultra
-          	{
-          		.size = 0x35c,
-          		.hash = "947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef",
-          	},
-          	// ReSukiSU
-          	{
-          		.size = 0x377,
-          		.hash = "d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64",
-          	},
-          	// KernelSU-Next
-          	{
-          		.size = 0x3e6,
-          		.hash = "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7",
-          	},
-          	// MamboSU
-          	{
-          		.size = 0x384,
-          		.hash = "a9462b8b98ea1ca7901b0cbdcebfaa35f0aa95e51b01d66e6b6d2c81b97746d8",
-          	},
-          	// VortexSU
-          	{
-          		.size = 0x381,
-          		.hash = "67eec44718428adad14e6a9dca57822759aba7e77a8cad7071f6f6704df8bb48",
-          	},
-          """
-
-          anchor = "};\n\n#define MANAGER_SIGNATURES_COUNT"
-
-          if anchor in src and "a9462b8b98ea1ca7901b0cbdcebfaa35f0aa95e51b01d66e6b6d2c81b97746d8" not in src:
-              src = src.replace(anchor, new_entries + anchor)
-              with open(path, "w") as f:
-                  f.write(src)
-              print("✅ BAŞARILI: Alternatif Manager Hash leri KernelSU ya entegre edildi!")
-          else:
-              print("⚠️ UYARI: Hash ler dosyada zaten mevcut veya değiştirme noktası bulunamadı.")
-          '
-          python3 -c "$PYTHON_CODE" "$HASH_FILE"
-
-      - name: 4. Wi-Fi ve Asya Yamaları
+      - name: 5. Wi-Fi ve Baseband Yamaları
         run: |
           cd common
+          echo "📡 Wi-Fi ve Baseband yamaları uygulanıyor..."
+          
+          # Wi-Fi patchi
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
             patch -p1 --forward < wifi.patch || true
           fi
+          
+          # Baseband guard
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+          
+          echo "✅ Wi-Fi ve Baseband yamaları tamamlandı!"
 
-      - name: 5. SUSFS Master Formülü
+      - name: 6. Özel Performans Yamaları (Patches Klasörü)
         run: |
           cd common
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
-          cp -R ../susfs/kernel_patches/fs/* ./fs/
-          cp -R ../susfs/kernel_patches/include/* ./include/
-          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
-          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo '#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT' > .ns_inject_tmp
-          echo '#include <linux/susfs_def.h>' >> .ns_inject_tmp
-          echo 'extern bool susfs_is_current_ksu_domain(void);' >> .ns_inject_tmp
-          echo 'extern bool susfs_is_current_zygote_domain(void);' >> .ns_inject_tmp
-          echo 'extern bool susfs_is_boot_completed_triggered;' >> .ns_inject_tmp
-          echo 'extern bool susfs_is_sdcard_android_data_decrypted;' >> .ns_inject_tmp
-          echo 'static DEFINE_IDA(susfs_mnt_id_ida);' >> .ns_inject_tmp
-          echo 'static DEFINE_IDA(susfs_mnt_group_ida);' >> .ns_inject_tmp
-          echo '#define CL_COPY_MNT_NS BIT(25)' >> .ns_inject_tmp
-          echo '#endif' >> .ns_inject_tmp
-          
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
-          rm -f .ns_inject_tmp
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
-
-      - name: 5.5. Özel Performans ve SUSFS Yamaları (Bosyaf Patches)
-        run: |
-          cd common
-          echo "🔥 Repo içerisindeki özel yamalar filtrelenerek uygulanıyor..."
+          echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
           
           PATCH_DIR="../patches"
           
           if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ UYARI: $PATCH_DIR dizini bulunamadı! 'actions/checkout' ile repodaki dosyaların geldiğinden emin olun."
+            echo "⚠️ UYARI: $PATCH_DIR dizini bulunamadı. Özel yamalar atlanıyor."
           else
-            sed -i '/bypass:/d' fs/proc/task_mmu.c || true
-
             for patch_file in "$PATCH_DIR"/*.patch; do
               filename=$(basename "$patch_file")
-              
-              if [[ "$filename" == "69_hide_stuff.patch" || \
-                    "$filename" == "gki_ptrace.patch" || \
-                    "$filename" == "susfs_dentry_checks.patch" || \
-                    "$filename" == "add_limitation_scaling_min_freq.patch" ]]; then
-                echo "⏭️ ATLANDI (Uyumsuz/Bozuk): $filename"
-                continue
-              fi
-
               echo "----------------------------------------------------"
               echo "📦 İşleniyor: $filename"
               
               if patch -p1 --forward < "$patch_file"; then
-                echo "✅ BAŞARILI: $filename kernela sorunsuz işlendi."
+                echo "✅ BAŞARILI: $filename kernela işlendi."
               else
-                echo "❌ HATA / ATLANDI: $filename uygulanamadı! (Derleme riski nedeniyle geçildi)"
+                echo "❌ ATLANDI: $filename uygulanamadı!"
               fi
             done
             echo "----------------------------------------------------"
-            echo "🎉 Tüm özel yamaların kontrolü tamamlandı. Derleme aşamasına geçiliyor."
+            echo "🎉 Özel yamalar tamamlandı!"
           fi
 
-      - name: 6. Full Kernel Config & Derleme Hazırlığı
+      - name: 7. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -210,8 +139,10 @@ jobs:
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          echo '#!/bin/sh' > scripts/check-local-export
-          echo 'exit 0' >> scripts/check-local-export
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
           chmod +x scripts/check-local-export
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -221,17 +152,24 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
+          # CMDLINE Ayarları
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+          
+          # HZ Ayarları
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
+          
+          # Preempt Ayarları
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          
+          # CPU Idle
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
@@ -243,28 +181,40 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
+          
+          # Thermal
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          
+          # Scheduler
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          
+          # Kprobes (KernelSU için gerekli)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+          
+          # LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
+          
+          # Debug Info
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          
+          # Network
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -276,9 +226,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          
+          # Filesystem
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          
+          # KernelSU-Next Config
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_KPROBES_HOOK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -287,8 +243,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimriel-X"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_SUS_SU
+          
+          # Local Version
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Yuki-KSUN"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          
           sed -i 's/check_defconfig//' build.config.gki || true
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -296,13 +256,13 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme
+      - name: 8. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
-          echo "🔍 WALT / governor config kontrolü:"
-          grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
+          echo "🔍 Config kontrolü (KernelSU ve SUSFS):"
+          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=" out/.config || true
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -327,27 +287,51 @@ jobs:
             -Wl,--icf=safe \
             -Wl,-z,now \
             -Wl,-O2" \
-            Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-KSUN-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. AnyKernel3
+      - name: 9. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Gaming Kernel (KernelSU-Next + SUSFS)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
+          zip -r "../CG-Yuki-Gaming-KSUN.zip" ./*
 
-      - name: 9. Release Yükle
+      - name: 10. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Clang (Balanced Pro - Altın Denge)"
+          name: "CG+ Yuki Gaming (KernelSU-Next + SUSFS)"
+          body: |
+            ## 🎮 CG+ Yuki Gaming Kernel
+            
+            ### ✨ Özellikler:
+            - 🔑 **Root:** KernelSU-Next (next-susfs branch)
+            - 🛡️ **Root Hiding:** SUSFS v2 (gki-android14-6.1)
+            - ⚡ **Clang:** Yuki Clang + BOLT
+            - 📡 **Wi-Fi:** OnePlus 12 patchleri
+            - 🎯 **Governor:** WALT
+            - 🔒 **Baseband Guard:** Aktif
+            
+            ### 📱 Desteklenen Cihazlar:
+            - Xiaomi 13 Pro (houji)
+            - Xiaomi 13 (shennong)
+            - Xiaomi 14 (aurora)
+            - Xiaomi 14 Pro (xiaomi14)
+            
+            ### 📥 Kurulum:
+            1. KernelSU-Next Manager APK'yı yükleyin
+            2. Bu ZIP'i custom recovery ile flashlayın
+            3. SUSFS modülünü KernelSU içinden yükleyin (opsiyonel)
+            
+            ### 🔗 Linkler:
+            - KernelSU-Next Manager: https://github.com/KernelSU-Next/KernelSU-Next/releases
+            - SUSFS Module: https://github.com/sidex15/susfs4ksu-module
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
