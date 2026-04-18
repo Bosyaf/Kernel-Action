@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (ZyCromerZ Clang 22)
+name: CG+ Yuki Gaming Kernel (Derleme-Farki-ZyCromerZ Clang 22)
 
 permissions:
   contents: write
@@ -238,11 +238,8 @@ jobs:
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-unwind-tables \
-            -fno-asynchronous-unwind-tables \
-            -fvectorize \
-            -fslp-vectorize \
-            -fno-common \
+            -fno-math-errno \
+            -fno-trapping-math \
             -fno-delete-null-pointer-checks \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
