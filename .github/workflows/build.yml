@@ -57,10 +57,10 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next Kurulumu (VorteX Method - DÜZELTİLMİŞ)
+      - name: 3. KernelSU-Next Kurulumu (FINAL - ÇALIŞAN)
         run: |
           cd common
-          echo "🔥 KernelSU-Next (dev-susfs) kuruluyor - VorteX Method..."
+          echo "🔥 KernelSU-Next (dev-susfs) kuruluyor..."
           
           # Eski kernelsu klasörlerini temizle
           for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
@@ -74,10 +74,52 @@ jobs:
           echo "📥 pershoot/KernelSU-Next klonlanıyor..."
           git clone --depth=1 -q https://github.com/pershoot/KernelSU-Next.git -b dev-susfs KernelSU-Next
           
-          # drivers/kernelsu klasörüne kopyala
-          echo "📦 KernelSU dosyaları drivers/kernelsu'ya kopyalanıyor..."
+          # KernelSU-Next yapısını kontrol et
+          echo "🔍 KernelSU-Next yapısı kontrol ediliyor..."
+          ls -la KernelSU-Next/
+          ls -la KernelSU-Next/kernel/ 2>/dev/null || echo "⚠️ kernel/ klasörü yok"
+          
+          # drivers/kernelsu klasörünü oluştur
           mkdir -p drivers/kernelsu
-          cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
+          
+          # KernelSU-Next/kernel/ içeriğini kopyala
+          if [ -d "KernelSU-Next/kernel" ] && [ "$(ls -A KernelSU-Next/kernel 2>/dev/null)" ]; then
+            echo "📦 KernelSU dosyaları kopyalanıyor..."
+            cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
+          else
+            echo "⚠️ KernelSU-Next/kernel/ boş, doğrudan KernelSU-Next kullanılıyor..."
+            cp -rf KernelSU-Next/* drivers/kernelsu/ 2>/dev/null || true
+          fi
+          
+          # Kontrol: ksu.c dosyası var mı?
+          echo "🔍 drivers/kernelsu/ kontrolü:"
+          ls -la drivers/kernelsu/
+          
+          if [ ! -f "drivers/kernelsu/ksu.c" ]; then
+            echo "❌ ksu.c bulunamadı, alternatif yöntem deneniyor..."
+            # Alternatif: tiann/KernelSU official
+            rm -rf drivers/kernelsu KernelSU-Next
+            git clone --depth=1 -q https://github.com/tiann/KernelSU.git -b main KernelSU
+            mkdir -p drivers/kernelsu
+            cp -rf KernelSU/kernel/* drivers/kernelsu/
+            
+            # SUSFS dev branch'den susfs desteği al
+            echo "📥 KernelSU-Next susfs branch'inden susfs dosyaları alınıyor..."
+            git clone --depth=1 -q https://github.com/pershoot/KernelSU-Next.git -b dev-susfs KSU_SUSFS
+            if [ -f "KSU_SUSFS/kernel/susfs.c" ]; then
+              cp -f KSU_SUSFS/kernel/susfs.c drivers/kernelsu/
+              cp -f KSU_SUSFS/kernel/sus.h drivers/kernelsu/ 2>/dev/null || true
+            fi
+            rm -rf KSU_SUSFS
+          fi
+          
+          # Son kontrol
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
+            echo "✅ drivers/kernelsu/ksu.c mevcut!"
+          else
+            echo "❌ HATA: ksu.c hala bulunamadı!"
+            exit 1
+          fi
           
           # ANA KCONFIG'A EKLE (drivers/Kconfig)
           echo "🔧 drivers/Kconfig düzenleniyor..."
@@ -99,29 +141,26 @@ jobs:
             echo "ℹ️ drivers/Makefile zaten güncel"
           fi
           
-          echo "✅ KernelSU-Next kurulumu tamamlandı!"
-          
-          # Multi-Manager Desteği (VorteX GitHub'dan)
+          # Multi-Manager Desteği
           echo "🔥 Multi-Manager patchi uygulanıyor..."
-          cd KernelSU-Next
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
-          patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
-          rm -f ksun-multi-mgr.patch
-          
-          # Patch edilmiş dosyaları drivers/kernelsu'ya tekrar kopyala
-          echo "📦 Patch edilmiş KernelSU dosyaları kopyalanıyor..."
-          cp -rf kernel/* ../drivers/kernelsu/
-          cd ..
-          
-          # Kontrol: drivers/kernelsu/ksu.c var mı?
-          if [ -f "drivers/kernelsu/ksu.c" ]; then
-            echo "✅ drivers/kernelsu/ksu.c mevcut!"
-          else
-            echo "❌ HATA: drivers/kernelsu/ksu.c bulunamadı!"
-            exit 1
+          if [ -d "KernelSU-Next" ]; then
+            cd KernelSU-Next
+            curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
+            patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
+            rm -f ksun-multi-mgr.patch
+            cp -rf kernel/* ../drivers/kernelsu/
+            cd ..
+          elif [ -d "KernelSU" ]; then
+            cd KernelSU
+            curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
+            patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
+            rm -f ksun-multi-mgr.patch
+            cp -rf kernel/* ../drivers/kernelsu/
+            cd ..
           fi
           
-          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU desteği eklendi!"
+          echo "✅ KernelSU-Next kurulumu tamamlandı!"
+          echo "✅ Multi-Manager desteği eklendi!"
 
       - name: 4. SUSFS Entegrasyonu (VorteX Method + 5 Hotfix)
         run: |
@@ -300,8 +339,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
@@ -335,7 +375,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== KERNELSU + SUSFS CONFIG (VorteX Method) ==========
+          # ========== KERNELSU + SUSFS CONFIG ==========
           echo "🔐 KernelSU config'leri ekleniyor..."
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_DEBUG
@@ -354,11 +394,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
-          
-          # ========== ÖZEL ROOT APK İMZA DESTEĞİ ==========
-          # Kendi root APK'nızı kullanmak istiyorsanız, APK'nızın imza hash'ini buraya ekleyin
-          # Örnek: KernelSU Manager, KowSü, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU vb.
-          echo "🔑 Özel Root APK imza desteği aktif (Multi-Manager)"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_ALLOWLIST_WORKAROUND
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
@@ -395,7 +430,6 @@ jobs:
           grep -E "^CONFIG_KSU=|^CONFIG_KSU_SUSFS=" out/.config
           echo "================================"
           
-          # KernelSU module'ü derleniyor mu kontrol et
           if grep -q "CONFIG_KSU=y" out/.config; then
             echo "✅ CONFIG_KSU=y AYARLI!"
           else
