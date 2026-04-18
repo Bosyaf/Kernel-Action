@@ -65,7 +65,14 @@ jobs:
           bash $GITHUB_WORKSPACE/patches/ksu/setup.sh dev-susfs
           echo "✅ KernelSU-Next tamamlandı!"
 
-      - name: 4. SUSFS Entegrasyonu (Patch ile)
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          echo "🔥 Multi-manager patchi uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
+          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
+
+      - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
           echo "🔥 SUSFS dosyaları kopyalanıyor..."
@@ -78,11 +85,25 @@ jobs:
           echo "📦 Ana SUSFS patchi uygulanıyor..."
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          echo "📦 namespace.c patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/fs_namespace.patch || true
+          echo "📦 namespace.c SUSFS inject..."
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
           
-          echo "📦 statfs.c patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/fix-statfs-crc-mismatch-susfs.patch || true
+          #define CL_COPY_MNT_NS BIT(25)
+          
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          rm -f .ns_inject_tmp
+          
+          echo "📦 statfs.c fix..."
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
           
           echo "📦 fs_proc_base fix..."
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/fs_proc_base.c-fix-k6.1.patch || true
@@ -175,9 +196,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
@@ -219,7 +239,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-RivendellX"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -242,7 +262,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=32 \
+            -falign-functions=64 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
