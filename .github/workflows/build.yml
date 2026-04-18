@@ -51,11 +51,22 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. SADECE VortexSU Kurulumu
+      - name: 3. KernelSU-Next Kurulumu (ESKİ COMMIT - ÇALIŞAN)
         run: |
           cd common
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
-
+          echo "🔥 KernelSU-Next (dev-susfs - eski commit) kuruluyor..."
+          git clone https://github.com/pershoot/KernelSU-Next.git KernelSU-Next
+          cd KernelSU-Next
+          git checkout dev-susfs
+          # ESİ COMMIT: Manuel SUSFS ile çalışan sürüm
+          git reset --hard a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0
+          cd ../..
+          ln -sf $(pwd)/KernelSU-Next/kernel drivers/kernelsu
+          sed -i '/kernelsu/d' drivers/Kconfig drivers/Makefile
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          echo 'obj-y += kernelsu/' >> drivers/Makefile
+          echo "✅ KernelSU-Next tamamlandı!"
+    
       - name: 4. Wi-Fi ve Asya Yamaları
         run: |
           cd common
