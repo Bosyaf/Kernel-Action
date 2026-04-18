@@ -51,7 +51,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. SADECE VortexSU Kurulumu
+      - name: 3. VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
@@ -60,13 +60,10 @@ jobs:
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
+          [ -s wifi.patch ] && patch -p1 --forward < wifi.patch || true
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü
+      - name: 5. SUSFS Master Formülü ve Hata Onarımı
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
@@ -77,13 +74,16 @@ jobs:
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
+          # HATA ÇÖZÜMÜ: fs/namespace.c içerisine eksik olan static_key tanımını ekliyoruz
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
+          #include <linux/jump_label.h>
           extern bool susfs_is_current_ksu_domain(void);
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
+          struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false = STATIC_KEY_FALSE_INIT;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
           #define CL_COPY_MNT_NS BIT(25)
@@ -91,6 +91,8 @@ jobs:
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
+
+          # Statfs fix
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
 
