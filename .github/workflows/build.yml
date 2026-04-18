@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (Derleme-Farki-ZyCromerZ Clang 22)
+name: CG+ Yuki Gaming Kernel
 
 permissions:
   contents: write
@@ -30,25 +30,18 @@ jobs:
         id: cache-clang
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/clang-zyc
-          key: clang-zyc-22-20250928
+          path: ${{ github.workspace }}/clang-yuki
+          key: clang-yuki-bolt-20260124
           restore-keys: |
-            clang-zyc-
+            clang-yuki-
 
       - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyC Clang 22CLANG_URL"
-          
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
-          
-          echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
-          rm -f clang.tar.gz
-          echo "✅ ZyCromerZ Clang 22 cache'lendi!"
+          echo "🔥 Yuki Clang indiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-yuki
+          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
+          echo "✅ Clang cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -79,10 +72,25 @@ jobs:
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
 
-      # ❌ STEP 4 DEVRE DIŞI (KernelSU-Next zaten SUSFS içeriyor!)
-      # - name: 4. SUSFS Entegrasyonu
-      #   run: |
-      #     ... (yorum satırı)
+      - name: 4. SUSFS Dosyaları (Gerekli)
+        run: |
+          cd common
+          echo "🔥 SUSFS header dosyaları kopyalanıyor..."
+          
+          cp $GITHUB_WORKSPACE/patches/susfs/susfs.c ./fs/susfs.c
+          mkdir -p ./include/linux
+          cp $GITHUB_WORKSPACE/patches/susfs/susfs.h ./include/linux/susfs.h
+          cp $GITHUB_WORKSPACE/patches/susfs/susfs_def.h ./include/linux/susfs_def.h
+          
+          echo "📦 Ana SUSFS patchi uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          echo "📦 fs_proc_base fix..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/fs_proc_base.c-fix-k6.1.patch || true
+          
+          echo "🔍 Header kontrolü:"
+          ls -la include/linux/susfs*.h && echo "✅ SUSFS header OK!"
+          echo "✅ SUSFS dosyaları hazır!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
@@ -127,7 +135,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -202,15 +210,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -223,7 +222,7 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
@@ -238,8 +237,11 @@ jobs:
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-math-errno \
-            -fno-trapping-math \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
+            -fvectorize \
+            -fslp-vectorize \
+            -fno-common \
             -fno-delete-null-pointer-checks \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
@@ -249,24 +251,24 @@ jobs:
             -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-ZyC22-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (ZyCromerZ 22)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro-ZyC22.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyCromerZ Clang 22 (Balanced Pro)"
+          name: "CG+ Yuki Clang (Balanced Pro)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
