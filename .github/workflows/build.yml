@@ -57,7 +57,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next Kurulumu (VorteX Method)
+      - name: 3. KernelSU-Next Kurulumu (VorteX Method - DÜZELTİLMİŞ)
         run: |
           cd common
           echo "🔥 KernelSU-Next (dev-susfs) kuruluyor - VorteX Method..."
@@ -66,9 +66,6 @@ jobs:
           for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
             if [ -d "$KSU_PATH" ]; then
               echo "🗑️ Eski $KSU_PATH siliniyor..."
-              KSU_DIR=$(dirname "$KSU_PATH")
-              [ -f "$KSU_DIR/Kconfig" ] && sed -i '/kernelsu/d' $KSU_DIR/Kconfig
-              [ -f "$KSU_DIR/Makefile" ] && sed -i '/kernelsu/d' $KSU_DIR/Makefile
               rm -rf "$KSU_PATH"
             fi
           done
@@ -77,23 +74,29 @@ jobs:
           echo "📥 pershoot/KernelSU-Next klonlanıyor..."
           git clone --depth=1 -q https://github.com/pershoot/KernelSU-Next.git -b dev-susfs KernelSU-Next
           
-          # Makefile ve Kconfig düzenlemeleri
-          echo "🔧 Makefile ve Kconfig düzenleniyor..."
-          KSU_MAKEFILE="KernelSU-Next/kernel/Makefile"
-          KSU_KCONFIG="KernelSU-Next/kernel/Kconfig"
-          
           # drivers/kernelsu klasörüne kopyala
+          echo "📦 KernelSU dosyaları drivers/kernelsu'ya kopyalanıyor..."
           mkdir -p drivers/kernelsu
           cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
           
-          # Kconfig'a ekle
-          if ! grep -q "kernelsu" drivers/kernelsu/Kconfig; then
-            echo "source \"drivers/kernelsu/Kconfig\"" >> drivers/kernelsu/../Kconfig
+          # ANA KCONFIG'A EKLE (drivers/Kconfig)
+          echo "🔧 drivers/Kconfig düzenleniyor..."
+          if ! grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig; then
+            echo "" >> drivers/Kconfig
+            echo "source \"drivers/kernelsu/Kconfig\"" >> drivers/Kconfig
+            echo "✅ drivers/Kconfig güncellendi!"
+          else
+            echo "ℹ️ drivers/Kconfig zaten güncel"
           fi
           
-          # Makefile'a ekle
-          if ! grep -q "kernelsu" drivers/kernelsu/Makefile; then
-            echo "obj-y += kernelsu/" >> drivers/kernelsu/../Makefile
+          # ANA MAKEFILE'A EKLE (drivers/Makefile)
+          echo "🔧 drivers/Makefile düzenleniyor..."
+          if ! grep -q "obj-y += kernelsu/" drivers/Makefile; then
+            echo "" >> drivers/Makefile
+            echo "obj-y += kernelsu/" >> drivers/Makefile
+            echo "✅ drivers/Makefile güncellendi!"
+          else
+            echo "ℹ️ drivers/Makefile zaten güncel"
           fi
           
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
@@ -109,6 +112,14 @@ jobs:
           echo "📦 Patch edilmiş KernelSU dosyaları kopyalanıyor..."
           cp -rf kernel/* ../drivers/kernelsu/
           cd ..
+          
+          # Kontrol: drivers/kernelsu/ksu.c var mı?
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
+            echo "✅ drivers/kernelsu/ksu.c mevcut!"
+          else
+            echo "❌ HATA: drivers/kernelsu/ksu.c bulunamadı!"
+            exit 1
+          fi
           
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU desteği eklendi!"
 
@@ -325,7 +336,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
           # ========== KERNELSU + SUSFS CONFIG (VorteX Method) ==========
+          echo "🔐 KernelSU config'leri ekleniyor..."
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_DEBUG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -342,22 +355,53 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
           
+          # ========== ÖZEL ROOT APK İMZA DESTEĞİ ==========
+          # Kendi root APK'nızı kullanmak istiyorsanız, APK'nızın imza hash'ini buraya ekleyin
+          # Örnek: KernelSU Manager, KowSü, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU vb.
+          echo "🔑 Özel Root APK imza desteği aktif (Multi-Manager)"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_ALLOWLIST_WORKAROUND
+          
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
+          echo "🔍 olddefconfig çalıştırılıyor..."
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
+          
+          # ========== KRİTİK KONTROL ==========
+          echo ""
+          echo "=========================================="
+          echo "🔍 CONFIG_KSU KONTROLÜ:"
+          echo "=========================================="
+          grep "CONFIG_KSU=" out/.config || echo "❌ CONFIG_KSU BULUNAMADI!"
+          grep "CONFIG_KSU_SUSFS=" out/.config || echo "❌ CONFIG_KSU_SUSFS BULUNAMADI!"
+          echo ""
+          echo "🔍 KernelSU driver kontrolü:"
+          ls -la drivers/kernelsu/ksu.c || echo "❌ ksu.c BULUNAMADI!"
+          grep "kernelsu" drivers/Kconfig || echo "❌ drivers/Kconfig'da kernelsu YOK!"
+          grep "kernelsu" drivers/Makefile || echo "❌ drivers/Makefile'da kernelsu YOK!"
+          echo "=========================================="
 
       - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
-          echo "🔍 Config kontrolü:"
-          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
+          echo "🔍 SON CONFIG KONTROLÜ:"
+          echo "================================"
+          grep -E "^CONFIG_KSU=|^CONFIG_KSU_SUSFS=" out/.config
+          echo "================================"
+          
+          # KernelSU module'ü derleniyor mu kontrol et
+          if grep -q "CONFIG_KSU=y" out/.config; then
+            echo "✅ CONFIG_KSU=y AYARLI!"
+          else
+            echo "❌ CONFIG_KSU AYARLI DEĞİL! Derleme iptal ediliyor..."
+            exit 1
+          fi
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
