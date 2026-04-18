@@ -26,11 +26,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/clang-yuki
+          key: clang-yuki-bolt-20260124
+          restore-keys: |
+            clang-yuki-
+
       - name: Download Clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 Yuki Clang indiriliyor (Cache Sıfırlandı)..."
+          echo "🔥 Yuki Clang indiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-yuki
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
+          echo "✅ Clang cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -61,45 +72,33 @@ jobs:
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU desteği eklendi!"
 
-      - name: 4. SUSFS Entegrasyonu
+      - name: 5. SUSFS Master Formülü
         run: |
           cd common
-          echo "🔥 SUSFS dosyaları kopyalanıyor..."
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
+          cp -R ../susfs/kernel_patches/fs/* ./fs/
+          cp -R ../susfs/kernel_patches/include/* ./include/
+          patch -p1 --forward < ../susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          cp $GITHUB_WORKSPACE/patches/susfs/susfs.c ./fs/susfs.c
-          mkdir -p ./include/linux
-          cp $GITHUB_WORKSPACE/patches/susfs/susfs.h ./include/linux/susfs.h
-          cp $GITHUB_WORKSPACE/patches/susfs/susfs_def.h ./include/linux/susfs_def.h
+          git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
+          patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          echo "📦 namespace.c SUSFS inject..."
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
-          
-          #define CL_COPY_MNT_NS BIT(25)
-          
+          extern bool susfs_is_current_zygote_domain(void);
+          extern bool susfs_is_boot_completed_triggered;
+          extern bool susfs_is_sdcard_android_data_decrypted;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
+          #define CL_COPY_MNT_NS BIT(25)
           #endif
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
-          
-          echo "📦 statfs.c fix..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
-          
-          echo "📦 fs_proc_base fix..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "🔍 Header kontrolü:"
-          ls -la include/linux/susfs*.h && echo "✅ SUSFS header OK!"
-          echo "✅ SUSFS entegrasyonu tamamlandı!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
