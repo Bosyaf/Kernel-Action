@@ -57,23 +57,21 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next Kurulumu (MAIN BRANCH)
+      - name: 3. KernelSU-Next Kurulumu (ESKİ COMMIT - ÇALIŞAN)
         run: |
           cd common
-          echo "🔥 KernelSU-Next (main) kuruluyor..."
+          echo "🔥 KernelSU-Next (dev-susfs - eski commit) kuruluyor..."
           git clone --depth=1 https://github.com/pershoot/KernelSU-Next.git KernelSU-Next
-          
-          # drivers/kernelsu symlink oluştur
-          mkdir -p drivers
-          ln -sf ../KernelSU-Next/kernel drivers/kernelsu
-          
-          # Kconfig düzenle
+          cd KernelSU-Next
+          git checkout dev-susfs
+          # ESİ COMMIT: Manuel SUSFS ile çalışan sürüm
+          git reset --hard 8f3c9a2b1e4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a
+          cd ../..
+          ln -sf $(pwd)/KernelSU-Next/kernel drivers/kernelsu
+          sed -i '/kernelsu/d' drivers/Kconfig drivers/Makefile
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          
-          # Makefile düzenle
-          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-          
-          echo "✅ KernelSU-Next main kuruldu!"
+          echo 'obj-y += kernelsu/' >> drivers/Makefile
+          echo "✅ KernelSU-Next tamamlandı!"
 
       - name: 3.5. Multi-Manager Desteği
         run: |
@@ -82,7 +80,7 @@ jobs:
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
 
-      - name: 4. SUSFS Entegrasyonu (FULL)
+      - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
           echo "🔥 SUSFS dosyaları kopyalanıyor..."
@@ -273,7 +271,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=64 \
+            -falign-functions=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
