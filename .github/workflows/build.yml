@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (ZyCromerZ Clang)
+name: CG+ Yuki Gaming Kernel (ZyCromerZ Clang 22)
 
 permissions:
   contents: write
@@ -31,24 +31,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/clang-zyc
-          key: clang-zyc-main
+          key: clang-zyc-22-20250928
           restore-keys: |
             clang-zyc-
 
       - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
-          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          echo "İndirilecek Link: $CLANG_LINK"
+          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "ZyC Clang 22CLANG_URL"
           
-          curl -L -o clang.tar.gz "$CLANG_LINK"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           
           echo "Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
-          echo "✅ ZyCromerZ Clang cache'lendi!"
+          echo "✅ ZyCromerZ Clang 22 cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -287,24 +287,24 @@ jobs:
             -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-ZyC22-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (ZyCromerZ)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (ZyCromerZ 22)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro-ZyC.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro-ZyC22.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyCromerZ Clang (Balanced Pro)"
+          name: "CG+ ZyCromerZ Clang 22 (Balanced Pro)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
