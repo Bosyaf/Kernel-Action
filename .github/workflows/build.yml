@@ -65,11 +65,15 @@ jobs:
           bash $GITHUB_WORKSPACE/patches/ksu/setup.sh dev-susfs
           echo "✅ KernelSU-Next tamamlandı!"
 
-      - name: 3.5. Multi-Manager Desteği (KowSU, MKSU, VortexSU, ReSukiSU)
+      - name: 3.5. Multi-Manager Desteği (2 Patch)
         run: |
           cd common/KernelSU-Next
-          echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
+          echo "🔥 Patch 1/2: apk_sign.c imza tanımları..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksu-add-manager.patch || echo "⚠️ Zaten uygulanmış"
+          
+          echo "🔥 Patch 2/2: Kbuild manager listesi..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Zaten uygulanmış"
+          
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU desteği eklendi!"
 
       - name: 4. SUSFS Entegrasyonu
