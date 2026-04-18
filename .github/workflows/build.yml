@@ -181,7 +181,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Althea-X"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -205,6 +205,7 @@ jobs:
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+sha3+crc+dotprod \
             -falign-functions=32 \
+            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
