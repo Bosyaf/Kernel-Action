@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (ZyCromerZ Clang)
+name: CG+ Yuki Gaming Kernel
 
 permissions:
   contents: write
@@ -30,25 +30,18 @@ jobs:
         id: cache-clang
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/clang-zyc
-          key: clang-zyc-main
+          path: ${{ github.workspace }}/clang-yuki
+          key: clang-yuki-bolt-20260124
           restore-keys: |
-            clang-zyc-
+            clang-yuki-
 
       - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
-          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          echo "İndirilecek Link: $CLANG_LINK"
-          
-          curl -L -o clang.tar.gz "$CLANG_LINK"
-          
-          echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
-          rm -f clang.tar.gz
-          echo "✅ ZyCromerZ Clang cache'lendi!"
+          echo "🔥 Yuki Clang indiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-yuki
+          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
+          echo "✅ Clang cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -72,35 +65,52 @@ jobs:
           bash $GITHUB_WORKSPACE/patches/ksu/setup.sh dev-susfs
           echo "✅ KernelSU-Next tamamlandı!"
 
-      - name: 3.5. Multi-Manager Desteği
+      - name: 3.5. Multi-Manager Desteği (KowSU, MKSU, VortexSU, ReSukiSU)
         run: |
           cd common/KernelSU-Next
           echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
-          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
+          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU desteği eklendi!"
 
-      - name: 4. SUSFS Dosyaları (KernelSU-Next Gerekli)
+      - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
-          echo "🔥 SUSFS header dosyaları kopyalanıyor..."
-    
-          # SUSFS kaynak dosyaları (KernelSU-Next bunları BEKLİYOR!)
+          echo "🔥 SUSFS dosyaları kopyalanıyor..."
+          
           cp $GITHUB_WORKSPACE/patches/susfs/susfs.c ./fs/susfs.c
           mkdir -p ./include/linux
           cp $GITHUB_WORKSPACE/patches/susfs/susfs.h ./include/linux/susfs.h
           cp $GITHUB_WORKSPACE/patches/susfs/susfs_def.h ./include/linux/susfs_def.h
-    
-          # Ana SUSFS patchi (gerekli)
+          
+          echo "📦 Ana SUSFS patchi uygulanıyor..."
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
-    
-          # fs_proc_base fix (gerekli)
+          
+          echo "📦 namespace.c SUSFS inject..."
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
+          
+          #define CL_COPY_MNT_NS BIT(25)
+          
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          rm -f .ns_inject_tmp
+          
+          echo "📦 statfs.c fix..."
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+          
+          echo "📦 fs_proc_base fix..."
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/fs_proc_base.c-fix-k6.1.patch || true
-    
-          # ❌ MANUEL INJECT YOK! (namespace.c, statfs.c - KernelSU-Next zaten yapıyor)
-    
+          
           echo "🔍 Header kontrolü:"
           ls -la include/linux/susfs*.h && echo "✅ SUSFS header OK!"
-          echo "✅ SUSFS dosyaları kopyalandı!"
+          echo "✅ SUSFS entegrasyonu tamamlandı!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
@@ -145,7 +155,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -229,7 +239,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
 
@@ -241,7 +252,7 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
@@ -256,11 +267,6 @@ jobs:
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-unwind-tables \
-            -fno-asynchronous-unwind-tables \
-            -fvectorize \
-            -fslp-vectorize \
-            -fno-common \
             -fno-delete-null-pointer-checks \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
@@ -270,24 +276,25 @@ jobs:
             -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-ZyC-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel (ZyCromerZ)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro-ZyC.zip" ./*
+          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyCromerZ Clang (Balanced Pro)"
+          name: "CG+ Yuki Clang (Balanced Pro - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
