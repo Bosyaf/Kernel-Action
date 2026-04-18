@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel
+name: CG+ Neutron Gaming Kernel
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve YUKI CLANG Çekimi (Gizli Tünel)
+      - name: 1. Paketler ve NEUTRON CLANG Çekimi (Gizli Tünel)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,15 +35,15 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
           
-          echo "🔥 Yuki Clang Linki Çekiliyor..."
-          CLANG_LINK="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          echo "🔥 Neutron Clang Linki Çekiliyor..."
+          CLANG_LINK="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/10032024/neutron-clang-10032024.tar.zst"
           echo "İndirilecek Link: $CLANG_LINK"
           
           curl -L -o clang.tar.zst "$CLANG_LINK"
           
           echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-yuki
-          tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
+          mkdir -p $GITHUB_WORKSPACE/clang-neutron
+          tar --zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-neutron
           rm -f clang.tar.zst
 
       - name: 2. Kaynakları Çek (Yeni Staging Dalı)
@@ -51,7 +51,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. VortexSU Kurulumu
+      - name: 3. SADECE VortexSU Kurulumu
         run: |
           cd common
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/VortexSU/refs/heads/main/kernel/setup.sh" | bash -s main
@@ -60,10 +60,13 @@ jobs:
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          [ -s wifi.patch ] && patch -p1 --forward < wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
 
-      - name: 5. SUSFS Master Formülü ve Hata Onarımı
+      - name: 5. SUSFS Master Formülü
         run: |
           cd common
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs
@@ -74,16 +77,13 @@ jobs:
           git clone https://github.com/Kingfinik98/build-vortex.git ../build-vortex
           patch -p1 --forward < ../build-vortex/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          # HATA ÇÖZÜMÜ: fs/namespace.c içerisine eksik olan static_key tanımını ekliyoruz
           cat << 'EOF' > .ns_inject_tmp
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
-          #include <linux/jump_label.h>
           extern bool susfs_is_current_ksu_domain(void);
           extern bool susfs_is_current_zygote_domain(void);
           extern bool susfs_is_boot_completed_triggered;
           extern bool susfs_is_sdcard_android_data_decrypted;
-          struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false = STATIC_KEY_FALSE_INIT;
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
           #define CL_COPY_MNT_NS BIT(25)
@@ -91,15 +91,13 @@ jobs:
           EOF
           sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
           rm -f .ns_inject_tmp
-
-          # Statfs fix
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
 
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-neutron/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -195,7 +193,7 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-neutron/bin:$PATH"
           
           echo "🔍 WALT / governor config kontrolü:"
           grep -E "CONFIG_CPU_FREQ_GOV_WALT|CONFIG_CPU_FREQ_DEFAULT_GOV|CONFIG_CPU_FREQ_DEFAULT_GOV_WALT|CONFIG_CPU_FREQ_GOV_SCHEDUTIL|CONFIG_HZ=|CONFIG_HZ_300|CONFIG_PREEMPT=|CONFIG_UCLAMP_TASK=|CONFIG_ENERGY_MODEL=|CONFIG_THERMAL_DEFAULT_GOV_" out/.config || true
@@ -207,7 +205,6 @@ jobs:
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+sha3+crc+dotprod \
             -falign-functions=32 \
-            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -220,24 +217,24 @@ jobs:
             -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI! Logları kontrol et."; exit 1; }
           
-          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Neutron-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Neutron Balanced Pro Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
+          zip -r "../CG-Neutron-Balanced-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Yuki Clang (Balanced Pro - Altın Denge)"
+          name: "CG+ Neutron Clang (Balanced Pro - Altın Denge)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
