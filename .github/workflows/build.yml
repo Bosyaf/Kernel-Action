@@ -73,8 +73,28 @@ jobs:
             fi
           done
           
-          # KernelSU-Next kurulumu (pershoot/dev-susfs branch)
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s dev-susfs
+          # KernelSU-Next kurulumu (pershoot/KernelSU-Next dev-susfs branch)
+          echo "📥 pershoot/KernelSU-Next klonlanıyor..."
+          git clone --depth=1 -q https://github.com/pershoot/KernelSU-Next.git -b dev-susfs KernelSU-Next
+          
+          # Makefile ve Kconfig düzenlemeleri
+          echo "🔧 Makefile ve Kconfig düzenleniyor..."
+          KSU_MAKEFILE="KernelSU-Next/kernel/Makefile"
+          KSU_KCONFIG="KernelSU-Next/kernel/Kconfig"
+          
+          # drivers/kernelsu klasörüne kopyala
+          mkdir -p drivers/kernelsu
+          cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
+          
+          # Kconfig'a ekle
+          if ! grep -q "kernelsu" drivers/kernelsu/Kconfig; then
+            echo "source \"drivers/kernelsu/Kconfig\"" >> drivers/kernelsu/../Kconfig
+          fi
+          
+          # Makefile'a ekle
+          if ! grep -q "kernelsu" drivers/kernelsu/Makefile; then
+            echo "obj-y += kernelsu/" >> drivers/kernelsu/../Makefile
+          fi
           
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
           
@@ -85,7 +105,7 @@ jobs:
           patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
           rm -f ksun-multi-mgr.patch
           
-          # Patch edilmiş dosyaları drivers/kernelsu'ya kopyala
+          # Patch edilmiş dosyaları drivers/kernelsu'ya tekrar kopyala
           echo "📦 Patch edilmiş KernelSU dosyaları kopyalanıyor..."
           cp -rf kernel/* ../drivers/kernelsu/
           cd ..
