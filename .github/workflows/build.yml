@@ -64,31 +64,33 @@ jobs:
 
           # Eski KSU temizle
           for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
-            if [ -d "$KSU_PATH" ] || [ -L "$KSU_PATH" ]; then
-              rm -rf "$KSU_PATH"
-            fi
+            rm -rf "$KSU_PATH" 2>/dev/null || true
           done
 
           # KSU-Next klonla
           git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1
 
-          # ⚠️ ÖNEMLİ: common/ dizininden çalıştır!
-          # setup.sh, kernel kaynağının kökünde (common/) çalıştırılmalı
+          # setup.sh çalıştır (common/ dizininden)
           bash KernelSU-Next/kernel/setup.sh
 
-          # Multi-Manager Patch (KernelSU-Next içinde)
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
+          # Multi-Manager Patch (KernelSU-Next içinde çalıştır)
+          # -p2 kullan çünkü common/ altındayız ve dosya yolu KernelSU-Next/kernel/xxx
+          cd KernelSU-Next
+          patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
+          cd ..
 
           # UAPI FIX
-          if [ -d "KernelSU-Next/userspace/include/uapi" ]; then
-            cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/
-          fi
+          cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
 
-          # Kontrol
-          if [ -f "drivers/kernelsu/ksu.c" ]; then
+          # Kontrol - symlink üzerinden dosya var mı?
+          if [ -L "drivers/kernelsu" ] && [ -f "$(readlink -f drivers/kernelsu)/ksu.c" ]; then
+            echo "✅ KernelSU kurulumu başarılı!"
+          elif [ -f "drivers/kernelsu/ksu.c" ]; then
             echo "✅ KernelSU kurulumu başarılı!"
           else
             echo "❌ ksu.c bulunamadı!"
+            ls -la drivers/kernelsu 2>/dev/null || echo "drivers/kernelsu yok"
+            ls -la KernelSU-Next/kernel/ 2>/dev/null | head -10
             exit 1
           fi
 
@@ -147,8 +149,9 @@ jobs:
           fi
 
           # FIX 4: extras.c AVC spoof
-          if [ -f "drivers/kernelsu/extras.c" ]; then
-            if ! grep -q "__attribute__((weak))" "drivers/kernelsu/extras.c"; then
+          EXTRAS_FILE="drivers/kernelsu/extras.c"
+          if [ -f "$EXTRAS_FILE" ]; then
+            if ! grep -q "__attribute__((weak))" "$EXTRAS_FILE"; then
               cat > /tmp/avc_fix.txt << 'AVCINJECT'
           #ifdef CONFIG_KSU_SUSFS
           #ifndef susfs_avc_log_spoofing_key_true
@@ -157,47 +160,47 @@ jobs:
           #endif
           #endif
           AVCINJECT
-              LAST_INC=$(grep -n '#include' "drivers/kernelsu/extras.c" | tail -1 | cut -d: -f1)
-              if [ -n "$LAST_INC" ]; then
-                sed -i "${LAST_INC}r /tmp/avc_fix.txt" "drivers/kernelsu/extras.c"
-              fi
+              LAST_INC=$(grep -n '#include' "$EXTRAS_FILE" | tail -1 | cut -d: -f1)
+              [ -n "$LAST_INC" ] && sed -i "${LAST_INC}r /tmp/avc_fix.txt" "$EXTRAS_FILE"
               rm -f /tmp/avc_fix.txt
             fi
           fi
 
           # FIX 5: supercalls.c
-          if [ -f "drivers/kernelsu/supercalls.c" ]; then
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled *\//' drivers/kernelsu/supercalls.c 2>/dev/null || true
+          SUPERCALLS_FILE="drivers/kernelsu/supercalls.c"
+          if [ -f "$SUPERCALLS_FILE" ]; then
+            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled *\//' "$SUPERCALLS_FILE" 2>/dev/null || true
           fi
+
+          # DOĞRULAMA
+          echo "=========================================="
+          echo "🔍 KSU+SUSFS DOĞRULAMA:"
+          echo "ksu.c: $(test -f drivers/kernelsu/ksu.c && echo 'OK' || echo 'YOK')"
+          echo "susfs.h: $(ls include/linux/susfs*.h 2>/dev/null | wc -l) dosya"
+          echo "namespace.c susfs_mnt_id_ida: $(grep -c 'susfs_mnt_id_ida' fs/namespace.c)"
+          echo "statfs.c __GENKSYMS__: $(grep -c '__GENKSYMS__' fs/statfs.c)"
+          echo "=========================================="
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch 2>/dev/null || true
+          [ -s wifi.patch ] && grep -q "diff" wifi.patch && patch -p1 --forward < wifi.patch || true
           rm -f wifi.patch
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null | bash || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig 2>/dev/null || true
 
       - name: 5.5. Özel Performans
         run: |
           cd common
-          if [ -d "../patches" ]; then
-            for patch_file in ../patches/*.patch; do
-              patch -p1 --forward < "$patch_file" 2>/dev/null || true
-            done
-          fi
+          [ -d "../patches" ] && for f in ../patches/*.patch; do patch -p1 --forward < "$f" 2>/dev/null || true; done
 
       - name: 6. Full Kernel Config
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
 
-          sed -i 's/^PHONY += all/  /g' Makefile 2>/dev/null || true
-          touch .scmversion
-
+          touch .scmversion 2>/dev/null || true
           cat << 'CEOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
