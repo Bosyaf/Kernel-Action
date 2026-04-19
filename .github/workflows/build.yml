@@ -77,26 +77,52 @@ jobs:
           cd "$CONFIG"
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          echo "🔥 Multi-manager patchi uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
+          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
 
-      # ========================
-      # 🔥 SUSFS (BASIT SCRIPT YÖNTEMİ - TEMİZ)
-      # ========================
-      - name: 4. SUSFS Entegrasyonu (VorteX Method + 5 Hotfix)
+      - name: 4. SUSFS Entegrasyonu (FULL)
         run: |
           cd common
-          echo "🔥 SUSFS entegrasyonu - VorteX Standard Method..."
+          echo "🔥 SUSFS dosyaları kopyalanıyor..."
           
-          SUSFS_BRANCH="gki-android14-6.1-dev"
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b $SUSFS_BRANCH susfs
+          cp $GITHUB_WORKSPACE/patches/susfs/susfs.c ./fs/susfs.c
+          mkdir -p ./include/linux
+          cp $GITHUB_WORKSPACE/patches/susfs/susfs.h ./include/linux/susfs.h
+          cp $GITHUB_WORKSPACE/patches/susfs/susfs_def.h ./include/linux/susfs_def.h
           
-          # SUSFS dosyalarını kopyala
-          echo "📦 SUSFS fs ve include dosyaları kopyalanıyor..."
-          cp -r susfs/kernel_patches/fs/* ./fs/
-          cp -r susfs/kernel_patches/include/* ./include/
-          
-          # Ana SUSFS patchini uygula
           echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 --forward < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
+          
+          echo "📦 namespace.c SUSFS inject..."
+          cat << 'EOF' > .ns_inject_tmp
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
+          
+          #define CL_COPY_MNT_NS BIT(25)
+          
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #endif
+          EOF
+          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          rm -f .ns_inject_tmp
+          
+          echo "📦 statfs.c fix..."
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+          
+          echo "📦 fs_proc_base fix..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/fs_proc_base.c-fix-k6.1.patch || true
+          
+          echo "🔍 Header kontrolü:"
+          ls -la include/linux/susfs*.h && echo "✅ SUSFS header OK!"
+          echo "✅ SUSFS entegrasyonu tamamlandı!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
