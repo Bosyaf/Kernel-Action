@@ -59,88 +59,153 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. Pershoot KSU-Next & MultiManager (Yol Düzeltildi)
+      - name: 3. Pershoot KSU-Next (dev-susfs) - Gerçek Yapı
         run: |
           cd common
           echo "🔐 Pershoot KernelSU-Next (dev-susfs) çekiliyor..."
-          git clone -b dev-susfs https://github.com/pershoot/KernelSU-Next.git drivers/kernelsu
           
-          echo "🛠️ MultiManager yaması uygulanıyor..."
-          # Yol kontrolü: manager.c artık 'kernel/' klasörü içinde
-          MGR_FILE="drivers/kernelsu/kernel/manager.c"
-          if [ ! -f "$MGR_FILE" ]; then MGR_FILE="drivers/kernelsu/manager.c"; fi
+          # Pershoot'un dev-susfs branch'ini çek
+          git clone -b dev-susfs --depth=1 https://github.com/pershoot/KernelSU-Next.git ksu_tmp
           
-          if [ -f "$MGR_FILE" ]; then
-            echo "✅ Dosya bulundu: $MGR_FILE"
-            sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_unused(const char \*package_name)/' "$MGR_FILE"
-            sed -i 's/if (!check_manager_signature(task))/if (false \&\& !check_manager_signature(task))/' "$MGR_FILE"
+          # KernelSU kodlarını drivers/kernelsu içine kopyala
+          mkdir -p drivers/kernelsu
+          
+          # Pershoot repo yapısı: kernel/ klasörü içinde kaynak kodlar var
+          if [ -d "ksu_tmp/kernel" ]; then
+            cp -rf ksu_tmp/kernel/* drivers/kernelsu/
           else
-            echo "❌ HATA: manager.c bulunamadı!"
-            exit 1
+            cp -rf ksu_tmp/* drivers/kernelsu/
           fi
-
-          # Kconfig/Makefile (Kök dizinde kalmaya devam ediyorlar)
-          if ! grep -q "kernelsu/Kconfig" drivers/Kconfig; then
+          
+          rm -rf ksu_tmp
+          
+          # ✅ MultiManager kontrolü - Pershoot dev-susfs'te zaten var ama kontrol edelim
+          echo "🔍 MultiManager durumu kontrol ediliyor..."
+          if [ -f "drivers/kernelsu/manager.c" ]; then
+            echo "✅ manager.c bulundu (kök dizin)"
+            # MultiManager yoksa ekle
+            if ! grep -q "return true" drivers/kernelsu/manager.c; then
+              echo "🛠️ MultiManager yaması uygulanıyor..."
+              sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_old(const char \*package_name)/' drivers/kernelsu/manager.c
+            else
+              echo "✅ MultiManager zaten aktif!"
+            fi
+          elif [ -f "drivers/kernelsu/kernel/manager.c" ]; then
+            echo "✅ manager.c bulundu (kernel/ klasörü içinde)"
+            if ! grep -q "return true" drivers/kernelsu/kernel/manager.c; then
+              echo "️ MultiManager yaması uygulanıyor..."
+              sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_old(const char \*package_name)/' drivers/kernelsu/kernel/manager.c
+            else
+              echo "✅ MultiManager zaten aktif!"
+            fi
+          else
+            echo "⚠️ manager.c bulunamadı, repo yapısı farklı olabilir"
+            find drivers/kernelsu -name "manager.c" -type f
+          fi
+          
+          # Kconfig entegrasyonu
+          if [ -f "drivers/Kconfig" ] && ! grep -q "kernelsu/Kconfig" drivers/Kconfig; then
             sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           fi
-          if ! grep -q "kernelsu" drivers/Makefile; then
+          
+          # Makefile entegrasyonu
+          if [ -f "drivers/Makefile" ] && ! grep -q "kernelsu" drivers/Makefile; then
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
+          
+          echo "✅ KSU-Next hazır!"
 
-      - name: 4. Pershoot SUSFS Entegrasyonu
+      - name: 4. Pershoot SUSFS (gki-android14-6.1-dev)
         run: |
           cd common
-          echo "🛡️ Pershoot SUSFS4KSU (6.1-dev) entegre ediliyor..."
-          git clone -b gki-android14-6.1-dev https://gitlab.com/pershoot/susfs4ksu.git susfs_repo
+          echo "🛡️ Pershoot SUSFS entegre ediliyor..."
           
-          # 1. SUSFS Core Dosyaları
+          git clone -b gki-android14-6.1-dev --depth=1 https://gitlab.com/pershoot/susfs4ksu.git susfs_tmp
+          
+          # SUSFS core dosyaları
           mkdir -p fs/susfs
-          cp -rf susfs_repo/fs/susfs/* fs/susfs/
-          cp -rf susfs_repo/include/linux/susfs.h include/linux/
-          cp -rf susfs_repo/include/linux/susfs_def.h include/linux/ 2>/dev/null || true
+          if [ -d "susfs_tmp/fs/susfs" ]; then
+            cp -rf susfs_tmp/fs/susfs/* fs/susfs/
+          fi
           
-          # 2. VFS Yamalarını Uygula (Pershoot'un yöntemi - KSU-Next hooks zaten dev-susfs'te var)
-          echo "📦 Çekirdek VFS yamaları kopyalanıyor..."
-          cp -f susfs_repo/kernel_patches/fs/* fs/
-          cp -f susfs_repo/kernel_patches/include/linux/* include/linux/
+          # Header dosyaları
+          if [ -f "susfs_tmp/include/linux/susfs.h" ]; then
+            cp -f susfs_tmp/include/linux/susfs.h include/linux/
+          fi
+          if [ -f "susfs_tmp/include/linux/susfs_def.h" ]; then
+            cp -f susfs_tmp/include/linux/susfs_def.h include/linux/
+          fi
           
-          # 3. Kconfig/Makefile entegrasyonu
-          if ! grep -q "susfs/Kconfig" fs/Kconfig; then
+          # Kernel VFS yamaları
+          if [ -d "susfs_tmp/kernel_patches/fs" ]; then
+            cp -f susfs_tmp/kernel_patches/fs/* fs/ 2>/dev/null || true
+          fi
+          if [ -d "susfs_tmp/kernel_patches/include/linux" ]; then
+            cp -f susfs_tmp/kernel_patches/include/linux/* include/linux/ 2>/dev/null || true
+          fi
+          
+          rm -rf susfs_tmp
+          
+          # Kconfig/Makefile
+          if [ -f "fs/Kconfig" ] && ! grep -q "susfs/Kconfig" fs/Kconfig; then
             sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
           fi
-          if ! grep -q "susfs" fs/Makefile; then
+          if [ -f "fs/Makefile" ] && ! grep -q "susfs" fs/Makefile; then
             echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
           fi
-          rm -rf susfs_repo
+          
+          echo "✅ SUSFS hazır!"
 
       - name: 5. BBG Entegrasyonu
         run: |
           cd common
           echo "📡 BBG entegre ediliyor..."
-          git clone https://github.com/vc-teahouse/Baseband-guard.git --depth=1 bbg_repo
+          git clone --depth=1 https://github.com/vc-teahouse/Baseband-guard.git bbg_tmp
+          
           mkdir -p drivers/bbg
-          cp -rf bbg_repo/drivers/bbg/* drivers/bbg/ 2>/dev/null || cp -rf bbg_repo/* drivers/bbg/
-          echo -e 'obj-$(CONFIG_BBG) += bbg.o' > drivers/bbg/Makefile
-          echo -e 'config BBG\n\tbool "Baseband Guard"\n\tdefault n' > drivers/bbg/Kconfig
-          sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
-          echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
-          rm -rf bbg_repo
+          if [ -d "bbg_tmp/drivers/bbg" ]; then
+            cp -rf bbg_tmp/drivers/bbg/* drivers/bbg/
+          else
+            cp -rf bbg_tmp/* drivers/bbg/ 2>/dev/null || true
+          fi
+          
+          rm -rf bbg_tmp
+          
+          if [ ! -f "drivers/bbg/Kconfig" ]; then
+            echo -e 'config BBG\n\tbool "Baseband Guard"\n\tdefault n' > drivers/bbg/Kconfig
+          fi
+          if [ ! -f "drivers/bbg/Makefile" ]; then
+            echo 'obj-$(CONFIG_BBG) += bbg.o' > drivers/bbg/Makefile
+          fi
+          
+          if [ -f "drivers/Kconfig" ] && ! grep -q "bbg/Kconfig" drivers/Kconfig; then
+            sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
+          fi
+          if [ -f "drivers/Makefile" ] && ! grep -q "bbg" drivers/Makefile; then
+            echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
+          fi
+          
+          echo "✅ BBG hazır!"
 
-      - name: 6. Config & Patch
+      - name: 6. Config Yapılandırması
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           
           CONFIG_FILE="out/.config"
+          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-Yuki-Multi-SUSFS"
           
@@ -150,6 +215,7 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             KCFLAGS="-O2 -march=armv9.2-a+crypto -fomit-frame-pointer" \
@@ -172,9 +238,10 @@ jobs:
           tag_name: ${{ env.BOOTHASH }}
           name: "🎮 Yuki Gaming Kernel (MultiManager + Pershoot SUSFS)"
           body: |
+            ### 🔥 Özellikler:
             - KernelSU-Next (Pershoot dev-susfs)
             - SUSFS v1.5.1 (Pershoot Method)
-            - MultiManager Support (Any Package Name)
+            - MultiManager Support
             - HZ=300 Gaming Performance
             - Baseband Guard (BBG)
           files: "*.zip"
