@@ -1,4 +1,4 @@
-name: CG+ Yuki Gaming Kernel (KSU-Next + SUSFS + BBG)
+name: CG+ Yuki Gaming Kernel (Pershoot KSU-Next dev-susfs + SUSFS + BBG)
 
 permissions:
   contents: write
@@ -38,212 +38,214 @@ jobs:
       - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 ZyC Clang 22 indiriliyor..."
+          set -e
+          echo "Downloading ZyC Clang 22..."
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
           rm -f clang.tar.gz
 
-      - name: 1. Paketler
+      - name: Dependencies
         run: |
+          set -e
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            lld llvm pkg-config zstd jq
+            lld llvm pkg-config zstd jq patch
 
-      - name: 2. Kaynakları Çek
+      - name: Clone sources
         run: |
+          set -e
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. Pershoot KSU-Next (dev-susfs) - Gerçek Yapı
+      - name: Integrate KernelSU-Next (Pershoot dev-susfs)
         run: |
+          set -e
           cd common
-          echo "🔐 Pershoot KernelSU-Next (dev-susfs) çekiliyor..."
-          
-          # Pershoot'un dev-susfs branch'ini çek
+          echo "[KSU] Cloning pershoot/KernelSU-Next (dev-susfs)..."
           git clone -b dev-susfs --depth=1 https://github.com/pershoot/KernelSU-Next.git ksu_tmp
-          
-          # KernelSU kodlarını drivers/kernelsu içine kopyala
           mkdir -p drivers/kernelsu
-          
-          # Pershoot repo yapısı: kernel/ klasörü içinde kaynak kodlar var
           if [ -d "ksu_tmp/kernel" ]; then
-            cp -rf ksu_tmp/kernel/* drivers/kernelsu/
+            cp -a ksu_tmp/kernel/. drivers/kernelsu/
           else
-            cp -rf ksu_tmp/* drivers/kernelsu/
+            cp -a ksu_tmp/. drivers/kernelsu/
           fi
-          
           rm -rf ksu_tmp
-          
-          # ✅ MultiManager kontrolü - Pershoot dev-susfs'te zaten var ama kontrol edelim
-          echo "🔍 MultiManager durumu kontrol ediliyor..."
-          if [ -f "drivers/kernelsu/manager.c" ]; then
-            echo "✅ manager.c bulundu (kök dizin)"
-            # MultiManager yoksa ekle
-            if ! grep -q "return true" drivers/kernelsu/manager.c; then
-              echo "🛠️ MultiManager yaması uygulanıyor..."
-              sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_old(const char \*package_name)/' drivers/kernelsu/manager.c
-            else
-              echo "✅ MultiManager zaten aktif!"
-            fi
-          elif [ -f "drivers/kernelsu/kernel/manager.c" ]; then
-            echo "✅ manager.c bulundu (kernel/ klasörü içinde)"
-            if ! grep -q "return true" drivers/kernelsu/kernel/manager.c; then
-              echo "️ MultiManager yaması uygulanıyor..."
-              sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_old(const char \*package_name)/' drivers/kernelsu/kernel/manager.c
-            else
-              echo "✅ MultiManager zaten aktif!"
-            fi
-          else
-            echo "⚠️ manager.c bulunamadı, repo yapısı farklı olabilir"
-            find drivers/kernelsu -name "manager.c" -type f
-          fi
-          
-          # Kconfig entegrasyonu
-          if [ -f "drivers/Kconfig" ] && ! grep -q "kernelsu/Kconfig" drivers/Kconfig; then
+          if [ -f "drivers/Kconfig" ] && ! grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig; then
             sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           fi
-          
-          # Makefile entegrasyonu
-          if [ -f "drivers/Makefile" ] && ! grep -q "kernelsu" drivers/Makefile; then
+          if [ -f "drivers/Makefile" ] && ! grep -q 'kernelsu' drivers/Makefile; then
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
-          
-          echo "✅ KSU-Next hazır!"
+          echo "[KSU] Done."
 
-      - name: 4. Pershoot SUSFS (gki-android14-6.1-dev)
+      - name: Integrate SUSFS (Pershoot susfs4ksu)
         run: |
+          set -e
           cd common
-          echo "🛡️ Pershoot SUSFS entegre ediliyor..."
-          
+          echo "[SUSFS] Cloning pershoot/susfs4ksu (gki-android14-6.1-dev)..."
           git clone -b gki-android14-6.1-dev --depth=1 https://gitlab.com/pershoot/susfs4ksu.git susfs_tmp
-          
-          # SUSFS core dosyaları
+          echo "[SUSFS] Locating fs/susfs/Kconfig inside repo..."
+          SUSFS_KCONFIG_PATH="$(find susfs_tmp -type f -path "*/fs/susfs/Kconfig" -print -quit || true)"
+          if [ -z "$SUSFS_KCONFIG_PATH" ]; then
+            echo "ERROR: fs/susfs/Kconfig not found in susfs4ksu repo."
+            exit 1
+          fi
+          SUSFS_DIR="$(dirname "$SUSFS_KCONFIG_PATH")"
+          echo "[SUSFS] Found module dir: $SUSFS_DIR"
           mkdir -p fs/susfs
-          if [ -d "susfs_tmp/fs/susfs" ]; then
-            cp -rf susfs_tmp/fs/susfs/* fs/susfs/
+          cp -a "$SUSFS_DIR"/. fs/susfs/
+          for hdr in susfs.h susfs_def.h; do
+            HDR_PATH="$(find susfs_tmp -type f -path "*/include/linux/$hdr" -print -quit || true)"
+            if [ -n "$HDR_PATH" ]; then
+              echo "[SUSFS] Copy header: $hdr"
+              cp -f "$HDR_PATH" include/linux/
+            fi
+          done
+          if [ -d "susfs_tmp/kernel_patches" ]; then
+            echo "[SUSFS] Applying kernel patches..."
+            find susfs_tmp/kernel_patches -type f -name "*.patch" ! -path "*KernelSU*" | sort | while read -r p; do
+              patch -p1 -N --forward < "$p" || echo "    (skip) patch: $p"
+            done
           fi
-          
-          # Header dosyaları
-          if [ -f "susfs_tmp/include/linux/susfs.h" ]; then
-            cp -f susfs_tmp/include/linux/susfs.h include/linux/
-          fi
-          if [ -f "susfs_tmp/include/linux/susfs_def.h" ]; then
-            cp -f susfs_tmp/include/linux/susfs_def.h include/linux/
-          fi
-          
-          # Kernel VFS yamaları
-          if [ -d "susfs_tmp/kernel_patches/fs" ]; then
-            cp -f susfs_tmp/kernel_patches/fs/* fs/ 2>/dev/null || true
-          fi
-          if [ -d "susfs_tmp/kernel_patches/include/linux" ]; then
-            cp -f susfs_tmp/kernel_patches/include/linux/* include/linux/ 2>/dev/null || true
-          fi
-          
           rm -rf susfs_tmp
-          
-          # Kconfig/Makefile
-          if [ -f "fs/Kconfig" ] && ! grep -q "susfs/Kconfig" fs/Kconfig; then
-            sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
+          if [ ! -f "fs/susfs/Kconfig" ]; then
+            echo "ERROR: fs/susfs/Kconfig still missing after copy."
+            exit 1
           fi
-          if [ -f "fs/Makefile" ] && ! grep -q "susfs" fs/Makefile; then
+          if [ -f "fs/Kconfig" ] && ! grep -q 'source "fs/susfs/Kconfig"' fs/Kconfig; then
+            if grep -q 'source "fs/overlayfs/Kconfig"' fs/Kconfig; then
+              sed -i '/source "fs\/overlayfs\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
+            else
+              sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
+            fi
+          fi
+          if [ -f "fs/Makefile" ] && ! grep -q '^obj-$(CONFIG_KSU_SUSFS) += susfs/' fs/Makefile; then
             echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
           fi
-          
-          echo "✅ SUSFS hazır!"
+          echo "[SUSFS] Done."
 
-      - name: 5. BBG Entegrasyonu
+      - name: Integrate BBG (Baseband Guard)
         run: |
+          set -e
           cd common
-          echo "📡 BBG entegre ediliyor..."
           git clone --depth=1 https://github.com/vc-teahouse/Baseband-guard.git bbg_tmp
-          
           mkdir -p drivers/bbg
           if [ -d "bbg_tmp/drivers/bbg" ]; then
-            cp -rf bbg_tmp/drivers/bbg/* drivers/bbg/
+            cp -a bbg_tmp/drivers/bbg/. drivers/bbg/
           else
-            cp -rf bbg_tmp/* drivers/bbg/ 2>/dev/null || true
+            cp -a bbg_tmp/. drivers/bbg/ || true
           fi
-          
           rm -rf bbg_tmp
-          
           if [ ! -f "drivers/bbg/Kconfig" ]; then
-            echo -e 'config BBG\n\tbool "Baseband Guard"\n\tdefault n' > drivers/bbg/Kconfig
+            cat > drivers/bbg/Kconfig << 'EOF'
+          config BBG
+            bool "Baseband Guard"
+            default n
+            help
+              Enable Baseband Guard.
+          EOF
           fi
           if [ ! -f "drivers/bbg/Makefile" ]; then
             echo 'obj-$(CONFIG_BBG) += bbg.o' > drivers/bbg/Makefile
           fi
-          
-          if [ -f "drivers/Kconfig" ] && ! grep -q "bbg/Kconfig" drivers/Kconfig; then
+          if [ -f "drivers/Kconfig" ] && ! grep -q 'source "drivers/bbg/Kconfig"' drivers/Kconfig; then
             sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
           fi
-          if [ -f "drivers/Makefile" ] && ! grep -q "bbg" drivers/Makefile; then
+          if [ -f "drivers/Makefile" ] && ! grep -q '^obj-$(CONFIG_BBG) += bbg/' drivers/Makefile; then
             echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
           fi
-          
-          echo "✅ BBG hazır!"
 
-      - name: 6. Config Yapılandırması
+      - name: Patches
         run: |
+          set -e
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch -o wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "^diff" wifi.patch; then
+            patch -p1 -N --forward < wifi.patch || echo "Wi-Fi patch skipped"
+          fi
+          rm -f wifi.patch
+          if [ -d "../patches" ]; then
+            find "../patches" -type f \( -name "*.patch" -o -name "*.diff" \) | sort | while read -r pf; do
+              patch -p1 -N --forward < "$pf" || echo "Skip $pf"
+            done
+          fi
+
+      - name: Kernel config
+        run: |
+          set -e
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
-          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            gki_defconfig
           CONFIG_FILE="out/.config"
-          
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-Yuki-Multi-SUSFS"
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_MODULES
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KPROBES
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_HAVE_KPROBES
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KPROBE_EVENTS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_KSU_SUSFS || true
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_BBG || true
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file "$CONFIG_FILE" --set-val CONFIG_HZ 300
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_PREEMPT
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-CG+-Yuki-KSU-SUSFS"
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_LOCALVERSION_AUTO
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            olddefconfig
+          echo "==== CONFIG CHECK ===="
+          grep -E "CONFIG_KSU=|CONFIG_KSU_SUSFS=|CONFIG_BBG=" out/.config || true
+          test -f fs/susfs/Kconfig
 
-      - name: 7. Derleme
+      - name: Build kernel
         run: |
+          set -e
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto -fomit-frame-pointer" \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             Image
-          
-          echo "BOOTHASH=Yuki-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+          ls -lh out/arch/arm64/boot/Image
+          echo "BOOTHASH=Yuki-$(date +%Y%m%d-%H%M)" >> "$GITHUB_ENV"
 
-      - name: 8. Paketleme
+      - name: AnyKernel3 package
         run: |
+          set -e
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki MultiManager + SUSFS/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki KSU + SUSFS/' anykernel.sh || true
           cp ../common/out/arch/arm64/boot/Image .
-          ZIP_NAME="CG-Yuki-MultiKSU-SUSFS-$(date +%Y%m%d-%H%M).zip"
+          ZIP_NAME="CG-Yuki-KSU-SUSFS-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "../${ZIP_NAME}" ./*
-          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
 
-      - name: 9. Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "🎮 Yuki Gaming Kernel (MultiManager + Pershoot SUSFS)"
+          name: "CG+ Yuki Kernel (Pershoot KSU dev-susfs + SUSFS)"
           body: |
-            ### 🔥 Özellikler:
-            - KernelSU-Next (Pershoot dev-susfs)
-            - SUSFS v1.5.1 (Pershoot Method)
-            - MultiManager Support
-            - HZ=300 Gaming Performance
-            - Baseband Guard (BBG)
+            - KernelSU-Next: pershoot/dev-susfs
+            - SUSFS: pershoot/susfs4ksu (gki-android14-6.1-dev)
+            - BBG enabled (if present)
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: "*.zip"
+          retention-days: 7
