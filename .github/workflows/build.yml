@@ -59,19 +59,29 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-
-      - name: 3. KernelSU-Next Entegrasyonu
+          
+      - name: 3. KernelSU-Next & MultiManager Entegrasyonu
         run: |
           cd common
           echo "🔐 KernelSU-Next entegre ediliyor..."
           git clone https://github.com/KernelSU-Next/KernelSU-Next.git --depth=1 KernelSU_tmp
           mkdir -p drivers/kernelsu
+          
           if [ -d "KernelSU_tmp/kernel" ]; then
             cp -rf KernelSU_tmp/kernel/* drivers/kernelsu/
           else
             cp -rf KernelSU_tmp/* drivers/kernelsu/
           fi
+          
+          # 🔥 MULTIMANAGER YAMASI (Manager paket adı kontrolünü kaldırır)
+          echo "🛠️ MultiManager yaması uygulanıyor..."
+          sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_unused(const char \*package_name)/' drivers/kernelsu/manager.c || echo "⚠️ MultiManager yaması başarısız!"
+          
+          # İmza kontrolünü devre dışı bırak (Opsiyonel ama önerilir)
+          sed -i 's/if (!check_manager_signature(task))/if (false \&\& !check_manager_signature(task))/' drivers/kernelsu/manager.c || echo "⚠️ İmza kontrolü yaması başarısız!"
+          
           rm -rf KernelSU_tmp
+          
           if [ -f "drivers/Kconfig" ]; then
             if ! grep -q "kernelsu/Kconfig" drivers/Kconfig; then
               sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
@@ -82,60 +92,34 @@ jobs:
               echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
             fi
           fi
-          echo "✅ KernelSU-Next eklendi!"
+          echo "✅ KernelSU-Next + MultiManager eklendi!"
 
       - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
           echo "🛡️ SUSFS entegre ediliyor..."
           git clone -b gki-android14-6.1-dev https://gitlab.com/simonpunk/susfs4ksu.git --depth=1 susfs_repo
-          SUSFS_APPLIED=false
           if [ -d "susfs_repo/kernel_patches" ]; then
-            echo "📦 SUSFS patch'leri bulundu..."
             find susfs_repo/kernel_patches -name "*.patch" -type f | sort | while read patch_file; do
-              echo "  → Uygulanıyor: $(basename $patch_file)"
-              patch -p1 -N --forward < "$patch_file" || echo "    ⚠️ Patch atlandı (zaten uygulanmış veya uyumsuz)"
+              patch -p1 -N --forward < "$patch_file" || echo "⚠️ Patch atlandı"
             done
-            SUSFS_APPLIED=true
           fi
           if [ -d "susfs_repo/fs/susfs" ]; then
-            echo "📁 SUSFS kaynak dosyaları bulundu..."
             mkdir -p fs/susfs
             cp -rf susfs_repo/fs/susfs/* fs/susfs/
-            SUSFS_APPLIED=true
           fi
-          if [ -d "susfs_repo/kernel_patches/KernelSU" ]; then
-            if [ -d "susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/fs/susfs" ]; then
-              echo "📁 SUSFS KSU entegrasyon dosyaları bulundu..."
-              mkdir -p fs/susfs
-              cp -rf susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/fs/susfs/* fs/susfs/
-              SUSFS_APPLIED=true
-            fi
-            if [ -d "susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/drivers/kernelsu" ]; then
-              cp -rf susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/drivers/kernelsu/* drivers/kernelsu/ 2>/dev/null || true
-            fi
+          # KSU-SUSFS uyumu
+          if [ -d "susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/drivers/kernelsu" ]; then
+            cp -rf susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/drivers/kernelsu/* drivers/kernelsu/ 2>/dev/null || true
           fi
           rm -rf susfs_repo
-          if [ -d "fs/susfs" ] && [ -f "fs/susfs/Kconfig" ]; then
-            echo "✅ SUSFS modülü bulundu, entegre ediliyor..."
-            if [ -f "fs/Kconfig" ]; then
-              if ! grep -q "susfs/Kconfig" fs/Kconfig; then
-                if grep -q "overlayfs/Kconfig" fs/Kconfig; then
-                  sed -i '/source "fs\/overlayfs\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
-                else
-                  sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
-                fi
-              fi
+          if [ -d "fs/susfs" ]; then
+            if [ -f "fs/Kconfig" ] && ! grep -q "susfs/Kconfig" fs/Kconfig; then
+              sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
             fi
-            if [ -f "fs/Makefile" ]; then
-              if ! grep -q "susfs" fs/Makefile; then
-                echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
-              fi
+            if [ -f "fs/Makefile" ] && ! grep -q "susfs" fs/Makefile; then
+              echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
             fi
-            echo "✅ SUSFS başarıyla eklendi!"
-            ls -la fs/susfs/
-          else
-            echo "⚠️ SUSFS kaynak dosyaları bulunamadı, SUSFS devre dışı!"
           fi
 
       - name: 5. BBG Entegrasyonu
