@@ -85,6 +85,18 @@ jobs:
             echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
 
+          echo "📦 namespace.c SUSFS patch uygulanıyor..."
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then
+            patch -p1 < fs_namespace.patch || true
+            echo "  ✅ Uygulandı"
+          else
+            echo "  ⚠️ Patch bulunamadı"
+          fi
+          rm -f fs_namespace.patch
+
+          find . -name "*.rej" -delete 2>/dev/null || true
+
       - name: 4.5. KernelSU-Next Multi Manager Patch
         run: |
           cd common
