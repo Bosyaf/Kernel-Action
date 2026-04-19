@@ -56,13 +56,12 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       # ========================
-      # 🔥 KERNELSU-NEXT (Bosyaf/build-vortex install_ksu YÖNTEMİ)
+      # 🔥 KERNELSU-NEXT
       # ========================
       - name: 3. KernelSU-Next Setup
         run: |
           cd common
 
-          # Eski kernelsu klasörlerini temizle (Kconfig + Makefile dahil)
           for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
             if [ -d "$KSU_PATH" ] || [ -L "$KSU_PATH" ]; then
               KSU_DIR=$(dirname "$KSU_PATH")
@@ -72,16 +71,15 @@ jobs:
             fi
           done
 
-          # install_ksu fonksiyonu: curl | bash -s dev-susfs
-          # NOT: setup.sh symlink olusturur: drivers/kernelsu -> KernelSU-Next/kernel/
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+          git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1
+
+          cd KernelSU-Next
+          bash kernel/setup.sh
+          cd ..
 
           # Multi-Manager Patch
-          # NOT: drivers/kernelsu symlink oldugu icin KernelSU-Next icinde patch yeterli
           cd KernelSU-Next
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
-          patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
-          rm -f ksun-multi-mgr.patch
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
           cd ..
 
           # UAPI FIX
@@ -89,85 +87,106 @@ jobs:
             cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/
           fi
 
-          # Kontrol
           echo "🔍 KernelSU kontrolü:"
-          ls -la drivers/kernelsu/ksu.c 2>/dev/null || echo "❌ ksu.c bulunamadı"
-          grep "kernelsu" drivers/Kconfig || echo "❌ Kconfig eksik"
-          grep "kernelsu" drivers/Makefile || echo "❌ Makefile eksik"
+          test -f drivers/kernelsu/ksu.c && echo "✅ ksu.c OK!" || echo "❌ ksu.c YOK!"
 
       # ========================
-      # 🔥 SUSFS (Bosyaf/build-vortex build.sh YÖNTEMİ + 5 HOTFIX)
+      # 🔥 SUSFS + 5 HOTFIX
       # ========================
       - name: 4. SUSFS Setup
         run: |
           cd common
 
           SUSFS_BRANCH="gki-android14-6.1"
-
-          # simonpunk/susfs4ksu klonla
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b $SUSFS_BRANCH susfs
 
-          # SUSFS dosyalarını kopyala
           cp -R susfs/kernel_patches/fs/* ./fs/
           cp -R susfs/kernel_patches/include/* ./include/
 
-          # Ana SUSFS patchini uygula
           patch -p1 < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
 
-          # ========== FIX 1: namespace.c SUSFS injection ==========
-          cat << 'NSFIX' > .ns_fix
-          
+          # ========== FIX 1: namespace.c (GECICI DOSYA YONTEMI) ==========
+          if ! grep -q "static DEFINE_IDA(susfs_mnt_id_ida)" ./fs/namespace.c; then
+            cat > /tmp/ns_fix.txt << 'NSINJECT'
+
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
           extern struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false;
-          
+
           #define CL_COPY_MNT_NS BIT(25)
-          
+
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-          
+
           #define DEFAULT_KSU_MNT_ID 500000
           #define DEFAULT_KSU_MNT_GROUP_ID 5000
           #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT 0x80000000
           #endif
-          
-          NSFIX
-          if ! grep -q "susfs_mnt_id_ida" ./fs/namespace.c; then
-            sed -i '/#include "internal.h"/r .ns_fix' ./fs/namespace.c
+          NSINJECT
+            sed -i '/#include "internal.h"/r /tmp/ns_fix.txt' ./fs/namespace.c
+            rm -f /tmp/ns_fix.txt
+            echo "✅ namespace.c FIX başarılı!"
+          else
+            echo "ℹ️ namespace.c zaten düzeltilmiş"
           fi
-          rm -f .ns_fix
 
-          # ========== FIX 2: statfs.c CRC fix ==========
-          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
-          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+          # ========== FIX 2: statfs.c ==========
+          if grep -q '#include <linux/susfs_def.h>' fs/statfs.c; then
+            if ! grep -q '__GENKSYMS__' fs/statfs.c; then
+              sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
+              sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
+              echo "✅ statfs.c FIX başarılı!"
+            fi
+          fi
 
-          # ========== FIX 3: fs_proc_base.c fix ==========
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch" -o .fix3.patch
-          patch -p1 --forward < .fix3.patch || true
-          rm -f .fix3.patch
+          # ========== FIX 3: fs_proc_base.c ==========
+          if [ -f "$GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch" ]; then
+            patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+            echo "✅ fs_proc_base.c FIX uygulandı!"
+          fi
 
           # ========== FIX 4: AVC spoof (extras.c) ==========
           if [ -f "drivers/kernelsu/extras.c" ]; then
             if ! grep -q "__attribute__((weak))" "drivers/kernelsu/extras.c"; then
-              LAST_INC=$(grep -n '#include' "drivers/kernelsu/extras.c" | tail -1 | cut -d: -f1)
-              if [ -n "$LAST_INC" ]; then
-                sed -i "${LAST_INC}r /dev/stdin" "drivers/kernelsu/extras.c" << 'AVCFIX'
+              cat > /tmp/avc_fix.txt << 'AVCINJECT'
           #ifdef CONFIG_KSU_SUSFS
           #ifndef susfs_avc_log_spoofing_key_true
           __attribute__((weak))
           struct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;
           #endif
           #endif
-          AVCFIX
+          AVCINJECT
+              LAST_INC=$(grep -n '#include' "drivers/kernelsu/extras.c" | tail -1 | cut -d: -f1)
+              if [ -n "$LAST_INC" ]; then
+                sed -i "${LAST_INC}r /tmp/avc_fix.txt" "drivers/kernelsu/extras.c"
+                echo "✅ AVC spoof FIX başarılı!"
               fi
+              rm -f /tmp/avc_fix.txt
+            else
+              echo "ℹ️ AVC spoof fix zaten mevcut"
             fi
           fi
 
-          # ========== FIX 5: supercalls.c uname spoof ==========
+          # ========== FIX 5: supercalls.c ==========
           if [ -f "drivers/kernelsu/supercalls.c" ]; then
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled to fix build \*\//' drivers/kernelsu/supercalls.c || true
+            if grep -q '#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME' "drivers/kernelsu/supercalls.c"; then
+              sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled to fix build \*\//' drivers/kernelsu/supercalls.c
+              echo "✅ supercalls.c FIX başarılı!"
+            fi
           fi
+
+          # ========== DOGRULAMA ==========
+          echo "============================"
+          echo "🔍 SUSFS+KSU DOGRULAMA:"
+          echo "============================"
+          echo "namespace.c DEFINE_IDA: $(grep -c 'static DEFINE_IDA(susfs_mnt_id_ida)' ./fs/namespace.c)"
+          echo "namespace.c DEFAULT_KSU_MNT_ID: $(grep -c 'DEFAULT_KSU_MNT_ID' ./fs/namespace.c)"
+          echo "namespace.c susfs_is_current_ksu_domain: $(grep -c 'susfs_is_current_ksu_domain' ./fs/namespace.c)"
+          echo "statfs.c __GENKSYMS__: $(grep -c '__GENKSYMS__' ./fs/statfs.c)"
+          echo "susfs.h: $(ls ./include/linux/susfs*.h 2>/dev/null | wc -l)"
+          echo "ksu.c: $(test -f drivers/kernelsu/ksu.c && echo 'MEVCUT' || echo 'YOK')"
+          echo "============================"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
@@ -270,7 +289,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # ========== KERNELSU + SUSFS CONFIG (Bosyaf/build-vortex gki-deconfig-6.1.sh) ==========
+          # ========== KERNELSU + SUSFS CONFIG ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
