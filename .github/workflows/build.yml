@@ -71,32 +71,12 @@ jobs:
             fi
           done
 
-          # pershoot/KernelSU-Next klonla
-          git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1
+      - name: 添加 SukiSU
+        run: |
+          echo "开始安装 SukiSU Ultra..."
+          cd "$CONFIG"
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-          # OFFICIAL setup.sh çalıştır (drivers/kernelsu otomatik kurulur)
-          cd KernelSU-Next
-          bash kernel/setup.sh
-          cd ..
-
-          # Multi-Manager Patch (VorteX GitHub'dan)
-          echo "🔥 Multi-Manager patchi uygulanıyor..."
-          cd KernelSU-Next
-          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
-          patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
-          rm -f ksun-multi-mgr.patch
-          
-          # Patch edilmiş dosyaları drivers/kernelsu'ya kopyala
-          cp -rf kernel/* ../drivers/kernelsu/
-          cd ..
-
-          # UAPI FIX (BASIT SCRIPT'TEN)
-          if [ ! -f "include/uapi/app_profile.h" ]; then
-            echo "📦 UAPI fix uygulanıyor..."
-            cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/
-          fi
-
-          echo "✅ KernelSU-Next + Multi-Manager kurulumu tamamlandı!"
 
       # ========================
       # 🔥 SUSFS (BASIT SCRIPT YÖNTEMİ - TEMİZ)
