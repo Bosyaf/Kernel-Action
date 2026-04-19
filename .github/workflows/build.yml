@@ -62,6 +62,13 @@ jobs:
           cd common
           echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          echo "🔥 Multi-manager patchi uygulanıyor..."
+          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
+          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
           
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
