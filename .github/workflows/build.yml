@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 8
+          swap-size-mb: 8192
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,13 +40,11 @@ jobs:
         run: |
           echo "🔥 ZyC Clang 22 indiriliyor..."
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "❌ Clang indirilemedi!"; exit 1; }
-          
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
-          echo "✅ ZyCromerZ Clang 22 hazır!"
+          echo "✅ Clang hazır!"
 
       - name: 1. Paketler
         run: |
@@ -66,126 +64,131 @@ jobs:
         run: |
           cd common
           echo "🔐 KernelSU-Next entegre ediliyor..."
-          
-          # KernelSU-Next reposunu doğru branch ile klonla (main branch kullan)
           git clone https://github.com/KernelSU-Next/KernelSU-Next.git --depth=1 KernelSU_tmp
-          
-          # drivers/kernelsu dizinini oluştur
           mkdir -p drivers/kernelsu
-          
-          # Kaynak kodları kopyala
           if [ -d "KernelSU_tmp/kernel" ]; then
             cp -rf KernelSU_tmp/kernel/* drivers/kernelsu/
-          elif [ -d "KernelSU_tmp" ]; then
-            # Eğer kernel alt dizini yoksa direkt kopyala
+          else
             cp -rf KernelSU_tmp/* drivers/kernelsu/
           fi
-          
           rm -rf KernelSU_tmp
-          
-          # Kconfig ve Makefile entegrasyonu
           if [ -f "drivers/Kconfig" ]; then
             if ! grep -q "kernelsu/Kconfig" drivers/Kconfig; then
-              # endmenu'den önce ekle
               sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
             fi
           fi
-          
           if [ -f "drivers/Makefile" ]; then
             if ! grep -q "kernelsu" drivers/Makefile; then
               echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
             fi
           fi
-          
-          # Kernel Makefile'a hook ekle (eğer gerekiyorsa)
-          if [ -f "Makefile" ]; then
-            if ! grep -q "kernelsu" Makefile; then
-              sed -i '/^core-y\s*+=\s*kernel\//a core-y += drivers/kernelsu/' Makefile 2>/dev/null || true
-            fi
-          fi
-          
-          echo "✅ KernelSU-Next başarıyla eklendi!"
-          ls -la drivers/kernelsu/
+          echo "✅ KernelSU-Next eklendi!"
 
-      - name: 4. SUSFS (6.1 GKI) Entegrasyonu
+      - name: 4. SUSFS Entegrasyonu
         run: |
           cd common
           echo "🛡️ SUSFS entegre ediliyor..."
-          
-          # SUSFS reposunu klonla
           git clone -b gki-android14-6.1-dev https://gitlab.com/simonpunk/susfs4ksu.git --depth=1 susfs_repo
-          
-          # SUSFS patch dosyalarını bul ve uygula
+          SUSFS_APPLIED=false
           if [ -d "susfs_repo/kernel_patches" ]; then
-            echo "📦 SUSFS patch'leri uygulanıyor..."
-            
-            # fs/susfs modülünü kopyala
+            echo "📦 SUSFS patch'leri bulundu..."
+            find susfs_repo/kernel_patches -name "*.patch" -type f | sort | while read patch_file; do
+              echo "  → Uygulanıyor: $(basename $patch_file)"
+              patch -p1 -N --forward < "$patch_file" || echo "    ⚠️ Patch atlandı (zaten uygulanmış veya uyumsuz)"
+            done
+            SUSFS_APPLIED=true
+          fi
+          if [ -d "susfs_repo/fs/susfs" ]; then
+            echo "📁 SUSFS kaynak dosyaları bulundu..."
+            mkdir -p fs/susfs
+            cp -rf susfs_repo/fs/susfs/* fs/susfs/
+            SUSFS_APPLIED=true
+          fi
+          if [ -d "susfs_repo/kernel_patches/KernelSU" ]; then
             if [ -d "susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/fs/susfs" ]; then
+              echo "📁 SUSFS KSU entegrasyon dosyaları bulundu..."
               mkdir -p fs/susfs
               cp -rf susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/fs/susfs/* fs/susfs/
-              echo "✅ SUSFS modülü fs/susfs/ altına kopyalandı"
+              SUSFS_APPLIED=true
             fi
-            
-            # KernelSU SUSFS entegrasyonu
             if [ -d "susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/drivers/kernelsu" ]; then
               cp -rf susfs_repo/kernel_patches/KernelSU/10_enable_susfs_for_ksu/drivers/kernelsu/* drivers/kernelsu/ 2>/dev/null || true
-              echo "✅ SUSFS KernelSU entegrasyonu yapıldı"
             fi
-            
-            # fs/Kconfig güncelle
+          fi
+          rm -rf susfs_repo
+          if [ -d "fs/susfs" ] && [ -f "fs/susfs/Kconfig" ]; then
+            echo "✅ SUSFS modülü bulundu, entegre ediliyor..."
             if [ -f "fs/Kconfig" ]; then
               if ! grep -q "susfs/Kconfig" fs/Kconfig; then
-                # overlayfs'den sonra ekle
-                sed -i '/source "fs\/overlayfs\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
+                if grep -q "overlayfs/Kconfig" fs/Kconfig; then
+                  sed -i '/source "fs\/overlayfs\/Kconfig"/a source "fs/susfs/Kconfig"' fs/Kconfig
+                else
+                  sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
+                fi
               fi
             fi
-            
-            # fs/Makefile güncelle
             if [ -f "fs/Makefile" ]; then
               if ! grep -q "susfs" fs/Makefile; then
                 echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
               fi
             fi
-            
+            echo "✅ SUSFS başarıyla eklendi!"
+            ls -la fs/susfs/
+          else
+            echo "⚠️ SUSFS kaynak dosyaları bulunamadı, SUSFS devre dışı!"
           fi
-          
-          rm -rf susfs_repo
-          echo "✅ SUSFS başarıyla eklendi!"
-          ls -la fs/susfs/ 2>/dev/null || echo "⚠️ fs/susfs klasörü oluşmadı"
 
-      - name: 5. BBG (Baseband Guard) Entegrasyonu
+      - name: 5. BBG Entegrasyonu
         run: |
           cd common
           echo "📡 Baseband Guard entegre ediliyor..."
-          
-          # BBG reposunu klonla
           git clone https://github.com/vc-teahouse/Baseband-guard.git --depth=1 bbg_repo
-          
-          # BBG kaynak kodlarını kopyala
+          BBG_APPLIED=false
           if [ -d "bbg_repo/drivers/bbg" ]; then
+            BBG_SRC="bbg_repo/drivers/bbg"
+          elif [ -d "bbg_repo/bbg" ]; then
+            BBG_SRC="bbg_repo/bbg"
+          elif [ -d "bbg_repo/kernel/bbg" ]; then
+            BBG_SRC="bbg_repo/kernel/bbg"
+          elif [ -d "bbg_repo" ]; then
+            if ls bbg_repo/*.c 1> /dev/null 2>&1; then
+              BBG_SRC="bbg_repo"
+            fi
+          fi
+          if [ -n "$BBG_SRC" ] && [ -d "$BBG_SRC" ]; then
+            echo "📁 BBG kaynak bulundu: $BBG_SRC"
             mkdir -p drivers/bbg
-            cp -rf bbg_repo/drivers/bbg/* drivers/bbg/
-            
-            # drivers/Kconfig güncelle
+            cp -rf "$BBG_SRC"/* drivers/bbg/ 2>/dev/null || cp -rf "$BBG_SRC"/*.c "$BBG_SRC"/*.h drivers/bbg/ 2>/dev/null || true
+            if [ ! -f "drivers/bbg/Kconfig" ]; then
+              cat > drivers/bbg/Kconfig << 'EOF'
+          config BBG
+          	bool "Baseband Guard"
+          	default n
+          	help
+          	  Enable Baseband Guard to protect against baseband attacks.
+          EOF
+            fi
+            if [ ! -f "drivers/bbg/Makefile" ]; then
+              cat > drivers/bbg/Makefile << 'EOF'
+          obj-$(CONFIG_BBG) += bbg.o
+          EOF
+            fi
             if [ -f "drivers/Kconfig" ]; then
               if ! grep -q "bbg/Kconfig" drivers/Kconfig; then
                 sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
               fi
             fi
-            
-            # drivers/Makefile güncelle
             if [ -f "drivers/Makefile" ]; then
               if ! grep -q "bbg" drivers/Makefile; then
                 echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
               fi
             fi
-            
             echo "✅ BBG başarıyla eklendi!"
             ls -la drivers/bbg/
+            BBG_APPLIED=true
           else
-            echo "⚠️ BBG kaynak dizini bulunamadı!"
+            echo "⚠️ BBG kaynak dosyaları bulunamadı, BBG devre dışı!"
           fi
-          
           rm -rf bbg_repo
 
       - name: 6. Wi-Fi Yaması
@@ -194,110 +197,94 @@ jobs:
           echo "📶 Wi-Fi yaması uygulanıyor..."
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
           if [ -s wifi.patch ] && grep -q "^diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || echo "⚠️ Wi-Fi patch zaten uygulanmış veya uyumsuz"
+            patch -p1 --forward < wifi.patch || echo "⚠️ Wi-Fi patch zaten uygulanmış"
           fi
           rm -f wifi.patch
 
-      - name: 7. Özel Performans Yamaları (Patches Klasörü)
+      - name: 7. Özel Performans Yamaları
         run: |
           cd common
           echo "🔥 Repo patches klasörü kontrol ediliyor..."
-          
           PATCH_DIR="../patches"
-          
           if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ Patches klasörü bulunamadı, atlanıyor..."
+            echo "⚠️ Patches klasörü yok, atlanıyor..."
           else
             echo "📁 Patches klasörü bulundu!"
-            
             PATCH_FILES=$(find "$PATCH_DIR" -type f \( -name "*.patch" -o -name "*.diff" \) 2>/dev/null | sort)
-            
             if [ -z "$PATCH_FILES" ]; then
-              echo "ℹ️ Patches klasöründe .patch/.diff dosyası yok"
+              echo "ℹ️ Patch dosyası bulunamadı"
             else
               echo "📌 Bulunan yamalar:"
               echo "$PATCH_FILES" | while read pf; do echo "  - $(basename $pf)"; done
               echo ""
-              
               echo "$PATCH_FILES" | while read patchfile; do
                 filename=$(basename "$patchfile")
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 echo "📌 İşleniyor: $filename"
-                
                 if patch -p1 --dry-run --forward < "$patchfile" > /dev/null 2>&1; then
                   patch -p1 --forward < "$patchfile"
                   echo "✅ BAŞARILI: $filename"
                 elif patch -p1 --dry-run -R < "$patchfile" > /dev/null 2>&1; then
                   echo "⏭️ ZATEN UYGULANMIŞ: $filename"
                 else
-                  echo "❌ ATLANDI (uyumsuz): $filename"
+                  echo "❌ ATLANDI: $filename"
                 fi
               done
-              
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-              echo "🎉 Özel yamalar işlendi!"
+              echo "🎉 Yamalar işlendi!"
             fi
           fi
 
-      - name: 8. Kernel Config Hazırlığı
+      - name: 8. Kernel Config
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          # Bypass hataları
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-          
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-          
-          # İlk defconfig
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-          
           CONFIG_FILE="out/.config"
-          
-          echo "🔧 Kernel ayarları yapılandırılıyor..."
-          
-          # KERNELSU-NEXT
+          echo "🔧 Kernel config yapılandırılıyor..."
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          
-          # SUSFS (Full Feature)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_LKM || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT || true
-          
-          # BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          
-          # FILESYSTEM
+          if [ -d "fs/susfs" ]; then
+            echo "✅ SUSFS var, etkinleştiriliyor..."
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT || true
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_LKM || true
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT || true
+          else
+            echo "⚠️ SUSFS yok, atlanıyor..."
+          fi
+          if [ -d "drivers/bbg" ]; then
+            echo "✅ BBG var, etkinleştiriliyor..."
+            ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          else
+            echo "⚠️ BBG yok, atlanıyor..."
+          fi
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-          # CMDLINE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
-          # HZ & PREEMPTION
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -307,8 +294,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          # CPU FREQ & IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
@@ -320,34 +305,24 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-          
-          # THERMAL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          
-          # SCHEDULER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          
-          # LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          
-          # DEBUG DISABLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # NETWORK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -358,14 +333,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          
-          # LOCALVERSION
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-KSU-SUSFS-BBG"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-KSU"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
           sed -i 's/check_defconfig//' build.config.gki 2>/dev/null || true
-          
-          # Final
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -375,65 +345,81 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🔍 CONFIG KONTROLÜ"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          grep "CONFIG_KSU=" out/.config || echo "⚠️ KSU: bulunamadı"
-          grep "CONFIG_KSU_SUSFS=" out/.config || echo "⚠️ SUSFS: bulunamadı"
-          grep "CONFIG_BBG=" out/.config || echo "⚠️ BBG: bulunamadı"
+          grep "CONFIG_KSU=" out/.config || echo "⚠️ KSU: YOK"
+          grep "CONFIG_KSU_SUSFS=" out/.config || echo "⚠️ SUSFS: YOK"
+          grep "CONFIG_BBG=" out/.config || echo "⚠️ BBG: YOK"
           grep "CONFIG_HZ=" out/.config
           grep "CONFIG_PREEMPT=" out/.config
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-          echo "🚀 Kernel derleniyor ($(nproc) core)..."
-          
+          echo "🚀 Kernel derleniyor..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=64 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
-            -fno-unwind-tables \
-            -fno-asynchronous-unwind-tables \
-            -fvectorize \
-            -fslp-vectorize \
-            -fno-common \
-            -fno-delete-null-pointer-checks \
-            -Wno-constant-logical-operand \
-            -Wno-unused-command-line-argument" \
-            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-O2" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse -falign-functions=64 -fomit-frame-pointer -ffunction-sections -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fvectorize -fslp-vectorize -fno-common -fno-delete-null-pointer-checks -Wno-constant-logical-operand -Wno-unused-command-line-argument" \
+            KLDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-debug -Wl,--icf=safe -Wl,-O2" \
             Image || { echo "❌ DERLEME HATASI!"; exit 1; }
-          
           echo "✅ Kernel başarıyla derlendi!"
           ls -lh out/arch/arm64/boot/Image
-          
           BOOTHASH="Yuki-$(date +%Y%m%d-%H%M)"
           echo "BOOTHASH=$BOOTHASH" >> $GITHUB_ENV
 
       - name: 10. AnyKernel3 Paketleme
         run: |
           cd AnyKernel3
-          
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki - KSU-Next SUSFS BBG by @caglar/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki KSU Gaming by @caglar/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=tapas\ndevice.name5=zijin\ndevice.name6=xiaomi14' anykernel.sh
-          
           cp ../common/out/arch/arm64/boot/Image .
-          
-          ZIP_NAME="CG-Yuki-KSU-SUSFS-BBG-$(date +%Y%m%d-%H%M).zip"
+          ZIP_NAME="CG-Yuki-KSU-Gaming-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "../${ZIP_NAME}" ./*
-          
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
-          echo "✅ ZIP hazır: $ZIP_NAME"
+          echo "✅ ZIP: $ZIP_NAME"
 
-        
+      - name: 11. Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "🔥 CG+ Yuki Gaming Kernel - KSU"
+          body: |
+            ## 🎮 CG+ Yuki Gaming Kernel
+            
+            ### ✨ Özellikler:
+            - ✅ **KernelSU-Next** (Root)
+            - ✅ **ZyCromerZ Clang 22** (ARMv9.2-a)
+            - ✅ **HZ=300** (Gaming Balanced)
+            - ✅ **PREEMPT** (Low Latency)
+            - ✅ **BBRv3 TCP** + **WireGuard**
+            - ✅ **Thin LTO**
+            - ✅ **Performans Yamaları**
+            ### 📱 Cihazlar:
+            Xiaomi 14 / 14 Pro / 14 Ultra / K70 Pro / K70 Ultra
+            
+            ### 🔧 Kurulum:
+            1. TWRP/OrangeFox boot
+            2. Magisk varsa kaldır
+            3. ZIP flash
+            4. Reboot
+            5. KernelSU Manager kur: [GitHub](https://github.com/tiann/KernelSU/releases)
+            
+            ### 📊 Performans:
+            - 🎮 Yüksek FPS (HZ=300)
+            - 🔋 Dengeli batarya
+            - 🌡️ Optimize termal
+            - 📶 Hızlı ağ (BBRv3)
+            
+            **Build:** $(date -u '+%Y-%m-%d %H:%M UTC')
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 12. Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: "*.zip"
+          retention-days: 7
