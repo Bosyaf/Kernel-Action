@@ -73,8 +73,17 @@ jobs:
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/
           cp -R susfs4ksu/kernel_patches/include/* ./include/
           
+          echo "📦 Patch dosyaları listesi:"
+          ls -la susfs4ksu/kernel_patches/*.patch
+          
           echo "📦 SUSFS patch uygulanıyor..."
-          patch -p1 < susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1-dev.patch || true
+          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
+          if [ -n "$SUSFS_PATCH" ]; then
+            echo "  → Uygulanıyor: $(basename $SUSFS_PATCH)"
+            patch -p1 < "$SUSFS_PATCH" || true
+          else
+            echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
 
       - name: 4.5. KernelSU-Next Multi Manager Patch
         run: |
@@ -93,15 +102,7 @@ jobs:
           if [ -f "drivers/kernelsu/extras.c" ]; then
             if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
               if ! grep -q "__attribute__((weak))" drivers/kernelsu/extras.c; then
-                cat << 'WEAK_EOF' >> drivers/kernelsu/extras.c
-
-          #ifdef CONFIG_KSU_SUSFS
-          #ifndef susfs_avc_log_spoofing_key_true
-          __attribute__((weak))
-          struct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;
-          #endif
-          #endif
-          WEOF
+                printf '\n#ifdef CONFIG_KSU_SUSFS\n#ifndef susfs_avc_log_spoofing_key_true\n__attribute__((weak))\nstruct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;\n#endif\n#endif\n' >> drivers/kernelsu/extras.c
               fi
             fi
           fi
