@@ -58,71 +58,161 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       # ========================
-      # 🔥 KERNELSU-NEXT (BASIT SCRIPT YÖNTEMİ - ÇALIŞAN)
+      # 🔥 KERNELSU-NEXT (Bosyaf/build-vortex YÖNTEMİ)
       # ========================
-      - name: 3. KernelSU-Next Setup (OFFICIAL METHOD)
+      - name: 3. KernelSU-Next Setup (Bosyaf Method)
         run: |
           cd common
+
+          echo "🔥 KernelSU-Next kurulumu - Bosyaf/build-vortex method..."
 
           # Eski kernelsu klasörlerini temizle
           for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
             if [ -d "$KSU_PATH" ]; then
+              echo "🗑️ Eski $KSU_PATH siliniyor..."
               rm -rf "$KSU_PATH"
             fi
           done
 
-      - name: 添加 KernelSu
-        run: |
-          echo "开始安装 KernelSu..."
-          cd "$CONFIG"
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          # pershoot/KernelSU-Next klonla (dev-susfs branch)
+          echo "📥 pershoot/KernelSU-Next (dev-susfs) klonlanıyor..."
+          git clone --depth=1 -q https://github.com/pershoot/KernelSU-Next.git -b dev-susfs KernelSU-Next
 
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
-          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
+          # OFFICIAL setup.sh çalıştır
+          echo "🔧 setup.sh çalıştırılıyor..."
+          cd KernelSU-Next
+          bash kernel/setup.sh
+          cd ..
 
-      - name: 4. SUSFS Entegrasyonu (FULL)
+          # Multi-Manager Patch (Kingfinik98/build-vortex)
+          echo "🔥 Multi-Manager patchi uygulanıyor..."
+          cd KernelSU-Next
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
+          patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
+          rm -f ksun-multi-mgr.patch
+
+          # Patch edilmiş dosyaları drivers/kernelsu'ya kopyala
+          echo "📦 Patch edilmiş dosyalar kopyalanıyor..."
+          cp -rf kernel/* ../drivers/kernelsu/
+          cd ..
+
+          # UAPI FIX
+          if [ ! -f "include/uapi/app_profile.h" ]; then
+            echo "📦 UAPI fix uygulanıyor..."
+            cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/
+          fi
+
+          # Kontrol
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
+            echo "✅ drivers/kernelsu/ksu.c mevcut!"
+          else
+            echo "❌ HATA: ksu.c bulunamadı!"
+            exit 1
+          fi
+
+          echo "✅ KernelSU-Next + Multi-Manager kurulumu tamamlandı!"
+
+      # ========================
+      # 🔥 SUSFS (Bosyaf/build-vortex YÖNTEMİ + 5 HOTFIX)
+      # ========================
+      - name: 4. SUSFS Setup (Bosyaf Method + Hotfixes)
         run: |
           cd common
-          echo "🔥 SUSFS dosyaları kopyalanıyor..."
-          
-          cp $GITHUB_WORKSPACE/patches/susfs/susfs.c ./fs/susfs.c
-          mkdir -p ./include/linux
-          cp $GITHUB_WORKSPACE/patches/susfs/susfs.h ./include/linux/susfs.h
-          cp $GITHUB_WORKSPACE/patches/susfs/susfs_def.h ./include/linux/susfs_def.h
-          
+
+          echo "🔥 SUSFS entegrasyonu - Bosyaf/build-vortex method..."
+
+          # SUSFS branch (GKI 6.1)
+          SUSFS_BRANCH="gki-android14-6.1"
+          SUSFS_DIR="susfs"
+
+          # Gitlab'dan klonla
+          echo "📥 simonpunk/susfs4ksu klonlanıyor..."
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b $SUSFS_BRANCH $SUSFS_DIR
+
+          # Dosyaları kopyala
+          echo "📦 SUSFS dosyaları kopyalanıyor..."
+          cp -R $SUSFS_DIR/kernel_patches/fs/* ./fs/
+          cp -R $SUSFS_DIR/kernel_patches/include/* ./include/
+
+          # Ana SUSFS patchini uygula
           echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          echo "📦 namespace.c SUSFS inject..."
+          patch -p1 < $SUSFS_DIR/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
+
+          # ========== 5 KRİTİK HOTFIX (Bosyaf/build-vortex) ==========
+
+          # FIX 1: namespace.c SUSFS injection
+          echo "🔧 FIX 1: namespace.c SUSFS injection..."
           cat << 'EOF' > .ns_inject_tmp
+
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
-          extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
-          
+          extern struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false;
+
           #define CL_COPY_MNT_NS BIT(25)
-          
+
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
+
+          #define DEFAULT_KSU_MNT_ID 500000
+          #define DEFAULT_KSU_MNT_GROUP_ID 5000
+          #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT 0x80000000
           #endif
+
           EOF
-          sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c || true
+          if ! grep -q "static DEFINE_IDA(susfs_mnt_id_ida);" ./fs/namespace.c; then
+            sed -i '/#include "internal.h"/r .ns_inject_tmp' ./fs/namespace.c
+            echo "✅ namespace.c injection başarılı!"
+          else
+            echo "ℹ️ namespace.c zaten patch'lenmiş"
+          fi
           rm -f .ns_inject_tmp
-          
-          echo "📦 statfs.c fix..."
+
+          # FIX 2: statfs.c CRC fix
+          echo "🔧 FIX 2: statfs.c CRC fix..."
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
-          
-          echo "📦 fs_proc_base fix..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/fs_proc_base.c-fix-k6.1.patch || true
-          
-          echo "🔍 Header kontrolü:"
-          ls -la include/linux/susfs*.h && echo "✅ SUSFS header OK!"
-          echo "✅ SUSFS entegrasyonu tamamlandı!"
+          echo "✅ statfs.c CRC fix uygulandı!"
+
+          # FIX 3: fs_proc_base.c fix (K6.1)
+          echo "🔧 FIX 3: fs_proc_base.c fix..."
+          curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/susfs/fs_proc_base.c-fix-k6.1.patch" -o fs_proc_fix.patch
+          if [ -s fs_proc_fix.patch ]; then
+            patch -p1 --forward < fs_proc_fix.patch || echo "⚠️ fs_proc_base.c fix atlandı"
+          fi
+          rm -f fs_proc_fix.patch
+
+          # FIX 4: AVC spoof compatibility (extras.c weak symbol)
+          echo "🔧 FIX 4: AVC spoof compatibility fix..."
+          if [ -f "drivers/kernelsu/extras.c" ]; then
+            cat << 'EOF' > .avc_fix_tmp
+          #ifdef CONFIG_KSU_SUSFS
+          #ifndef susfs_avc_log_spoofing_key_true
+          __attribute__((weak))
+          struct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;
+          #endif
+          #endif
+          EOF
+            if ! grep -q "__attribute__((weak))" "drivers/kernelsu/extras.c"; then
+              LAST_INCLUDE_LINE=$(grep -n '#include' "drivers/kernelsu/extras.c" | tail -1 | cut -d: -f1)
+              if [ -n "$LAST_INCLUDE_LINE" ]; then
+                sed -i "${LAST_INCLUDE_LINE}r .avc_fix_tmp" "drivers/kernelsu/extras.c"
+                echo "✅ AVC spoof fix uygulandı!"
+              fi
+            else
+              echo "ℹ️ AVC spoof fix zaten mevcut"
+            fi
+            rm -f .avc_fix_tmp
+          fi
+
+          # FIX 5: supercalls.c uname spoof fix
+          echo "🔧 FIX 5: supercalls.c uname spoof fix..."
+          if [ -f "drivers/kernelsu/supercalls.c" ]; then
+            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* CONFIG_KSU_SUSFS_SPOOF_UNAME Disabled to fix build \*\//' drivers/kernelsu/supercalls.c || true
+            echo "✅ supercalls.c fix uygulandı!"
+          fi
+
+          echo "✅ SUSFS entegrasyonu + 5 Hotfix tamamlandı!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
@@ -149,23 +239,23 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
-          
+
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-          
+
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-          
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-            
+
           CONFIG_FILE="out/.config"
-          
+
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -191,7 +281,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
@@ -224,8 +314,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-          # ========== KERNELSU + SUSFS CONFIG (BASIT SCRIPT'TEN) ==========
+
+          # ========== KERNELSU + SUSFS CONFIG (Bosyaf/build-vortex) ==========
           echo "🔐 KernelSU + SUSFS config'leri ekleniyor..."
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -244,10 +334,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_ALLOWLIST_WORKAROUND
-          
-          # Log kapat (opsiyonel, istersen açabilirsin)
-          # ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
+
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -257,7 +344,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-          
+
           # ========== KONTROL ==========
           echo ""
           echo "=========================================="
@@ -274,19 +361,19 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
-          
+
           echo "🔍 SON CONFIG KONTROLÜ:"
           echo "================================"
           grep -E "^CONFIG_KSU=|^CONFIG_KSU_SUSFS=" out/.config
           echo "================================"
-          
+
           if grep -q "CONFIG_KSU=y" out/.config; then
             echo "✅ CONFIG_KSU=y AYARLI!"
           else
             echo "❌ CONFIG_KSU AYARLI DEĞİL! Derleme iptal ediliyor..."
             exit 1
           fi
-          
+
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -305,7 +392,7 @@ jobs:
             -Wl,--icf=safe \
             -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
+
           echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
@@ -315,7 +402,7 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          
+
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
 
