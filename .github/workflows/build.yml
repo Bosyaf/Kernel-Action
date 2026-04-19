@@ -57,7 +57,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next + SUSFS (OFFICIAL METHOD - pershoot)
+      - name: 3. KernelSU-Next + SUSFS (OFFICIAL - DÜZELTİLMİŞ)
         run: |
           cd common
           echo "🔥 KernelSU-Next + SUSFS kurulumu - OFFICIAL pershoot method..."
@@ -77,6 +77,9 @@ jobs:
           echo "✅ KernelSU-Next kurulumu tamamlandı!"
           
           # Kontrol: drivers/kernelsu var mı?
+          echo "🔍 drivers/kernelsu/ kontrolü:"
+          ls -la drivers/kernelsu/ | head -20
+          
           if [ -d "drivers/kernelsu" ] && [ -f "drivers/kernelsu/ksu.c" ]; then
             echo "✅ drivers/kernelsu/ksu.c mevcut!"
           else
@@ -86,29 +89,27 @@ jobs:
           fi
           
           # Multi-Manager Desteği (VorteX GitHub'dan)
+          # NOT: setup.sh zaten dosyaları drivers/kernelsu'ya koydu, direkt oraya patch uygula
           echo "🔥 Multi-Manager patchi uygulanıyor..."
-          cd KernelSU-Next
           curl -LSs "https://raw.githubusercontent.com/Kingfinik98/build-vortex/refs/heads/6.x/kernel-patches/ksu/ksun-add-more-managers-support.patch" -o ksun-multi-mgr.patch
-          patch -p1 --forward < ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
-          rm -f ksun-multi-mgr.patch
           
-          # Patch edilmiş dosyaları drivers/kernelsu'ya kopyala
-          echo "📦 Patch edilmiş dosyalar kopyalanıyor..."
-          cp -rf kernel/* ../drivers/kernelsu/
-          cd ..
+          cd drivers/kernelsu
+          patch -p1 --forward < ../../ksun-multi-mgr.patch || echo "⚠️ Patch zaten uygulanmış"
+          cd ../..
+          rm -f ksun-multi-mgr.patch
           
           echo "✅ Multi-Manager desteği eklendi!"
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU, MamboSU, WildKSU destekleniyor!"
 
-      - name: 4. SUSFS Entegrasyonu (pershoot - OFFICIAL)
+      - name: 4. SUSFS Entegrasyonu (simonpunk - OFFICIAL)
         run: |
           cd common
-          echo "🔥 SUSFS entegrasyonu - pershoot OFFICIAL method..."
+          echo "🔥 SUSFS entegrasyonu - simonpunk OFFICIAL method..."
           
-          # pershoot/susfs4ksu klonla (DOĞRU REPO!)
-          SUSFS_BRANCH="gki-android14-6.1-dev"
-          echo "📥 pershoot/susfs4ksu klonlanıyor..."
-          git clone --depth=3 --no-tags https://gitlab.com/pershoot/susfs4ksu.git -b $SUSFS_BRANCH susfs
+          # simonpunk/susfs4ksu klonla (DOĞRU REPO - senin linkin!)
+          SUSFS_BRANCH="gki-android14-6.1"
+          echo "📥 simonpunk/susfs4ksu klonlanıyor..."
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b $SUSFS_BRANCH susfs
           
           # SUSFS dosyalarını kopyala
           echo "📦 SUSFS dosyaları kopyalanıyor..."
@@ -117,13 +118,7 @@ jobs:
           
           # Ana SUSFS patchini uygula
           echo "📦 Ana SUSFS patchi uygulanıyor..."
-          patch -p1 -ui < susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          
-          # İkinci patch (scope-minimized)
-          echo "📦 Scope-minimized patch uygulanıyor..."
-          if [ -f "susfs/kernel_patches/60_scope-minimized_manual_hooks.patch" ]; then
-            patch -p1 -ui < susfs/kernel_patches/60_scope-minimized_manual_hooks.patch || true
-          fi
+          patch -p1 -ui < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || echo "⚠️ Patch zaten uygulanmış"
           
           # Header kontrolü
           echo "🔍 SUSFS header kontrolü:"
