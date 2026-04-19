@@ -40,13 +40,12 @@ jobs:
         run: |
           echo "🔥 ZyC Clang 22 indiriliyor..."
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "❌ Clang indirilemedi!"; exit 1; }
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
-          echo "✅ Clang hazır!"
 
-      - name: 1. Gerekli Paketler
+      - name: 1. Paketler
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -60,120 +59,94 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 3. KernelSU-Next (Pershoot dev-susfs) & MultiManager
+      - name: 3. Pershoot KSU-Next & MultiManager (Yol Düzeltildi)
         run: |
           cd common
-          echo "🔐 Pershoot KernelSU-Next (SUSFS Destekli) entegre ediliyor..."
-          # Pershoot'un özel SUSFS destekli branch'ini çekiyoruz
+          echo "🔐 Pershoot KernelSU-Next (dev-susfs) çekiliyor..."
           git clone -b dev-susfs https://github.com/pershoot/KernelSU-Next.git drivers/kernelsu
           
           echo "🛠️ MultiManager yaması uygulanıyor..."
-          # Paket adı kontrolünü bypass et (MultiManager)
-          sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_unused(const char \*package_name)/' drivers/kernelsu/manager.c
-          # İmza kontrolünü devre dışı bırak
-          sed -i 's/if (!check_manager_signature(task))/if (false \&\& !check_manager_signature(task))/' drivers/kernelsu/manager.c
+          # Yol kontrolü: manager.c artık 'kernel/' klasörü içinde
+          MGR_FILE="drivers/kernelsu/kernel/manager.c"
+          if [ ! -f "$MGR_FILE" ]; then MGR_FILE="drivers/kernelsu/manager.c"; fi
           
-          # Kconfig/Makefile entegrasyonu
+          if [ -f "$MGR_FILE" ]; then
+            echo "✅ Dosya bulundu: $MGR_FILE"
+            sed -i 's/static bool is_manager_apk(const char \*package_name)/static bool is_manager_apk(const char \*package_name) { return true; }\nstatic bool is_manager_apk_unused(const char \*package_name)/' "$MGR_FILE"
+            sed -i 's/if (!check_manager_signature(task))/if (false \&\& !check_manager_signature(task))/' "$MGR_FILE"
+          else
+            echo "❌ HATA: manager.c bulunamadı!"
+            exit 1
+          fi
+
+          # Kconfig/Makefile (Kök dizinde kalmaya devam ediyorlar)
           if ! grep -q "kernelsu/Kconfig" drivers/Kconfig; then
             sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           fi
           if ! grep -q "kernelsu" drivers/Makefile; then
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
           fi
-          echo "✅ KSU-Next hazır!"
 
-      - name: 4. SUSFS (Pershoot gki-android14-6.1-dev)
+      - name: 4. Pershoot SUSFS Entegrasyonu
         run: |
           cd common
-          echo "🛡️ Pershoot SUSFS entegre ediliyor..."
-          # Pershoot'un SUSFS reposunu GKI 6.1 branch'i ile çekiyoruz
+          echo "🛡️ Pershoot SUSFS4KSU (6.1-dev) entegre ediliyor..."
           git clone -b gki-android14-6.1-dev https://gitlab.com/pershoot/susfs4ksu.git susfs_repo
           
-          # fs/susfs klasörünü kopyala
+          # 1. SUSFS Core Dosyaları
           mkdir -p fs/susfs
           cp -rf susfs_repo/fs/susfs/* fs/susfs/
+          cp -rf susfs_repo/include/linux/susfs.h include/linux/
+          cp -rf susfs_repo/include/linux/susfs_def.h include/linux/ 2>/dev/null || true
           
-          # Kernel yama dosyalarını uygula (stat.c, open.c vb. için gerekli yamalar)
-          echo "📦 Çekirdek yamaları uygulanıyor..."
-          cp susfs_repo/kernel_patches/fs/* fs/
-          cp susfs_repo/kernel_patches/include/linux/* include/linux/
+          # 2. VFS Yamalarını Uygula (Pershoot'un yöntemi - KSU-Next hooks zaten dev-susfs'te var)
+          echo "📦 Çekirdek VFS yamaları kopyalanıyor..."
+          cp -f susfs_repo/kernel_patches/fs/* fs/
+          cp -f susfs_repo/kernel_patches/include/linux/* include/linux/
           
-          # Kconfig/Makefile güncellemeleri
+          # 3. Kconfig/Makefile entegrasyonu
           if ! grep -q "susfs/Kconfig" fs/Kconfig; then
             sed -i '/^endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
           fi
           if ! grep -q "susfs" fs/Makefile; then
             echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
           fi
-          
           rm -rf susfs_repo
-          echo "✅ SUSFS hazır!"
 
-      - name: 5. BBG (Baseband Guard) Entegrasyonu
+      - name: 5. BBG Entegrasyonu
         run: |
           cd common
           echo "📡 BBG entegre ediliyor..."
           git clone https://github.com/vc-teahouse/Baseband-guard.git --depth=1 bbg_repo
           mkdir -p drivers/bbg
-          cp -rf bbg_repo/drivers/bbg/* drivers/bbg/ || cp -rf bbg_repo/* drivers/bbg/
-          
-          if [ ! -f "drivers/bbg/Kconfig" ]; then
-            echo -e 'config BBG\n\tbool "Baseband Guard"\n\tdefault n' > drivers/bbg/Kconfig
-          fi
-          if [ ! -f "drivers/bbg/Makefile" ]; then
-            echo 'obj-$(CONFIG_BBG) += bbg.o' > drivers/bbg/Makefile
-          fi
-          
-          if ! grep -q "bbg/Kconfig" drivers/Kconfig; then
-            sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
-          fi
-          if ! grep -q "bbg" drivers/Makefile; then
-            echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
-          fi
+          cp -rf bbg_repo/drivers/bbg/* drivers/bbg/ 2>/dev/null || cp -rf bbg_repo/* drivers/bbg/
+          echo -e 'obj-$(CONFIG_BBG) += bbg.o' > drivers/bbg/Makefile
+          echo -e 'config BBG\n\tbool "Baseband Guard"\n\tdefault n' > drivers/bbg/Kconfig
+          sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
+          echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
           rm -rf bbg_repo
-          echo "✅ BBG hazır!"
 
-      - name: 6. Ek Performans Yamaları
-        run: |
-          cd common
-          # Wi-Fi yaması
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ]; then patch -p1 --forward < wifi.patch || echo "Wi-Fi patch skip"; fi
-          
-          # Patches klasöründeki özel yamalar
-          if [ -d "../patches" ]; then
-            find "../patches" -type f -name "*.patch" | sort | while read pf; do
-              patch -p1 --forward < "$pf" || echo "Skip $pf"
-            done
-          fi
-
-      - name: 7. Kernel Config Yapılandırması
+      - name: 6. Config & Patch
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           
           CONFIG_FILE="out/.config"
-          # KSU & SUSFS & BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          
-          # Performans Ayarları
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          
-          # Sürüm Bilgisi
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-Yuki-Multi"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+-Yuki-Multi-SUSFS"
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 8. Derleme (Build)
+      - name: 7. Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -182,36 +155,28 @@ jobs:
             KCFLAGS="-O2 -march=armv9.2-a+crypto -fomit-frame-pointer" \
             Image
           
-          BOOTHASH="Yuki-$(date +%Y%m%d-%H%M)"
-          echo "BOOTHASH=$BOOTHASH" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-      - name: 9. Paketleme (AnyKernel3)
+      - name: 8. Paketleme
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki MultiManager KSU by @caglar/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki MultiManager + SUSFS/' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
           ZIP_NAME="CG-Yuki-MultiKSU-SUSFS-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "../${ZIP_NAME}" ./*
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
-      - name: 10. Yayınla (Release)
+      - name: 9. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "🎮 CG+ Yuki Gaming Kernel (MultiManager + SUSFS)"
+          name: "🎮 Yuki Gaming Kernel (MultiManager + Pershoot SUSFS)"
           body: |
-            ### 🛠 Değişiklikler:
-            - **Pershoot** KernelSU-Next & SUSFS yöntemi kullanıldı.
-            - **MultiManager** desteği eklendi (Herhangi bir paket isimli KSU APK kullanılabilir).
-            - **HZ=300** Gaming optimizasyonu.
-            - **SUSFS** ile tam gizleme desteği.
-            - **BBG** (Baseband Guard) koruması.
+            - KernelSU-Next (Pershoot dev-susfs)
+            - SUSFS v1.5.1 (Pershoot Method)
+            - MultiManager Support (Any Package Name)
+            - HZ=300 Gaming Performance
+            - Baseband Guard (BBG)
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 11. Artifact Olarak Kaydet
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ZIP_NAME }}
-          path: "*.zip"
