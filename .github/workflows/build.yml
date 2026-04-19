@@ -56,9 +56,9 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       # ========================
-      # 🔥 KERNELSU-NEXT (DÜZELTİLDİ)
+      # 🔥 KERNELSU-NEXT (GERÇEK KOPYALAMA - SYMLINK YOK)
       # ========================
-      - name: 3. KernelSU-Next Setup
+      - name: 3. KernelSU-Next Setup (GERÇEK DOSYA)
         run: |
           cd common
 
@@ -67,30 +67,55 @@ jobs:
             rm -rf "$KSU_PATH" 2>/dev/null || true
           done
 
+          # Eski Kconfig/Makefile temizle
+          sed -i '/kernelsu/d' drivers/Kconfig 2>/dev/null || true
+          sed -i '/kernelsu/d' drivers/Makefile 2>/dev/null || true
+
           # KSU-Next klonla
           git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1
 
-          # setup.sh çalıştır (common/ dizininden)
-          bash KernelSU-Next/kernel/setup.sh
-
-          # Multi-Manager Patch (KernelSU-Next içinde çalıştır)
-          # -p2 kullan çünkü common/ altındayız ve dosya yolu KernelSU-Next/kernel/xxx
+          # Multi-Manager Patch KernelSU-Next içinde uygula
           cd KernelSU-Next
           patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
           cd ..
 
+          # ⚠️ ÖNEMLİ: Symlink yerine GERÇEK KOPYALAMA yap!
+          mkdir -p drivers/kernelsu
+          
+          # KernelSU-Next/kernel/ içeriğini drivers/kernelsu/ içine kopyala
+          for f in KernelSU-Next/kernel/*; do
+            if [ -f "$f" ]; then
+              cp "$f" drivers/kernelsu/
+            fi
+          done
+          
+          # Ayrıca alt klasörleri de kopyala (selinux/, include/)
+          [ -d "KernelSU-Next/kernel/selinux" ] && cp -r KernelSU-Next/kernel/selinux drivers/kernelsu/ 2>/dev/null || true
+          [ -d "KernelSU-Next/kernel/include" ] && cp -r KernelSU-Next/kernel/include drivers/kernelsu/ 2>/dev/null || true
+          [ -d "KernelSU-Next/kernel/include" ] && cp -r KernelSU-Next/kernel/include/* drivers/kernelsu/ 2>/dev/null || true
+
+          # Kconfig ve Makefile ekle
+          if ! grep -q "source.*kernelsu" drivers/Kconfig; then
+            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          fi
+          
+          if ! grep -q "obj-y += kernelsu" drivers/Makefile; then
+            echo 'obj-y += kernelsu/' >> drivers/Makefile
+          fi
+
           # UAPI FIX
           cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
 
-          # Kontrol - symlink üzerinden dosya var mı?
-          if [ -L "drivers/kernelsu" ] && [ -f "$(readlink -f drivers/kernelsu)/ksu.c" ]; then
-            echo "✅ KernelSU kurulumu başarılı!"
-          elif [ -f "drivers/kernelsu/ksu.c" ]; then
-            echo "✅ KernelSU kurulumu başarılı!"
+          # Kontrol - gerçek dosya var mı?
+          echo "🔍 KSU Dosya kontrolü:"
+          ls -la drivers/kernelsu/ | head -15
+          
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
+            echo "✅ ksu.c mevcut!"
           else
-            echo "❌ ksu.c bulunamadı!"
-            ls -la drivers/kernelsu 2>/dev/null || echo "drivers/kernelsu yok"
-            ls -la KernelSU-Next/kernel/ 2>/dev/null | head -10
+            echo "❌ ksu.c hala yok!"
+            echo "KernelSU-Next/kernel/ içeriği:"
+            ls -la KernelSU-Next/kernel/ | head -15
             exit 1
           fi
 
@@ -131,8 +156,6 @@ jobs:
             sed -i '/#include "internal.h"/r /tmp/ns_fix.txt' ./fs/namespace.c
             rm -f /tmp/ns_fix.txt
             echo "✅ namespace.c FIX başarılı!"
-          else
-            echo "ℹ️ namespace.c zaten düzeltilmiş"
           fi
 
           # FIX 2: statfs.c
@@ -144,15 +167,13 @@ jobs:
           fi
 
           # FIX 3: fs_proc_base.c
-          if [ -f "$GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch" ]; then
+          [ -f "$GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch" ] && \
             patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-          fi
 
-          # FIX 4: extras.c AVC spoof
+          # FIX 4: extras.c
           EXTRAS_FILE="drivers/kernelsu/extras.c"
-          if [ -f "$EXTRAS_FILE" ]; then
-            if ! grep -q "__attribute__((weak))" "$EXTRAS_FILE"; then
-              cat > /tmp/avc_fix.txt << 'AVCINJECT'
+          if [ -f "$EXTRAS_FILE" ] && ! grep -q "__attribute__((weak))" "$EXTRAS_FILE"; then
+            cat > /tmp/avc_fix.txt << 'AVCINJECT'
           #ifdef CONFIG_KSU_SUSFS
           #ifndef susfs_avc_log_spoofing_key_true
           __attribute__((weak))
@@ -160,17 +181,15 @@ jobs:
           #endif
           #endif
           AVCINJECT
-              LAST_INC=$(grep -n '#include' "$EXTRAS_FILE" | tail -1 | cut -d: -f1)
-              [ -n "$LAST_INC" ] && sed -i "${LAST_INC}r /tmp/avc_fix.txt" "$EXTRAS_FILE"
-              rm -f /tmp/avc_fix.txt
-            fi
+            LAST_INC=$(grep -n '#include' "$EXTRAS_FILE" | tail -1 | cut -d: -f1)
+            [ -n "$LAST_INC" ] && sed -i "${LAST_INC}r /tmp/avc_fix.txt" "$EXTRAS_FILE"
+            rm -f /tmp/avc_fix.txt
           fi
 
           # FIX 5: supercalls.c
           SUPERCALLS_FILE="drivers/kernelsu/supercalls.c"
-          if [ -f "$SUPERCALLS_FILE" ]; then
+          [ -f "$SUPERCALLS_FILE" ] && \
             sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled *\//' "$SUPERCALLS_FILE" 2>/dev/null || true
-          fi
 
           # DOĞRULAMA
           echo "=========================================="
@@ -178,7 +197,6 @@ jobs:
           echo "ksu.c: $(test -f drivers/kernelsu/ksu.c && echo 'OK' || echo 'YOK')"
           echo "susfs.h: $(ls include/linux/susfs*.h 2>/dev/null | wc -l) dosya"
           echo "namespace.c susfs_mnt_id_ida: $(grep -c 'susfs_mnt_id_ida' fs/namespace.c)"
-          echo "statfs.c __GENKSYMS__: $(grep -c '__GENKSYMS__' fs/statfs.c)"
           echo "=========================================="
 
       - name: 5. Wi-Fi ve Asya Yamaları
