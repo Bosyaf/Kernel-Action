@@ -56,294 +56,169 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       # ========================
-      # 🔥 KERNELSU-NEXT (GERÇEK KOPYALAMA - SYMLINK YOK)
+      # 🔥 KERNELSU-NEXT (FİZİKSEL KOPYALAMA - GARANTİ YÖNTEM)
       # ========================
-      - name: 3. KernelSU-Next Setup (GERÇEK DOSYA)
+      - name: 3. KernelSU-Next Setup
         run: |
           cd common
+          
+          # 1. Temizlik
+          rm -rf drivers/kernelsu KernelSU-Next
+          sed -i '/kernelsu/d' drivers/Kconfig || true
+          sed -i '/kernelsu/d' drivers/Makefile || true
 
-          # Eski KSU temizle
-          for KSU_PATH in drivers/staging/kernelsu drivers/kernelsu KernelSU KernelSU-Next; do
-            rm -rf "$KSU_PATH" 2>/dev/null || true
-          done
-
-          # Eski Kconfig/Makefile temizle
-          sed -i '/kernelsu/d' drivers/Kconfig 2>/dev/null || true
-          sed -i '/kernelsu/d' drivers/Makefile 2>/dev/null || true
-
-          # KSU-Next klonla
-          git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1
-
-          # Multi-Manager Patch KernelSU-Next içinde uygula
+          # 2. KernelSU-Next indir
+          git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1 KernelSU-Next
+          
+          # 3. Multi-Manager Patch Uygula (Herhangi bir APK için)
           cd KernelSU-Next
-          patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch zaten uygulanmış"
+          patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Multi-mgr patch atlandı"
           cd ..
 
-          # ⚠️ ÖNEMLİ: Symlink yerine GERÇEK KOPYALAMA yap!
+          # 4. Dosyaları drivers/kernelsu içine FİZİKSEL olarak kopyala (Symlink hatasını önler)
           mkdir -p drivers/kernelsu
+          cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
           
-          # KernelSU-Next/kernel/ içeriğini drivers/kernelsu/ içine kopyala
-          for f in KernelSU-Next/kernel/*; do
-            if [ -f "$f" ]; then
-              cp "$f" drivers/kernelsu/
-            fi
-          done
+          # 5. Kernel'e tanıt
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          echo 'obj-y += kernelsu/' >> drivers/Makefile
           
-          # Ayrıca alt klasörleri de kopyala (selinux/, include/)
-          [ -d "KernelSU-Next/kernel/selinux" ] && cp -r KernelSU-Next/kernel/selinux drivers/kernelsu/ 2>/dev/null || true
-          [ -d "KernelSU-Next/kernel/include" ] && cp -r KernelSU-Next/kernel/include drivers/kernelsu/ 2>/dev/null || true
-          [ -d "KernelSU-Next/kernel/include" ] && cp -r KernelSU-Next/kernel/include/* drivers/kernelsu/ 2>/dev/null || true
+          # 6. UAPI Fix
+          cp -rf KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
 
-          # Kconfig ve Makefile ekle
-          if ! grep -q "source.*kernelsu" drivers/Kconfig; then
-            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          fi
-          
-          if ! grep -q "obj-y += kernelsu" drivers/Makefile; then
-            echo 'obj-y += kernelsu/' >> drivers/Makefile
-          fi
-
-          # UAPI FIX
-          cp -r KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
-
-          # Kontrol - gerçek dosya var mı?
-          echo "🔍 KSU Dosya kontrolü:"
-          ls -la drivers/kernelsu/ | head -15
-          
-          if [ -f "drivers/kernelsu/ksu.c" ]; then
-            echo "✅ ksu.c mevcut!"
+          # 7. KESİN KONTROL
+          echo "🔍 Dosya kontrolü:"
+          if [ -f "drivers/kernelsu/Kbuild" ]; then
+            echo "✅ KernelSU başarıyla yerleştirildi!"
           else
-            echo "❌ ksu.c hala yok!"
-            echo "KernelSU-Next/kernel/ içeriği:"
-            ls -la KernelSU-Next/kernel/ | head -15
+            echo "❌ HATA: Dosyalar kopyalanamadı!"
             exit 1
           fi
 
       # ========================
-      # 🔥 SUSFS + 5 HOTFIX
+      # 🔥 SUSFS + 5 HOTFIX (SİMONPUNK)
       # ========================
       - name: 4. SUSFS Setup
         run: |
           cd common
-
           SUSFS_BRANCH="gki-android14-6.1"
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b $SUSFS_BRANCH susfs
-
-          cp -R susfs/kernel_patches/fs/* ./fs/
-          cp -R susfs/kernel_patches/include/* ./include/
-
+          
+          # simonpunk/susfs4ksu indir
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b $SUSFS_BRANCH susfs
+          
+          # Dosyaları yerleştir
+          cp -r susfs/kernel_patches/fs/* fs/
+          cp -r susfs/kernel_patches/include/* include/
+          
+          # Ana patch
           patch -p1 < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
-
-          # FIX 1: namespace.c
-          if ! grep -q "static DEFINE_IDA(susfs_mnt_id_ida)" ./fs/namespace.c; then
-            cat > /tmp/ns_fix.txt << 'NSINJECT'
-
+          
+          # 🛠️ 5 HOTFIX 🛠️
+          
+          # FIX 1: namespace.c (Jump label & definitions)
+          cat > /tmp/ns_inject.txt << 'EOF'
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
           extern bool susfs_is_current_ksu_domain(void);
           extern struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false;
-
           #define CL_COPY_MNT_NS BIT(25)
-
           static DEFINE_IDA(susfs_mnt_id_ida);
           static DEFINE_IDA(susfs_mnt_group_ida);
-
           #define DEFAULT_KSU_MNT_ID 500000
           #define DEFAULT_KSU_MNT_GROUP_ID 5000
           #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT 0x80000000
           #endif
-          NSINJECT
-            sed -i '/#include "internal.h"/r /tmp/ns_fix.txt' ./fs/namespace.c
-            rm -f /tmp/ns_fix.txt
-            echo "✅ namespace.c FIX başarılı!"
-          fi
-
-          # FIX 2: statfs.c
-          if grep -q '#include <linux/susfs_def.h>' fs/statfs.c; then
-            if ! grep -q '__GENKSYMS__' fs/statfs.c; then
-              sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c
-              sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c
-            fi
-          fi
-
-          # FIX 3: fs_proc_base.c
-          [ -f "$GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch" ] && \
-            patch -p1 --forward < $GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
-
-          # FIX 4: extras.c
-          EXTRAS_FILE="drivers/kernelsu/extras.c"
-          if [ -f "$EXTRAS_FILE" ] && ! grep -q "__attribute__((weak))" "$EXTRAS_FILE"; then
-            cat > /tmp/avc_fix.txt << 'AVCINJECT'
+          EOF
+          sed -i '/#include "internal.h"/r /tmp/ns_inject.txt' fs/namespace.c
+          
+          # FIX 2: statfs.c (CRC fix)
+          sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
+          sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
+          
+          # FIX 3: fs_proc_base.c (Senin yüklediğin patch)
+          patch -p1 < $GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
+          
+          # FIX 4: extras.c (AVC weak symbols)
+          if [ -f "drivers/kernelsu/extras.c" ]; then
+            cat > /tmp/avc_fix.txt << 'EOF'
           #ifdef CONFIG_KSU_SUSFS
           #ifndef susfs_avc_log_spoofing_key_true
           __attribute__((weak))
           struct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;
           #endif
           #endif
-          AVCINJECT
-            LAST_INC=$(grep -n '#include' "$EXTRAS_FILE" | tail -1 | cut -d: -f1)
-            [ -n "$LAST_INC" ] && sed -i "${LAST_INC}r /tmp/avc_fix.txt" "$EXTRAS_FILE"
-            rm -f /tmp/avc_fix.txt
+          EOF
+            sed -i '/#include/r /tmp/avc_fix.txt' drivers/kernelsu/extras.c
           fi
-
-          # FIX 5: supercalls.c
-          SUPERCALLS_FILE="drivers/kernelsu/supercalls.c"
-          [ -f "$SUPERCALLS_FILE" ] && \
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled *\//' "$SUPERCALLS_FILE" 2>/dev/null || true
-
-          # DOĞRULAMA
-          echo "=========================================="
-          echo "🔍 KSU+SUSFS DOĞRULAMA:"
-          echo "ksu.c: $(test -f drivers/kernelsu/ksu.c && echo 'OK' || echo 'YOK')"
-          echo "susfs.h: $(ls include/linux/susfs*.h 2>/dev/null | wc -l) dosya"
-          echo "namespace.c susfs_mnt_id_ida: $(grep -c 'susfs_mnt_id_ida' fs/namespace.c)"
-          echo "=========================================="
+          
+          # FIX 5: supercalls.c (Uname spoof fix)
+          if [ -f "drivers/kernelsu/supercalls.c" ]; then
+            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled *\//' drivers/kernelsu/supercalls.c || true
+          fi
+          
+          echo "✅ SUSFS ve 5 Hotfix tamamlandı!"
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch 2>/dev/null || true
-          [ -s wifi.patch ] && grep -q "diff" wifi.patch && patch -p1 --forward < wifi.patch || true
-          rm -f wifi.patch
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig 2>/dev/null || true
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          [ -s wifi.patch ] && patch -p1 < wifi.patch || true
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
 
       - name: 5.5. Özel Performans
         run: |
           cd common
-          [ -d "../patches" ] && for f in ../patches/*.patch; do patch -p1 --forward < "$f" 2>/dev/null || true; done
+          [ -d "../patches" ] && for f in ../patches/*.patch; do patch -p1 --forward < "$f" || true; done
 
       - name: 6. Full Kernel Config
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
-
-          touch .scmversion 2>/dev/null || true
-          cat << 'CEOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          CEOF
-          chmod +x scripts/check-local-export
-
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
-
-          CONFIG_FILE="out/.config"
-
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-
-          # KSU + SUSFS CONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
-
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-C-G+"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-
+          
+          CONFIG="out/.config"
+          # KSU + SUSFS Configs
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_SU
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
+          ./scripts/config --file $CONFIG --enable CONFIG_KSU_ALLOWLIST_WORKAROUND
+          
+          ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-C-G+"
+          ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-
-          echo "=========================================="
-          grep "CONFIG_KSU" out/.config
-          echo "=========================================="
+          grep "CONFIG_KSU" $CONFIG
 
       - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
-
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=64 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
-            -fno-delete-null-pointer-checks \
-            -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--icf=safe -Wl,-O2" \
+            KCFLAGS="-O2 -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse -falign-functions=64" \
             Image || exit 1
-
-          echo "BOOTHASH=Yuki-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Yuki-$(date +%s)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          # Cihaz isimlerini güvenli şekilde ekle
+          echo "device.name1=houji" >> anykernel.sh
+          echo "device.name2=shennong" >> anykernel.sh
+          echo "device.name3=aurora" >> anykernel.sh
+          echo "device.name4=xiaomi14" >> anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r ../CG-Yuki-Balanced-Pro.zip ./*
+          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
