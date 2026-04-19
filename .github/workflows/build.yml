@@ -56,66 +56,47 @@ jobs:
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
       # ========================
-      # 🔥 KERNELSU-NEXT (FİZİKSEL KOPYALAMA - GARANTİ YÖNTEM)
+      # 🔥 KERNELSU-NEXT (FİZİKSEL KOPYALAMA)
       # ========================
       - name: 3. KernelSU-Next Setup
         run: |
           cd common
-          
-          # 1. Temizlik
           rm -rf drivers/kernelsu KernelSU-Next
-          sed -i '/kernelsu/d' drivers/Kconfig || true
-          sed -i '/kernelsu/d' drivers/Makefile || true
-
-          # 2. KernelSU-Next indir
           git clone https://github.com/pershoot/KernelSU-Next.git -b dev-susfs --depth=1 KernelSU-Next
           
-          # 3. Multi-Manager Patch Uygula (Herhangi bir APK için)
+          # Multi-Manager Patch (Herhangi bir APK desteği)
           cd KernelSU-Next
-          patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Multi-mgr patch atlandı"
+          patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Patch atlandı"
           cd ..
 
-          # 4. Dosyaları drivers/kernelsu içine FİZİKSEL olarak kopyala (Symlink hatasını önler)
           mkdir -p drivers/kernelsu
           cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
           
-          # 5. Kernel'e tanıt
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           echo 'obj-y += kernelsu/' >> drivers/Makefile
-          
-          # 6. UAPI Fix
           cp -rf KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
 
-          # 7. KESİN KONTROL
-          echo "🔍 Dosya kontrolü:"
           if [ -f "drivers/kernelsu/Kbuild" ]; then
-            echo "✅ KernelSU başarıyla yerleştirildi!"
+            echo "✅ KernelSU Hazır!"
           else
-            echo "❌ HATA: Dosyalar kopyalanamadı!"
+            echo "❌ HATA: Kopyalama başarısız!"
             exit 1
           fi
 
       # ========================
-      # 🔥 SUSFS + 5 HOTFIX (SİMONPUNK)
+      # 🔥 SUSFS + 5 HOTFIX
       # ========================
       - name: 4. SUSFS Setup
         run: |
           cd common
           SUSFS_BRANCH="gki-android14-6.1"
-          
-          # simonpunk/susfs4ksu indir
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b $SUSFS_BRANCH susfs
           
-          # Dosyaları yerleştir
           cp -r susfs/kernel_patches/fs/* fs/
           cp -r susfs/kernel_patches/include/* include/
-          
-          # Ana patch
           patch -p1 < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
           
-          # 🛠️ 5 HOTFIX 🛠️
-          
-          # FIX 1: namespace.c (Jump label & definitions)
+          # FIX 1: namespace.c
           cat > /tmp/ns_inject.txt << 'EOF'
           #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
           #include <linux/susfs_def.h>
@@ -131,14 +112,14 @@ jobs:
           EOF
           sed -i '/#include "internal.h"/r /tmp/ns_inject.txt' fs/namespace.c
           
-          # FIX 2: statfs.c (CRC fix)
+          # FIX 2: statfs.c
           sed -i '/#include <linux\/susfs_def.h>/i #ifndef __GENKSYMS__' fs/statfs.c || true
           sed -i '/#include <linux\/susfs_def.h>/a #endif' fs/statfs.c || true
           
-          # FIX 3: fs_proc_base.c (Senin yüklediğin patch)
+          # FIX 3: fs_proc_base.c
           patch -p1 < $GITHUB_WORKSPACE/patches/susfs/fs_proc_base.c-fix-k6.1.patch || true
           
-          # FIX 4: extras.c (AVC weak symbols)
+          # FIX 4: extras.c
           if [ -f "drivers/kernelsu/extras.c" ]; then
             cat > /tmp/avc_fix.txt << 'EOF'
           #ifdef CONFIG_KSU_SUSFS
@@ -151,14 +132,13 @@ jobs:
             sed -i '/#include/r /tmp/avc_fix.txt' drivers/kernelsu/extras.c
           fi
           
-          # FIX 5: supercalls.c (Uname spoof fix)
+          # FIX 5: supercalls.c
           if [ -f "drivers/kernelsu/supercalls.c" ]; then
             sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\* Disabled *\//' drivers/kernelsu/supercalls.c || true
           fi
-          
-          echo "✅ SUSFS ve 5 Hotfix tamamlandı!"
+          echo "✅ SUSFS Hazır!"
 
-      - name: 5. Wi-Fi ve Asya Yamaları
+      - name: 5. Wi-Fi ve Yamalar
         run: |
           cd common
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
@@ -177,25 +157,27 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           
           CONFIG="out/.config"
-          # KSU + SUSFS Configs
+          # KSU + SUSFS + Multi-Manager
           ./scripts/config --file $CONFIG --enable CONFIG_KSU
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_MOUNT
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_KSTAT
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
-          ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_SUSFS_SUS_SU
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
           ./scripts/config --file $CONFIG --enable CONFIG_KSU_ALLOWLIST_WORKAROUND
           
+          # ⚠️ BASEBAND-GUARD FİX (Hatanın Çözümü Burası!)
+          ./scripts/config --file $CONFIG --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG --set-str CONFIG_LSM "landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,baseband_guard"
+          
           ./scripts/config --file $CONFIG --set-str CONFIG_LOCALVERSION "-C-G+"
           ./scripts/config --file $CONFIG --disable CONFIG_LOCALVERSION_AUTO
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-          grep "CONFIG_KSU" $CONFIG
 
       - name: 7. Kernel Derleme
         run: |
@@ -212,7 +194,7 @@ jobs:
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          # Cihaz isimlerini güvenli şekilde ekle
+          # Satır hatasını önlemek için güvenli yöntem:
           echo "device.name1=houji" >> anykernel.sh
           echo "device.name2=shennong" >> anykernel.sh
           echo "device.name3=aurora" >> anykernel.sh
