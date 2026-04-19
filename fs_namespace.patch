@@ -1,5 +1,3 @@
-
----
 --- a/fs/namespace.c	2026-03-10 15:31:40.244000129 +0300
 +++ b/fs/namespace.c	2026-03-10 15:33:18.208000135 +0300
 @@ -37,6 +37,18 @@
@@ -10,7 +8,7 @@
 +#include <linux/susfs_def.h>
 +
 +extern bool susfs_is_current_ksu_domain(void);
-+extern bool susfs_is_sdcard_android_data_decrypted __read_mostly;
++extern struct static_key_false susfs_set_sdcard_android_data_decrypted_key_false;
 +
 +#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
 +
@@ -20,4 +18,3 @@
 +
  /* Maximum number of mounts in a mount namespace */
  static unsigned int sysctl_mount_max __read_mostly = 100000;
- 
