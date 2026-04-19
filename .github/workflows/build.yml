@@ -1,4 +1,4 @@
-name: CG+ 32 wise (ZyCromerZ Clang 22)
+name: CG+ 32 wise (ZyCromerZ Clang 23)
 
 permissions:
   contents: write
@@ -38,17 +38,17 @@ jobs:
       - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          echo "ZyC Clang 22CLANG_URL"
+          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
           
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          curl -L -o clang.tar.gz "$CLANG_LINK"
           
           echo "Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
           rm -f clang.tar.gz
-          echo "✅ ZyCromerZ Clang 22 cache'lendi!"
+          echo "✅ ZyCromerZ Clang cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -334,7 +334,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyCromerZ Clang 22 (Balanced Pro)"
+          name: "CG+ ZyCromerZ Clang 23 (Balanced Pro)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
