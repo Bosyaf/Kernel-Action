@@ -81,21 +81,22 @@ jobs:
       # ========================
       # 🔥 SUSFS (BASIT SCRIPT YÖNTEMİ - TEMİZ)
       # ========================
-      - name: 4. SUSFS Setup (OFFICIAL METHOD)
+      - name: 4. SUSFS Entegrasyonu (VorteX Method + 5 Hotfix)
         run: |
           cd common
-
-          # simonpunk/susfs4ksu klonla
-          git clone https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 --depth=1 susfs
-
+          echo "🔥 SUSFS entegrasyonu - VorteX Standard Method..."
+          
+          SUSFS_BRANCH="gki-android14-6.1-dev"
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b $SUSFS_BRANCH susfs
+          
           # SUSFS dosyalarını kopyala
-          cp -r susfs/kernel_patches/fs/* fs/
-          cp -r susfs/kernel_patches/include/* include/
-
+          echo "📦 SUSFS fs ve include dosyaları kopyalanıyor..."
+          cp -r susfs/kernel_patches/fs/* ./fs/
+          cp -r susfs/kernel_patches/include/* ./include/
+          
           # Ana SUSFS patchini uygula
-          patch -p1 < susfs/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-
-          echo "✅ SUSFS entegrasyonu tamamlandı!"
+          echo "📦 Ana SUSFS patchi uygulanıyor..."
+          patch -p1 --forward < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
 
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
