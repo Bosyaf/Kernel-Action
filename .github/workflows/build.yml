@@ -1,4 +1,4 @@
-name: CG+ 32 wise (ZyCromerZ Clang 23)
+name: CG+ 64 wise (ZyCromerZ Clang 23)
 
 permissions:
   contents: write
@@ -304,7 +304,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+sha3+crc+dotprod+rcpc+lse \
-            -falign-functions=32 \
+            -falign-functions=64 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
