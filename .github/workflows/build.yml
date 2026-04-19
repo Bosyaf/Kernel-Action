@@ -55,7 +55,18 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
+      
       # ========================
+      # 🔥 SUSFS + 5 HOTFIX
+      # ========================
+      - name: 4. SUSFS Setup
+        run: |
+          cd common
+          SUSFS_BRANCH="gki-android14-6.1"
+          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b $SUSFS_BRANCH susfs
+
+          cp -r susfs/kernel_patches/fs/* fs/
+          cp -r sus      # ========================
       # 🔥 KERNELSU-NEXT + MULTI-MANAGER
       # ========================
       - name: 3. KernelSU-Next Setup
@@ -74,24 +85,17 @@ jobs:
           mkdir -p drivers/kernelsu
           cp -rf KernelSU-Next/kernel/* drivers/kernelsu/
 
+          # ⚠️ UAPI HEADER FIX - app_profile.h
+          mkdir -p drivers/kernelsu/include/uapi
+          cp -rf KernelSU-Next/userspace/include/uapi/* drivers/kernelsu/include/uapi/
+          cp -rf KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
+
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           echo 'obj-y += kernelsu/' >> drivers/Makefile
 
-          cp -rf KernelSU-Next/userspace/include/uapi/* include/uapi/ 2>/dev/null || true
-
           echo "✅ KernelSU + Multi-Manager Hazır!"
-
-      # ========================
-      # 🔥 SUSFS + 5 HOTFIX
-      # ========================
-      - name: 4. SUSFS Setup
-        run: |
-          cd common
-          SUSFS_BRANCH="gki-android14-6.1"
-          git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git -b $SUSFS_BRANCH susfs
-
-          cp -r susfs/kernel_patches/fs/* fs/
-          cp -r susfs/kernel_patches/include/* include/
+          
+          fs/kernel_patches/include/* include/
           patch -p1 < susfs/kernel_patches/50_add_susfs_in_${SUSFS_BRANCH}.patch || true
 
           # FIX 1: namespace.c
