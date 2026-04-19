@@ -77,7 +77,6 @@ jobs:
 
           mkdir -p drivers/kernelsu
 
-          # Pershoot dev-susfs: kernel/ klasoru varsa icini kopyala, yoksa kok dizini kopyala
           if [ -d "ksu_tmp/kernel" ]; then
             echo ">>> kernel/ klasoru bulundu, icerik kopyalaniyor..."
             rsync -a ksu_tmp/kernel/ drivers/kernelsu/
@@ -91,60 +90,50 @@ jobs:
           echo ">>> drivers/kernelsu icerigi:"
           ls drivers/kernelsu/
 
-          # MultiManager: manager.c'yi bul ve guvvenli sekilde yamala
           MGR=$(find drivers/kernelsu -name "manager.c" | head -n1)
           if [ -n "$MGR" ]; then
             echo ">>> manager.c bulundu: $MGR"
-            python3 - "$MGR" << 'PYEOF'
-          import sys, re
+            python3 << PYEOF
+import sys, re
 
-          path = sys.argv[1]
-          with open(path, 'r') as f:
-              content = f.read()
+path = "$MGR"
+with open(path, 'r') as f:
+    content = f.read()
 
-          target = 'static bool is_manager_apk(const char *package_name)'
-          patch_marker = '/* MULTIMANAGER_PATCHED */'
+target = 'static bool is_manager_apk(const char *package_name)'
+patch_marker = '/* MULTIMANAGER_PATCHED */'
 
-          if patch_marker not in content:
-              # Fonksiyon imzasini bul, govdesini koru ama her zaman true don
-              content = content.replace(
-                  target,
-                  patch_marker + '\n' + target
-              )
-              # Fonksiyon govdesinin ilk satirina early return ekle
-              content = re.sub(
-                  r'(/* MULTIMANAGER_PATCHED */
-' +
-                  re.escape(target) +
-                  r's*{)',
-                  r'\1\n    return true; /* MultiManager: allow all managers */\n#if 0 /* original logic disabled */',
-                  content,
-                  count=1
-              )
-              # Kapanan parantezden once endif ekle (ilk eslesen)
-              idx = content.find(patch_marker)
-              depth = 0
-              i = content.find('{', idx)
-              while i < len(content):
-                  if content[i] == '{':
-                      depth += 1
-                  elif content[i] == '}':
-                      depth -= 1
-                      if depth == 0:
-                          content = content[:i] + '#endif\n' + content[i:]
-                          break
-                  i += 1
-              with open(path, 'w') as f:
-                  f.write(content)
-              print(">>> MultiManager yamasi uygulandi:", path)
-          else:
-              print(">>> Zaten yamali, atlaniyor:", path)
-          PYEOF
+if patch_marker not in content:
+    content = content.replace(
+        target,
+        patch_marker + '\n' + target)
+    content = re.sub(
+        r'(/\* MULTIMANAGER_PATCHED \*/\n' + re.escape(target) + r'\s*\{)',
+        r'\1\n    return true; /* MultiManager: allow all managers */\n#if 0 /* original logic disabled */',
+        content,
+        count=1)
+    idx = content.find(patch_marker)
+    depth = 0
+    i = content.find('{', idx)
+    while i < len(content):
+        if content[i] == '{':
+            depth += 1
+        elif content[i] == '}':
+            depth -= 1
+            if depth == 0:
+                content = content[:i] + '#endif\n' + content[i:]
+                break
+        i += 1
+    with open(path, 'w') as f:
+        f.write(content)
+    print(">>> MultiManager yamasi uygulandi:", path)
+else:
+    print(">>> Zaten yamali, atlaniyor:", path)
+PYEOF
           else
             echo ">>> manager.c bulunamadi, MultiManager atlaniyor"
           fi
 
-          # Kconfig entegrasyonu
           if ! grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig 2>/dev/null; then
             if grep -q '^endmenu' drivers/Kconfig 2>/dev/null; then
               sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
@@ -154,7 +143,6 @@ jobs:
             echo ">>> drivers/Kconfig guncellendi."
           fi
 
-          # Makefile entegrasyonu
           if ! grep -q 'kernelsu' drivers/Makefile 2>/dev/null; then
             echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
             echo ">>> drivers/Makefile guncellendi."
@@ -173,7 +161,6 @@ jobs:
           echo ">>> susfs4ksu repo icerigi:"
           ls susfs_tmp/
 
-          # fs/susfs klasorunu bul
           SUSFS_DIR=$(find susfs_tmp -type d -name "susfs" | head -n1)
 
           if [ -z "$SUSFS_DIR" ]; then
@@ -187,11 +174,9 @@ jobs:
           mkdir -p fs/susfs
           rsync -a "$SUSFS_DIR/" fs/susfs/
 
-          # Header dosyalari - find + exec kullan (pipe/while subshell sorunundan kacin)
           find susfs_tmp -name "susfs.h" -exec cp -fv {} include/linux/ \;
           find susfs_tmp -name "susfs_def.h" -exec cp -fv {} include/linux/ \;
 
-          # Kernel patch dosyalari (KernelSU yamalarini atla)
           if [ -d "susfs_tmp/kernel_patches" ]; then
             while IFS= read -r -d '' p; do
               echo ">>> Patch deneniyor: $p"
@@ -209,14 +194,12 @@ jobs:
 
           rm -rf susfs_tmp
 
-          # fs/susfs/Kconfig kontrolu
           if [ ! -f "fs/susfs/Kconfig" ]; then
             echo "HATA: fs/susfs/Kconfig kopyalamadan sonra hala yok!"
             ls -la fs/susfs/ || true
             exit 1
           fi
 
-          # fs/Kconfig entegrasyonu
           if ! grep -q 'source "fs/susfs/Kconfig"' fs/Kconfig; then
             if grep -q 'source "fs/overlayfs/Kconfig"' fs/Kconfig; then
               sed -i \
@@ -230,7 +213,6 @@ jobs:
             echo ">>> fs/Kconfig guncellendi."
           fi
 
-          # fs/Makefile entegrasyonu
           if ! grep -q 'susfs/' fs/Makefile; then
             echo 'obj-$(CONFIG_KSU_SUSFS) += susfs/' >> fs/Makefile
             echo ">>> fs/Makefile guncellendi."
@@ -257,25 +239,22 @@ jobs:
           fi
           rm -rf bbg_tmp
 
-          # Kconfig olustur (yoksa)
           if [ ! -f "drivers/bbg/Kconfig" ]; then
             cat > drivers/bbg/Kconfig << 'KEOF'
-          config BBG
-          	bool "Baseband Guard"
-          	default n
-          	help
-          	  Enable Baseband Guard (BBG) for modem stability and security.
-          KEOF
+config BBG
+	bool "Baseband Guard"
+	default n
+	help
+	  Enable Baseband Guard (BBG) for modem stability and security.
+KEOF
             echo ">>> drivers/bbg/Kconfig olusturuldu."
           fi
 
-          # Alt Makefile olustur (yoksa)
           if [ ! -f "drivers/bbg/Makefile" ]; then
             echo 'obj-y += bbg.o' > drivers/bbg/Makefile
             echo ">>> drivers/bbg/Makefile olusturuldu."
           fi
 
-          # Ana drivers/Kconfig entegrasyonu
           if ! grep -q 'source "drivers/bbg/Kconfig"' drivers/Kconfig 2>/dev/null; then
             if grep -q '^endmenu' drivers/Kconfig 2>/dev/null; then
               sed -i '/^endmenu/i source "drivers/bbg/Kconfig"' drivers/Kconfig
@@ -285,7 +264,6 @@ jobs:
             echo ">>> drivers/Kconfig BBG icin guncellendi."
           fi
 
-          # Ana drivers/Makefile entegrasyonu
           if ! grep -q 'bbg/' drivers/Makefile 2>/dev/null; then
             echo 'obj-$(CONFIG_BBG) += bbg/' >> drivers/Makefile
             echo ">>> drivers/Makefile BBG icin guncellendi."
@@ -308,16 +286,16 @@ jobs:
 
           CFG="out/.config"
 
-          ./scripts/config --file "$CFG" --enable  CONFIG_KSU
-          ./scripts/config --file "$CFG" --enable  CONFIG_KSU_SUSFS
-          ./scripts/config --file "$CFG" --enable  CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file "$CFG" --enable  CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file "$CFG" --enable  CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file "$CFG" --enable  CONFIG_KSU_SUSFS_SUS_OVERLAYFS
-          ./scripts/config --file "$CFG" --enable  CONFIG_BBG
+          ./scripts/config --file "$CFG" --enable CONFIG_KSU
+          ./scripts/config --file "$CFG" --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file "$CFG" --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file "$CFG" --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file "$CFG" --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file "$CFG" --enable CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+          ./scripts/config --file "$CFG" --enable CONFIG_BBG
           ./scripts/config --file "$CFG" --set-val CONFIG_HZ 300
-          ./scripts/config --file "$CFG" --enable  CONFIG_PREEMPT
-          ./scripts/config --file "$CFG" --enable  CONFIG_TCP_CONG_BBR
+          ./scripts/config --file "$CFG" --enable CONFIG_PREEMPT
+          ./scripts/config --file "$CFG" --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file "$CFG" --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file "$CFG" --set-str CONFIG_LOCALVERSION "-CG+-Yuki-SUSFS"
           ./scripts/config --file "$CFG" --disable CONFIG_LOCALVERSION_AUTO
@@ -388,4 +366,3 @@ jobs:
           name: ${{ env.ZIP_NAME }}
           path: "*.zip"
           retention-days: 7
-          
