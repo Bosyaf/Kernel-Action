@@ -26,6 +26,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/clang-yuki
+          key: clang-yuki-bolt-20260124
+          restore-keys: |
+            clang-yuki-
+
+      - name: Download Clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          echo "🔥 Yuki Clang indiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-yuki
+          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
+          echo "✅ Clang cache'lendi!"
+
       - name: 1. Paketler ve Yuki Clang Çekimi
         run: |
           sudo apt update -qq
@@ -34,15 +51,7 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
-          echo "🔥 Yuki Clang Linki Çekiliyor..."
-          curl -L -o clang.tar.zst "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
           
-          echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/yuki-clang
-          rm -f clang.tar.zst
-          
-          echo "✅ Yuki Clang Hazır."
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
