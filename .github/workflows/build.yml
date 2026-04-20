@@ -74,9 +74,7 @@ jobs:
         run: |
           cd common/KernelSU-Next
           echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksu-add-manager.patch || echo "⚠️ Başarısız"
           patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/rksu-add-mambosu-manager-support.patch || echo "⚠️ Başarısız"
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
           
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
@@ -256,13 +254,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MULTI_MANAGER_SUPPORT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SYSCALL_HOOK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_MANUAL_HOOK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_HAS_MANUAL_HOOK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -270,17 +262,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_SU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SCOPE_MINIMIZED_MANUAL_HOOKS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT_SPOOF_GENERIC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG+"
@@ -340,4 +321,5 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           
