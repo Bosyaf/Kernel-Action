@@ -26,6 +26,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Cache Clang
         id: cache-clang
         uses: actions/cache@v4
@@ -38,17 +41,17 @@ jobs:
       - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
-          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          echo "İndirilecek Link: $CLANG_LINK"
+          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "ZyC Clang 22CLANG_URL"
           
-          curl -L -o clang.tar.gz "$CLANG_LINK"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
           
           echo "Arşiv Çıkarılıyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
-          echo "✅ ZyCromerZ Clang cache'lendi!"
+          echo "✅ ZyCromerZ Clang 22 cache'lendi!"
 
       - name: 1. Paketler
         run: |
@@ -324,4 +327,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          
