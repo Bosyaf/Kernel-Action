@@ -36,7 +36,7 @@ jobs:
             pkg-config zstd
           echo "🔥 Yuki Clang İndiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
+          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
           
           # Clang yolunu GitHub'ın ana PATH'ine kalıcı ekliyoruz ki sistem başka bir şey kullanmasın
           echo "$GITHUB_WORKSPACE/yuki-clang/bin" >> $GITHUB_PATH
