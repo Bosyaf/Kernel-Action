@@ -26,21 +26,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Clang
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/clang-yuki
-          key: clang-yuki-bolt-20260124
-          restore-keys: |
-            clang-yuki-
-      - name: Download Clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          echo "🔥 Yuki Clang indiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-yuki
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
-          echo "✅ Clang cache'lendi!"
       - name: 1. Paketler ve Yuki Clang Çekimi
         run: |
           sudo apt update -qq
@@ -49,7 +34,16 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             lld llvm pkg-config zstd
+          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
           
+          curl -L -o clang.tar.gz "$CLANG_LINK"
+          
+          echo "Arşiv Çıkarılıyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          rm -f clang.tar.gz
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
@@ -159,7 +153,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -200,8 +194,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
@@ -258,7 +253,7 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
