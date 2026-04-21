@@ -49,29 +49,9 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-          git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git --depth=1 device-trees
           git clone -b houji-shennong-u-oss https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 vendor-source
 
-      - name: 3. Device Tree ve Bindings Dosyalarını Kopyala
-        run: |
-          cd common
-          echo "📦 Device Tree dosyaları kopyalanıyor..."
-          
-          cp -r ../device-trees/qcom/* ./arch/arm64/boot/dts/
-          
-          for dir in audio bt camera data display dsp eSE eva fingerprint graphics mm mmrm mm-sys nfc synx video wlan; do
-            if [ -d "../device-trees/$dir" ]; then
-              cp -r "../device-trees/$dir" ./arch/arm64/boot/dts/
-              echo "  ✅ $dir kopyalandı"
-            fi
-          done
-          
-          echo "📦 dt-bindings header dosyaları kopyalanıyor..."
-          cp -r ../device-trees/bindings/* ./include/dt-bindings/
-          
-          echo "✅ Device Trees ve Bindings hazır!"
-
-      - name: 4. WALT Scheduler Ekle
+      - name: 3. WALT Scheduler Ekle
         run: |
           cd common
           echo "📦 WALT Scheduler dosyaları kopyalanıyor..."
@@ -79,15 +59,7 @@ jobs:
           cp -r ../vendor-source/kernel/sched/walt/* ./kernel/sched/walt/
           echo "✅ WALT Scheduler hazır!"
 
-      - name: 5. GKI Çakışan Sürücüleri İptal Et
-        run: |
-          cd common
-          echo "📦 GKI EAS sürücüleri devre dışı bırakılıyor..."
-          sed -i 's/CONFIG_ENERGY_MODEL=y/CONFIG_ENERGY_MODEL=n/' arch/arm64/configs/gki_defconfig || true
-          sed -i 's/CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL/# CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL is not set/' arch/arm64/configs/gki_defconfig || true
-          echo "✅ GKI çakışan sürücüler iptal edildi!"
-
-      - name: 6. Kernel Config & Derleme Hazırlığı
+      - name: 4. Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -108,13 +80,10 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          # ========== WALT & Scheduler ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          # ========== WALT (Module) ==========
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ENERGY_MODEL
-          # ========== WALT & Scheduler BITIS ==========
+          # ========== WALT BITIS ==========
           
           # ========== Vendor Config (Houji) ==========
           echo "📦 Vendor config fragment uygulanıyor..."
@@ -139,13 +108,13 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
-          grep -E "CONFIG_SCHED_WALT|CONFIG_CPU_FREQ_GOV_WALT|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
+          grep -E "CONFIG_SCHED_WALT|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            Image dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Mi14-Vendor-ZyC22-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
@@ -158,6 +127,10 @@ jobs:
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
+          
+          # WALT module'ü kopyala
+          find ../common/out -name "sched-walt.ko" -exec cp {} . \; 2>/dev/null || true
+          
           zip -r "../CG-Mi14-Vendor-Kernel.zip" ./*
 
       - name: 9. Release Yükle
