@@ -43,7 +43,7 @@ jobs:
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
           echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
-          echo "✅ ZyCromerZ Clang ve LLD İndirildi!"
+          echo "✅ ZyCromerZ Clang ve LLD hazır!"
 
       - name: 2. Kaynakları Çek
         run: |
@@ -57,10 +57,8 @@ jobs:
           cd common
           echo "📦 Device Tree dosyaları kopyalanıyor..."
           
-          # qcom DTS dosyalarını kopyala
           cp -r ../device-trees/qcom/* ./arch/arm64/boot/dts/
           
-          # Vendor DTS klasörlerini kopyala
           for dir in audio bt camera data display dsp eSE eva fingerprint graphics mm mmrm mm-sys nfc synx video wlan; do
             if [ -d "../device-trees/$dir" ]; then
               cp -r "../device-trees/$dir" ./arch/arm64/boot/dts/
@@ -68,9 +66,8 @@ jobs:
             fi
           done
           
-          # dt-bindings header dosyalarını kopyala
           echo "📦 dt-bindings header dosyaları kopyalanıyor..."
-          cp -r ../device-trees/bindings/* ./Documentation/devicetree/bindings/
+          cp -r ../device-trees/bindings/* ./include/dt-bindings/
           
           echo "✅ Device Trees ve Bindings hazır!"
 
@@ -78,26 +75,16 @@ jobs:
         run: |
           cd common
           echo "📦 WALT Scheduler dosyaları kopyalanıyor..."
-          
-          # WALT klasörünü oluştur
           mkdir -p ./kernel/sched/walt
-          
-          # WALT dosyalarını kopyala
           cp -r ../vendor-source/kernel/sched/walt/* ./kernel/sched/walt/
-          
           echo "✅ WALT Scheduler hazır!"
 
       - name: 5. GKI Çakışan Sürücüleri İptal Et
         run: |
           cd common
           echo "📦 GKI EAS sürücüleri devre dışı bırakılıyor..."
-          
-          # EAS ile WALT çakışmasını önle
           sed -i 's/CONFIG_ENERGY_MODEL=y/CONFIG_ENERGY_MODEL=n/' arch/arm64/configs/gki_defconfig || true
-          
-          # GKI schedutil'ı kapat (WALT kullanacağız)
           sed -i 's/CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL/# CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL is not set/' arch/arm64/configs/gki_defconfig || true
-          
           echo "✅ GKI çakışan sürücüler iptal edildi!"
 
       - name: 6. Kernel Config & Derleme Hazırlığı
@@ -121,89 +108,13 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          # ========== CMDLINE & DEBUG ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttyMSM0,115200n8 earlycon=msm_geni_serial,0xa9C000 androidboot.hardware=qcom androidboot.console=ttyMSM0 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=2048 loop.max_part=7 cgroup.memory=nokmem,nosocket kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          # ========== CMDLINE & DEBUG BITIS ==========
-          
-          # ========== HZ & PREEMPT ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          # ========== HZ & PREEMPT BITIS ==========
-          
-          # ========== CPUFreq & WALT ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
+          # ========== WALT & Scheduler ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
-          # ========== CPUFreq & WALT BITIS ==========
-          
-          # ========== CPU Idle ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          # ========== CPU Idle BITIS ==========
-          
-          # ========== Scheduler ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ENERGY_MODEL
-          # ========== Scheduler BITIS ==========
-          
-          # ========== KProbes ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
-          # ========== KProbes BITIS ==========
-          
-          # ========== LTO ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          # ========== LTO BITIS ==========
-          
-          # ========== Network ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          # ========== Network BITIS ==========
-          
-          # ========== Misc ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          # ========== Misc BITIS ==========
+          # ========== WALT & Scheduler BITIS ==========
           
           # ========== Vendor Config (Houji) ==========
           echo "📦 Vendor config fragment uygulanıyor..."
@@ -234,18 +145,6 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -falign-loops=32 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
-            -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-O2" \
             Image dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Mi14-Vendor-ZyC22-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -259,7 +158,6 @@ jobs:
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          cp ../common/out/arch/arm64/boot/dts/vendor/qcom/*.dtbo . 2>/dev/null || true
           zip -r "../CG-Mi14-Vendor-Kernel.zip" ./*
 
       - name: 9. Release Yükle
