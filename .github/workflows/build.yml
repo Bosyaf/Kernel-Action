@@ -1,4 +1,4 @@
-name: CG+ Mi 14 Vendor Kernel (Yuki Clang)
+name: CG+ Mi 14 Vendor Kernel (ZyCromerZ Clang 23)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Yuki Clang Çekimi
+      - name: 1. Paketler ve ZyCromerZ Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -34,17 +34,23 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-          echo "🔥 Yuki Clang İndiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
-          echo "$GITHUB_WORKSPACE/yuki-clang/bin" >> $GITHUB_PATH
-          echo "✅ Clang İndirildi ve PATH'e eklendi!"
+          echo "🔥 ZyCromerZ Clang İndiriliyor..."
+          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
+          echo "İndirilecek Link: $CLANG_LINK"
+          curl -L -o clang.tar.gz "$CLANG_LINK"
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc --strip-components=1
+          rm -f clang.tar.gz
+          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
+          echo "✅ ZyCromerZ Clang İndirildi ve PATH'e eklendi!"
+
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git --depth=1 device-trees
           git clone -b houji-shennong-u-oss https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 vendor-source
+
       - name: 3. Device Tree ve Bindings Dosyalarını Kopyala
         run: |
           cd common
@@ -66,6 +72,7 @@ jobs:
           cp -r ../device-trees/bindings/* ./Documentation/devicetree/bindings/
           
           echo "✅ Device Trees ve Bindings hazır!"
+
       - name: 4. WALT Scheduler Ekle
         run: |
           cd common
@@ -78,6 +85,7 @@ jobs:
           cp -r ../vendor-source/kernel/sched/walt/* ./kernel/sched/walt/
           
           echo "✅ WALT Scheduler hazır!"
+
       - name: 5. GKI Çakışan Sürücüleri İptal Et
         run: |
           cd common
@@ -90,10 +98,11 @@ jobs:
           sed -i 's/CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL/# CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL is not set/' arch/arm64/configs/gki_defconfig || true
           
           echo "✅ GKI çakışan sürücüler iptal edildi!"
+
       - name: 6. Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -211,10 +220,11 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
+
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
           grep -E "CONFIG_SCHED_WALT|CONFIG_CPU_FREQ_GOV_WALT|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
@@ -237,7 +247,8 @@ jobs:
             -Wl,-O2" \
             Image dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Mi14-Vendor-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Mi14-Vendor-ZyC22-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
@@ -249,12 +260,12 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           cp ../common/out/arch/arm64/boot/dts/vendor/qcom/*.dtbo . 2>/dev/null || true
           zip -r "../CG-Mi14-Vendor-Kernel.zip" ./*
+
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Mi 14 Vendor Kernel (WALT + Full Features)"
+          name: "CG+ Mi 14 Vendor Kernel (WALT + ZyCromerZ Clang 23)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
