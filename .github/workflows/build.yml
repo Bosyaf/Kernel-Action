@@ -102,7 +102,6 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee olddefconfig.log
           
-          # DERLE
           if make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm \
@@ -115,14 +114,9 @@ jobs:
             echo "❌ Build başarısız!"
           fi
           
-          # Hataları özetle
           echo ""
           echo "=== BUILD HATALARI ==="
           grep -i "error:" build.log | head -30 || echo "Hata yok!"
-          
-          echo ""
-          echo "=== BUILD UYARILARI ==="
-          grep -i "warning:" build.log | head -20 || echo "Uyarı yok!"
 
       - name: Upload Build Log
         if: always()
@@ -137,9 +131,9 @@ jobs:
       - name: Check Build Status
         run: |
           if [ "$BUILD_SUCCESS" == "1" ]; then
-            echo "✅ Build başarılı! Image dosyası oluşturuldu."
+            echo "✅ Build başarılı!"
             ls -lh common/out/arch/arm64/boot/Image || true
           else
-            echo "❌ Build başarısız! Logları kontrol et."
+            echo "❌ Build başarısız!"
             exit 1
           fi
