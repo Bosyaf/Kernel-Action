@@ -1,4 +1,4 @@
-name: CG+ Yuki Houji (Test Build)
+name: CG+ Yuki Houji (Kernel Only Test)
 
 permissions:
   contents: write
@@ -39,7 +39,17 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/clang-yuki
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
 
+      - name: Cache Kernel Source
+        id: cache-kernel
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/common
+          key: kernel-source-ramabondanp-6.1-staging-${{ github.sha }}
+          restore-keys: |
+            kernel-source-ramabondanp-
+
       - name: Clone Kernel Source
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
         run: |
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
 
@@ -51,53 +61,35 @@ jobs:
         run: |
           cd common
           
-          # DTS dosyalarını kopyala
-          cp -r ../dt_tmp/qcom/houji* arch/arm64/boot/dts/qcom/
-          cp -r ../dt_tmp/qcom/pineapple* arch/arm64/boot/dts/qcom/
-          cp -r ../dt_tmp/qcom/audio arch/arm64/boot/dts/qcom/
-          cp -r ../dt_tmp/qcom/display arch/arm64/boot/dts/qcom/
-          cp -r ../dt_tmp/qcom/camera arch/arm64/boot/dts/qcom/
-          cp -r ../dt_tmp/bindings Documentation/devicetree/bindings/
+          echo "📦 Device tree dosyaları kopyalanıyor..."
+          
+          # Houji DTS dosyaları
+          cp -v ../dt_tmp/qcom/houji* arch/arm64/boot/dts/qcom/ || true
+          
+          # Pineapple DTS dosyaları
+          cp -v ../dt_tmp/qcom/pineapple* arch/arm64/boot/dts/qcom/ || true
+          
+          # Include klasörleri
+          cp -rv ../dt_tmp/qcom/audio arch/arm64/boot/dts/qcom/ || true
+          cp -rv ../dt_tmp/qcom/camera arch/arm64/boot/dts/qcom/ || true
+          cp -rv ../dt_tmp/qcom/display arch/arm64/boot/dts/qcom/ || true
+          
+          # Bindings
+          cp -rv ../dt_tmp/bindings/* Documentation/devicetree/bindings/ || true
           
           rm -rf ../dt_tmp
+          
           echo "✅ Device trees entegre edildi!"
+          echo "📋 DTS dosyaları:"
+          ls arch/arm64/boot/dts/qcom/houji* || true
 
-      - name: KernelSU-Next + SUSFS + MultiManager
-        run: |
-          cd common
-          
-          # KernelSU-Next
-          git clone -b dev-susfs --depth=1 https://github.com/pershoot/KernelSU-Next.git ksu_tmp
-          mkdir -p drivers/kernelsu
-          if [ -d "ksu_tmp/kernel" ]; then
-            rsync -a ksu_tmp/kernel/ drivers/kernelsu/
-          else
-            rsync -a --exclude='.git' ksu_tmp/ drivers/kernelsu/
-          fi
-          rm -rf ksu_tmp
-          
-          # Kconfig + Makefile
-          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          grep -q 'kernelsu' drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-          
-          # MultiManager
-          cd drivers/kernelsu
-          patch -p1 < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || true
-          cd ../..
-          
-          # SUSFS
-          git clone -b gki-android14-6.1-dev --depth=1 https://gitlab.com/pershoot/susfs4ksu.git susfs_tmp
-          cp -r susfs_tmp/fs/* ./fs/
-          cp -r susfs_tmp/include/* ./include/
-          patch -p1 < susfs_tmp/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-          rm -rf susfs_tmp
-          
-          echo "✅ KSU + SUSFS + MultiManager entegre edildi!"
-
-      - name: Build Kernel
+      - name: Build Kernel (Test)
+        id: build
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
+          
+          echo "🔥 Derleme başlıyor..."
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
@@ -105,32 +97,47 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            gki_defconfig
+            gki_defconfig 2>&1 | tee config.log
           
-          # Config ayarları
-          ./scripts/config --file out/.config --enable CONFIG_KSU
-          ./scripts/config --file out/.config --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file out/.config --enable CONFIG_BBG
+          # Config ayarları (sadece temel)
           ./scripts/config --file out/.config --set-val CONFIG_HZ 300
           ./scripts/config --file out/.config --enable CONFIG_PREEMPT
           ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Test"
           
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee olddefconfig.log
           
-          # DERLE (HATALARI GÖRMEK İÇİN)
+          # DERLE (hataları yakala)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            Image 2>&1 | tee build.log || true
+            Image 2>&1 | tee build.log || echo "BUILD_FAILED=1" >> $GITHUB_ENV
           
           # Hataları özetle
-          echo "=== BUILD HATALARI ==="
-          grep -i "error:" build.log | head -20 || echo "Hata yok!"
+          echo ""
+          echo "=== BUILD HATALARI (İlk 30) ==="
+          grep -i "error:" build.log | head -30 || echo "Hata yok!"
+          
+          echo ""
+          echo "=== BUILD UYARILARI (İlk 20) ==="
+          grep -i "warning:" build.log | head -20 || echo "Uyarı yok!"
 
       - name: Upload Build Log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: common/build.log
+          name: build-logs
+          path: |
+            common/config.log
+            common/olddefconfig.log
+            common/build.log
+
+      - name: Check Build Status
+        run: |
+          if [ -f "$GITHUB_ENV" ] && grep -q "BUILD_FAILED=1" $GITHUB_ENV; then
+            echo "❌ Build başarısız! Logları kontrol et."
+            exit 1
+          else
+            echo "✅ Build başarılı!"
+          fi
