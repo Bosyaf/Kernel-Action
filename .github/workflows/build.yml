@@ -48,16 +48,11 @@ jobs:
           restore-keys: |
             kernel-source-ramabondanp-
 
-      - name: Clone Kernel Source
-        if: steps.cache-kernel.outputs.cache-hit != 'true'
-        run: |
-          git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
-
       - name: Clone Device Trees
         run: |
           git clone -b kplatform --depth=1 https://github.com/mvaisakh/xiaomi14-devicetrees.git dt_tmp
 
-      - name: Install Dependencies (LIBELF FIX)
+      - name: Install Dependencies
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -70,16 +65,24 @@ jobs:
           
           echo "📦 Device tree dosyaları kopyalanıyor..."
           
+          # ✅ BINDINGS (ana dizine)
+          cp -rv ../dt_tmp/bindings ./bindings/
+          
+          # ✅ QCOM (DTS dizinine)
           cp -v ../dt_tmp/qcom/houji* arch/arm64/boot/dts/qcom/ || true
           cp -v ../dt_tmp/qcom/pineapple* arch/arm64/boot/dts/qcom/ || true
           cp -rv ../dt_tmp/qcom/audio arch/arm64/boot/dts/qcom/ || true
           cp -rv ../dt_tmp/qcom/camera arch/arm64/boot/dts/qcom/ || true
           cp -rv ../dt_tmp/qcom/display arch/arm64/boot/dts/qcom/ || true
-          cp -rv ../dt_tmp/bindings/* Documentation/devicetree/bindings/ || true
           
           rm -rf ../dt_tmp
           
           echo "✅ Device trees entegre edildi!"
+          echo "📋 Bindings:"
+          ls bindings/ | head -10
+          echo "📋 DTS dosyaları:"
+          ls arch/arm64/boot/dts/qcom/houji* || echo "⚠️ Houji DTS bulunamadı!"
+          ls arch/arm64/boot/dts/qcom/pineapple* || echo "⚠️ Pineapple DTS bulunamadı!"
 
       - name: Build Kernel (Test)
         run: |
