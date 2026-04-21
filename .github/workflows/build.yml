@@ -52,12 +52,12 @@ jobs:
         run: |
           git clone -b kplatform --depth=1 https://github.com/mvaisakh/xiaomi14-devicetrees.git dt_tmp
 
-      - name: Install Dependencies
+      - name: Install Dependencies (DWARVES EKLENDİ)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             libelf-dev zlib1g-dev libfdt-dev libssl-dev \
-            python3 python3-pip
+            python3 python3-pip dwarves binutils
 
       - name: Integrate Device Trees
         run: |
@@ -105,6 +105,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee olddefconfig.log
           
+          # ✅ DOĞRU ERROR DETECTION
           if make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm \
@@ -114,12 +115,19 @@ jobs:
             echo "BUILD_SUCCESS=1" >> $GITHUB_ENV
             echo "✅ Build başarılı!"
           else
+            echo "BUILD_FAILED=1" >> $GITHUB_ENV
             echo "❌ Build başarısız!"
+            exit 1
           fi
           
           echo ""
           echo "=== BUILD HATALARI ==="
           grep -i "error:" build.log | head -30 || echo "Hata yok!"
+          
+          echo ""
+          echo "=== DERLENEN DTB/DTBO DOSYALARI ==="
+          ls -lh out/arch/arm64/boot/dts/qcom/houji*.dtb || echo "⚠️ Houji DTB bulunamadı!"
+          ls -lh out/arch/arm64/boot/dts/qcom/houji*.dtbo || echo "⚠️ Houji DTBO bulunamadı!"
 
       - name: Upload Build Log
         if: always()
@@ -137,6 +145,6 @@ jobs:
             echo "✅ Build başarılı!"
             ls -lh common/out/arch/arm64/boot/Image || true
           else
-            echo "❌ Build başarısız!"
+            echo "❌ Build başarısız! Logları kontrol et."
             exit 1
           fi
