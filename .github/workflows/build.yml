@@ -48,22 +48,7 @@ jobs:
           git clone -b houji-shennong-u-oss https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 vendor-source
 
       - name: 3. Device Tree Dosyalarını Kopyala
-        run: |
-          cd common
-          echo "📦 Device Tree dosyaları kopyalanıyor..."
-          
-          # qcom DTS dosyalarını kopyala
-          cp -r ../device-trees/qcom/* ./arch/arm64/boot/dts/
-          
-          # Vendor DTS klasörlerini kopyala (audio, camera, display, fingerprint, graphics vb.)
-          for dir in audio bt camera data display dsp eSE eva fingerprint graphics mm mmrm mm-sys nfc synx video wlan; do
-            if [ -d "../device-trees/$dir" ]; then
-              cp -r "../device-trees/$dir" ./arch/arm64/boot/dts/
-              echo "  ✅ $dir kopyalandı"
-            fi
-          done
-          
-          echo "✅ Device Trees hazır!"
+      
 
       - name: 4. WALT Scheduler Ekle
         run: |
@@ -78,7 +63,29 @@ jobs:
           
           echo "✅ WALT Scheduler hazır!"
 
-      - name: 5. GKI Çakışan Sürücüleri İptal Et
+      - name: 5. GKI Çakışan      - name: 3. Device Tree ve Bindings Dosyalarını Kopyala
+        run: |
+          cd common
+          echo "📦 Device Tree dosyaları kopyalanıyor..."
+          
+          # qcom DTS dosyalarını kopyala
+          cp -r ../device-trees/qcom/* ./arch/arm64/boot/dts/
+          
+          # Vendor DTS klasörlerini kopyala
+          for dir in audio bt camera data display dsp eSE eva fingerprint graphics mm mmrm mm-sys nfc synx video wlan; do
+            if [ -d "../device-trees/$dir" ]; then
+              cp -r "../device-trees/$dir" ./arch/arm64/boot/dts/
+              echo "  ✅ $dir kopyalandı"
+            fi
+          done
+          
+          # dt-bindings header dosyalarını kopyala
+          echo "📦 dt-bindings header dosyaları kopyalanıyor..."
+          cp -r ../device-trees/bindings/* ./Documentation/devicetree/bindings/
+          
+          echo "✅ Device Trees ve Bindings hazır!"
+          
+          Sürücüleri İptal Et
         run: |
           cd common
           echo "📦 GKI EAS sürücüleri devre dışı bırakılıyor..."
