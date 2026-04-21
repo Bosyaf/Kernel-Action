@@ -57,34 +57,31 @@ jobs:
         run: |
           git clone -b kplatform --depth=1 https://github.com/mvaisakh/xiaomi14-devicetrees.git dt_tmp
 
+      - name: Install Dependencies (LIBELF FIX)
+        run: |
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            libelf-dev zlib1g-dev libfdt-dev libssl-dev \
+            python3 python3-pip
+
       - name: Integrate Device Trees
         run: |
           cd common
           
           echo "📦 Device tree dosyaları kopyalanıyor..."
           
-          # Houji DTS dosyaları
           cp -v ../dt_tmp/qcom/houji* arch/arm64/boot/dts/qcom/ || true
-          
-          # Pineapple DTS dosyaları
           cp -v ../dt_tmp/qcom/pineapple* arch/arm64/boot/dts/qcom/ || true
-          
-          # Include klasörleri
           cp -rv ../dt_tmp/qcom/audio arch/arm64/boot/dts/qcom/ || true
           cp -rv ../dt_tmp/qcom/camera arch/arm64/boot/dts/qcom/ || true
           cp -rv ../dt_tmp/qcom/display arch/arm64/boot/dts/qcom/ || true
-          
-          # Bindings
           cp -rv ../dt_tmp/bindings/* Documentation/devicetree/bindings/ || true
           
           rm -rf ../dt_tmp
           
           echo "✅ Device trees entegre edildi!"
-          echo "📋 DTS dosyaları:"
-          ls arch/arm64/boot/dts/qcom/houji* || true
 
       - name: Build Kernel (Test)
-        id: build
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -99,28 +96,32 @@ jobs:
             HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             gki_defconfig 2>&1 | tee config.log
           
-          # Config ayarları (sadece temel)
           ./scripts/config --file out/.config --set-val CONFIG_HZ 300
           ./scripts/config --file out/.config --enable CONFIG_PREEMPT
           ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Test"
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee olddefconfig.log
           
-          # DERLE (hataları yakala)
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          # DERLE
+          if make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            Image 2>&1 | tee build.log || echo "BUILD_FAILED=1" >> $GITHUB_ENV
+            Image 2>&1 | tee build.log; then
+            echo "BUILD_SUCCESS=1" >> $GITHUB_ENV
+            echo "✅ Build başarılı!"
+          else
+            echo "❌ Build başarısız!"
+          fi
           
           # Hataları özetle
           echo ""
-          echo "=== BUILD HATALARI (İlk 30) ==="
+          echo "=== BUILD HATALARI ==="
           grep -i "error:" build.log | head -30 || echo "Hata yok!"
           
           echo ""
-          echo "=== BUILD UYARILARI (İlk 20) ==="
+          echo "=== BUILD UYARILARI ==="
           grep -i "warning:" build.log | head -20 || echo "Uyarı yok!"
 
       - name: Upload Build Log
@@ -135,9 +136,10 @@ jobs:
 
       - name: Check Build Status
         run: |
-          if [ -f "$GITHUB_ENV" ] && grep -q "BUILD_FAILED=1" $GITHUB_ENV; then
+          if [ "$BUILD_SUCCESS" == "1" ]; then
+            echo "✅ Build başarılı! Image dosyası oluşturuldu."
+            ls -lh common/out/arch/arm64/boot/Image || true
+          else
             echo "❌ Build başarısız! Logları kontrol et."
             exit 1
-          else
-            echo "✅ Build başarılı!"
           fi
