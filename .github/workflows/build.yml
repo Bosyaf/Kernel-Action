@@ -39,31 +39,13 @@ jobs:
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
           echo "$GITHUB_WORKSPACE/yuki-clang/bin" >> $GITHUB_PATH
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
-
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git --depth=1 device-trees
           git clone -b houji-shennong-u-oss https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 vendor-source
-
-      - name: 3. Device Tree Dosyalarını Kopyala
-      
-
-      - name: 4. WALT Scheduler Ekle
-        run: |
-          cd common
-          echo "📦 WALT Scheduler dosyaları kopyalanıyor..."
-          
-          # WALT klasörünü oluştur
-          mkdir -p ./kernel/sched/walt
-          
-          # WALT dosyalarını kopyala
-          cp -r ../vendor-source/kernel/sched/walt/* ./kernel/sched/walt/
-          
-          echo "✅ WALT Scheduler hazır!"
-
-      - name: 5. GKI Çakışan      - name: 3. Device Tree ve Bindings Dosyalarını Kopyala
+      - name: 3. Device Tree ve Bindings Dosyalarını Kopyala
         run: |
           cd common
           echo "📦 Device Tree dosyaları kopyalanıyor..."
@@ -84,8 +66,19 @@ jobs:
           cp -r ../device-trees/bindings/* ./Documentation/devicetree/bindings/
           
           echo "✅ Device Trees ve Bindings hazır!"
+      - name: 4. WALT Scheduler Ekle
+        run: |
+          cd common
+          echo "📦 WALT Scheduler dosyaları kopyalanıyor..."
           
-          Sürücüleri İptal Et
+          # WALT klasörünü oluştur
+          mkdir -p ./kernel/sched/walt
+          
+          # WALT dosyalarını kopyala
+          cp -r ../vendor-source/kernel/sched/walt/* ./kernel/sched/walt/
+          
+          echo "✅ WALT Scheduler hazır!"
+      - name: 5. GKI Çakışan Sürücüleri İptal Et
         run: |
           cd common
           echo "📦 GKI EAS sürücüleri devre dışı bırakılıyor..."
@@ -97,7 +90,6 @@ jobs:
           sed -i 's/CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL/# CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL is not set/' arch/arm64/configs/gki_defconfig || true
           
           echo "✅ GKI çakışan sürücüler iptal edildi!"
-
       - name: 6. Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -219,7 +211,6 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
       - name: 7. Kernel Derleme
         run: |
           cd common
@@ -247,7 +238,6 @@ jobs:
             Image dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Mi14-Vendor-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
@@ -259,7 +249,6 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           cp ../common/out/arch/arm64/boot/dts/vendor/qcom/*.dtbo . 2>/dev/null || true
           zip -r "../CG-Mi14-Vendor-Kernel.zip" ./*
-
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
@@ -268,3 +257,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
