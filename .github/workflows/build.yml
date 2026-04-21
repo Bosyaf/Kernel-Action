@@ -1,4 +1,4 @@
-name: CG+ 32 allactor (ZyCromerZ Clang)
+name: CG+ Mi 14 Vendor Kernel (Yuki Clang)
 
 permissions:
   contents: write
@@ -26,148 +26,75 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve ZyCromerZ Clang Çekimi
+      - name: 1. Paketler ve Yuki Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd lld
-          
-          echo "🔥 ZyCromerZ Clang Linki Çekiliyor..."
-          CLANG_LINK=$(curl -sL https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)
-          echo "İndirilecek Link: $CLANG_LINK"
-          
-          curl -L -o clang.tar.gz "$CLANG_LINK"
-          
-          echo "Arşiv Çıkarılıyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          # --strip-components kaldırıldı, arşiv yapısını bozmaması için.
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
-          rm -f clang.tar.gz
-          
-          # Arşivin içindeki 'bin' klasörünü dinamik olarak bul
-          CLANG_DIR=$(find $GITHUB_WORKSPACE/clang-zyc -type d -name "bin" | head -n 1)
-          echo "CLANG_PATH=$CLANG_DIR" >> $GITHUB_ENV
-          echo "✅ ZyCromerZ Clang yolu bulundu ve ayarlandı: $CLANG_DIR"
-          
+            pkg-config zstd
+          echo "🔥 Yuki Clang İndiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/yuki-clang
+          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
+          echo "$GITHUB_WORKSPACE/yuki-clang/bin" >> $GITHUB_PATH
+          echo "✅ Clang İndirildi ve PATH'e eklendi!"
+
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/ramabondanp/android_kernel_common-6.1.git --depth=1 common
+          git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git --depth=1 device-trees
+          git clone -b houji-shennong-u-oss https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec.git --depth=1 vendor-source
 
-      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
+      - name: 3. Device Tree Dosyalarını Kopyala
         run: |
           cd common
-          echo "📦 KernelSU-Next kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
-          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
+          echo "📦 Device Tree dosyaları kopyalanıyor..."
           
-      - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
-        run: |
-          cd common
-          echo "📦 SUSFS4KSU kuruluyor..."
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
+          # qcom DTS dosyalarını kopyala
+          cp -r ../device-trees/qcom/* ./arch/arm64/boot/dts/
           
-          echo "📦 SUSFS dosyaları kopyalanıyor..."
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -R susfs4ksu/kernel_patches/include/* ./include/
-          
-          echo "📦 Patch dosyaları listesi:"
-          ls -la susfs4ksu/kernel_patches/*.patch
-          
-          echo "📦 SUSFS patch uygulanıyor..."
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then
-            echo "  → Uygulanıyor: $(basename $SUSFS_PATCH)"
-            patch -p1 < "$SUSFS_PATCH" || true
-          else
-            echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
-          fi
-          echo "📦 namespace.c SUSFS patch uygulanıyor..."
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then
-            patch -p1 < fs_namespace.patch || true
-            echo "  ✅ Uygulandı"
-          else
-            echo "  ⚠️ Patch bulunamadı"
-          fi
-          rm -f fs_namespace.patch
-          find . -name "*.rej" -delete 2>/dev/null || true
-
-      - name: 4.5. KernelSU-Next Multi Manager Patch
-        run: |
-          cd common
-          echo "📦 Multi Manager patch'i uygulanıyor..."
-          if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
-            patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
-          fi
-          
-          echo "📦 SUSFS symbol fix uygulanıyor..."
-          if [ -f "drivers/kernelsu/supercalls.c" ]; then
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ DISABLED to fix build \*\//' drivers/kernelsu/supercalls.c || true
-          fi
-          
-          echo "📦 AVC spoof fix uygulanıyor..."
-          if [ -f "drivers/kernelsu/extras.c" ]; then
-            if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
-              if ! grep -q "__attribute__((weak))" drivers/kernelsu/extras.c; then
-                printf '\n#ifdef CONFIG_KSU_SUSFS\n#ifndef susfs_avc_log_spoofing_key_true\n__attribute__((weak))\nstruct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;\n#endif\n#endif\n' >> drivers/kernelsu/extras.c
-              fi
+          # Vendor DTS klasörlerini kopyala (audio, camera, display, fingerprint, graphics vb.)
+          for dir in audio bt camera data display dsp eSE eva fingerprint graphics mm mmrm mm-sys nfc synx video wlan; do
+            if [ -d "../device-trees/$dir" ]; then
+              cp -r "../device-trees/$dir" ./arch/arm64/boot/dts/
+              echo "  ✅ $dir kopyalandı"
             fi
-          fi
-
-      - name: 5. Wi-Fi ve Asya Yamaları
-        run: |
-          cd common
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          rm -f wifi.patch
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
-      - name: 5.5. Özel Performans (Bosyaf Patches)
-        run: |
-          cd common
-          echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
+          done
           
-          PATCH_DIR="../patches"
-          
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "❌ HATA: $PATCH_DIR dizini bulunamadı!"
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "----------------------------------------------------"
-              echo "📦 İşleniyor: $filename"
-              
-              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
-                echo "⚠️ SUSFS ekstra yaması algılandı, entegre ediliyor..."
-              fi
-              
-              if patch -p1 --forward < "$patch_file"; then
-                echo "✅ BAŞARILI: $filename"
-              else
-                echo "❌ ATLANDI: $filename"
-              fi
-            done
-            echo "----------------------------------------------------"
-            echo "🎉 Özel yamalar tamamlandı!"
-          fi
+          echo "✅ Device Trees hazır!"
 
-      - name: 6. Full Kernel Config & Derleme Hazırlığı
+      - name: 4. WALT Scheduler Ekle
         run: |
           cd common
-          export PATH="${{ env.CLANG_PATH }}:$PATH"
+          echo "📦 WALT Scheduler dosyaları kopyalanıyor..."
+          
+          # WALT klasörünü oluştur
+          mkdir -p ./kernel/sched/walt
+          
+          # WALT dosyalarını kopyala
+          cp -r ../vendor-source/kernel/sched/walt/* ./kernel/sched/walt/
+          
+          echo "✅ WALT Scheduler hazır!"
+
+      - name: 5. GKI Çakışan Sürücüleri İptal Et
+        run: |
+          cd common
+          echo "📦 GKI EAS sürücüleri devre dışı bırakılıyor..."
+          
+          # EAS ile WALT çakışmasını önle
+          sed -i 's/CONFIG_ENERGY_MODEL=y/CONFIG_ENERGY_MODEL=n/' arch/arm64/configs/gki_defconfig || true
+          
+          # GKI schedutil'ı kapat (WALT kullanacağız)
+          sed -i 's/CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL/# CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL is not set/' arch/arm64/configs/gki_defconfig || true
+          
+          echo "✅ GKI çakışan sürücüler iptal edildi!"
+
+      - name: 6. Kernel Config & Derleme Hazırlığı
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -185,8 +112,18 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
+          # ========== CMDLINE & DEBUG ==========
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttyMSM0,115200n8 earlycon=msm_geni_serial,0xa9C000 androidboot.hardware=qcom androidboot.console=ttyMSM0 lpm_levels.sleep_disabled=1 service_locator.enable=1 swiotlb=2048 loop.max_part=7 cgroup.memory=nokmem,nosocket kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
+          # ========== CMDLINE & DEBUG BITIS ==========
+          
+          # ========== HZ & PREEMPT ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -196,12 +133,18 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          # ========== HZ & PREEMPT BITIS ==========
+          
+          # ========== CPUFreq & WALT ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_GOV_SCHEDUTIL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL
+          # ========== CPUFreq & WALT BITIS ==========
+          
+          # ========== CPU Idle ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
@@ -210,24 +153,31 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          # ========== CPU Idle BITIS ==========
+          
+          # ========== Scheduler ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ENERGY_MODEL
+          # ========== Scheduler BITIS ==========
+          
+          # ========== KProbes ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+          # ========== KProbes BITIS ==========
+          
+          # ========== LTO ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          # ========== LTO BITIS ==========
+          
+          # ========== Network ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -238,27 +188,26 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          # ========== Network BITIS ==========
+          
+          # ========== Misc ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          # ========== Misc BITIS ==========
           
-          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
+          # ========== Vendor Config (Houji) ==========
+          echo "📦 Vendor config fragment uygulanıyor..."
+          cat ../vendor-source/arch/arm64/configs/vendor/houji_GKI.config >> $CONFIG_FILE
+          cat ../vendor-source/arch/arm64/configs/consolidate.fragment >> $CONFIG_FILE
+          echo "✅ Vendor config uygulandı!"
+          # ========== Vendor Config BITIS ==========
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
+          # ========== Local Version ==========
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Mi14-Vendor"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -267,10 +216,10 @@ jobs:
       - name: 7. Kernel Derleme
         run: |
           cd common
-          export PATH="${{ env.CLANG_PATH }}:$PATH"
+          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
           
           echo "🔍 Config kontrolü:"
-          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
+          grep -E "CONFIG_SCHED_WALT|CONFIG_CPU_FREQ_GOV_WALT|CONFIG_HZ=|CONFIG_PREEMPT=" out/.config || true
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -288,26 +237,27 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Yuki-ZyC22-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Mi14-Vendor-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced Pro Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Mi 14 Vendor Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Yuki-Balanced-Pro.zip" ./*
+          cp ../common/out/arch/arm64/boot/dts/vendor/qcom/*.dtbo . 2>/dev/null || true
+          zip -r "../CG-Mi14-Vendor-Kernel.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ ZyCromerZ Clang 23 (Balanced Pro)"
+          name: "CG+ Mi 14 Vendor Kernel (WALT + Full Features)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
