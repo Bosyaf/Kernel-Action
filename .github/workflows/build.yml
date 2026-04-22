@@ -29,13 +29,13 @@ jobs:
             rsync unzip wget xz-utils \
             zstd zip python3-dev \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            npm
+            npm openjdk-17-jdk
 
       - name: Cache Clang Toolchain
         uses: actions/cache@v4
         with:
           path: clang
-          key: clang-yuki-houji-v2
+          key: clang-yuki-houji-v3
           restore-keys: |
             clang-yuki-houji
 
@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: kernel_platform
-          key: source-xiaomi14-kplatform-v2
+          key: source-xiaomi14-kplatform-v3
           restore-keys: |
             source-xiaomi14-kplatform
 
@@ -63,7 +63,9 @@ jobs:
       - name: Install Bazelisk
         run: |
           sudo npm install -g @bazel/bazelisk
-          which bazelisk || which bazel
+          # Script'in beklediği yere symlink oluştur
+          sudo mkdir -p /home/runner/work/Kernel-Action/Kernel-Action/tools
+          sudo ln -sf $(which bazelisk) /home/runner/work/Kernel-Action/Kernel-Action/tools/bazel
 
       - name: Build Houji Kernel (Bazel)
         run: |
@@ -75,7 +77,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          bazelisk build //target:houji --verbose_failures
+          python3 build_with_bazel.py -t houji userdebug
 
       - name: Collect Output
         run: |
