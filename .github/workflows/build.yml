@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: clang
-          key: clang-yuki-houji-v4
+          key: clang-yuki-houji-v5
           restore-keys: |
             clang-yuki-
 
@@ -52,21 +52,23 @@ jobs:
         uses: actions/cache@v4
         with:
           path: msm-kernel
-          key: msm-kernel-v4
+          key: msm-kernel-v5
           restore-keys: |
             msm-kernel
 
-      - name: Clone msm-kernel (msm_kernel_extensions için)
+      - name: Clone msm-kernel
         if: steps.cache-msm.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 https://github.com/mvaisakh/msm-kernel.git
+          git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_msm.git msm-kernel || \
+          git clone --depth=1 https://github.com/PixelExperience/kernel_xiaomi_msm.git msm-kernel || \
+          echo "msm-kernel clone failed, trying alternative..."
 
       - name: Cache Source
         id: cache-source
         uses: actions/cache@v4
         with:
           path: kernel_platform
-          key: source-xiaomi14-kplatform-v4
+          key: source-xiaomi14-kplatform-v5
           restore-keys: |
             source-xiaomi14-kplatform
 
@@ -76,17 +78,21 @@ jobs:
           git clone --depth=1 -b kplatform \
             https://github.com/mvaisakh/xiaomi14.git kernel_platform
 
-      - name: Create msm-kernel symlink
+      - name: Setup Build Directory
         run: |
           cd kernel_platform/..
-          ln -sf ../msm-kernel build/msm-kernel 2>/dev/null || true
-          ls -la build/ || true
+          mkdir -p build
+          # msm-kernel symlink
+          if [ -d "../msm-kernel" ]; then
+            ln -sf ../msm-kernel build/msm-kernel
+          fi
+          ls -la build/
 
       - name: Install Bazelisk
         run: |
           sudo npm install -g @bazel/bazelisk
-          sudo mkdir -p /home/runner/work/Kernel-Action/Kernel-Action/tools
-          sudo ln -sf $(which bazelisk) /home/runner/work/Kernel-Action/Kernel-Action/tools/bazel
+          sudo mkdir -p /home/runner/work/${{ github.repository }}/tools
+          sudo ln -sf $(which bazelisk) /home/runner/work/${{ github.repository }}/tools/bazel
 
       - name: Build Houji Kernel (Bazel)
         run: |
