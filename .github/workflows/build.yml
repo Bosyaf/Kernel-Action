@@ -1,136 +1,59 @@
-name: Xiaomi 14 Houji Full Stock (kplatform)
+name: Build Xiaomi 14 Kernel
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
+  push:
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 600
-
+    
     steps:
-      - name: Maximize Build Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-gb: 8
-
-      - name: Install Dependencies
-        run: |
-          sudo apt update -qq
-          sudo apt install -y \
-            git curl python3 python3-pip \
-            build-essential bc bison flex \
-            libssl-dev libelf-dev \
-            rsync unzip wget xz-utils \
-            zstd zip python3-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            npm openjdk-17-jdk
-
-      - name: Cache Clang
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: clang-yuki-houji-v7
-          restore-keys: |
-            clang-yuki-
-
-      - name: Download Yuki Clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p clang
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" \
-            | tar --zstd -x -C clang
-
-      - name: Cache All Sources
-        id: cache-all
-        uses: actions/cache@v4
-        with:
-          path: |
-            kernel_platform
-            msm-kernel
-            bootable
-            device
-          key: all-sources-v7
-          restore-keys: |
-            all-sources
-
-      - name: Clone All Repos
-        if: steps.cache-all.outputs.cache-hit != 'true'
-        run: |
-          # Main kernel
-          git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git kernel_platform
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        repository: mvaisakh/xiaomi14
+        ref: kplatform
+        
+    - name: Setup Build Environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex \
+          g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev \
+          lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
+          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
+          schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
           
-          # msm-kernel (kernel extensions)
-          git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_msm.git msm-kernel
+    - name: Download Yuki Clang
+      run: |
+        mkdir -p ~/clang
+        cd ~/clang
+        wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/22000000/neutron-clang-22000000-ubuntu-latest.tar.zst
+        tar --zstd -xf neutron-clang-22000000-ubuntu-latest.tar.zst
+        
+    - name: Build Kernel
+      run: |
+        export PATH=~/clang/bin:$PATH
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        
+        make O=out ARCH=arm64 CC=clang gki_defconfig
+        make -j$(nproc --all) O=out \
+          ARCH=arm64 \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           
-          # Bootable (ABL extensions için)
-          git clone --depth=1 https://github.com/LineageOS/bootable.git bootable
-          
-          # Device tree (varsa)
-          git clone --depth=1 https://github.com/mvaisakh/device_xiaomi_houji.git device 2>/dev/null || true
-
-      - name: Create Symlinks
-        run: |
-          cd kernel_platform/..
-          mkdir -p build
-          ln -sf ../msm-kernel build/msm-kernel 2>/dev/null || true
-          ln -sf ../bootable build/bootable 2>/dev/null || true
-          ls -la build/
-
-      - name: Check MODULE.bazel
-        run: |
-          ls -la kernel_platform/MODULE.bazel 2>/dev/null || echo "MODULE.bazel YOK - oluşturuluyor..."
-          # MODULE.bazel yoksa oluştur
-          if [ ! -f kernel_platform/MODULE.bazel ]; then
-            cat > kernel_platform/MODULE.bazel << 'EOF'
-module(name = "xiaomi14_kernel")
-EOF
-          fi
-
-      - name: Install Bazelisk
-        run: |
-          sudo npm install -g @bazel/bazelisk
-          sudo mkdir -p $GITHUB_WORKSPACE/tools
-          sudo ln -sf $(which bazelisk) $GITHUB_WORKSPACE/tools/bazel
-          ls -la $GITHUB_WORKSPACE/tools/
-
-      - name: Build Houji Kernel (Bazel)
-        run: |
-          cd kernel_platform
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          export CC=clang
-          export CXX=clang++
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-
-          python3 build_with_bazel.py -t houji userdebug
-
-      - name: Collect Output
-        run: |
-          mkdir release
-          find kernel_platform -type f \( -name "*.img" -o -name "Image*" -o -name "*.dtb" -o -name "*.dtbo" -o -name "vmlinux" -o -name "boot.img" \) -exec cp -v {} release/ \; 2>/dev/null || true
-          ls -laR release/ || true
-
-      - name: Zip Artifacts
-        run: |
-          cd release
-          zip -r ../houji-kernel.zip *
-          cd ..
-          ls -lh houji-kernel.zip || true
-
-      - name: Upload Release
-        if: always()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: houji-${{ github.run_number }}
-          name: Xiaomi14-Houji-FullStock
-          files: houji-kernel.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload Kernel Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-image
+        path: |
+          out/arch/arm64/boot/Image
+          out/arch/arm64/boot/Image.gz
+          out/arch/arm64/boot/dts/**/*.dtb
