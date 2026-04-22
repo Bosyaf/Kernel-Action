@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 420
 
     steps:
-      - name: Maximize Space
+      - name: Maximize Build Space
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
@@ -24,14 +24,22 @@ jobs:
             build-essential bc bison flex \
             libssl-dev libelf-dev \
             rsync unzip wget xz-utils \
-            zstd zip
+            zstd zip python3-dev \
+            aarch64-linux-gnu arm-linux-gnueabi
+
+      - name: Cache Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: yuki-clang-houji-${{ runner.os }}
 
       - name: Download Yuki Clang
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir clang
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" \
             | tar --zstd -x -C clang
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Clone Xiaomi 14 kplatform Source
         run: |
@@ -44,20 +52,27 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           export CC=clang
           export CXX=clang++
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          python3 build_with_bazel.py
+          python3 build_with_bazel.py -t houji
 
       - name: Collect Output
         run: |
           mkdir release
-          find kernel_platform -type f \( -name "*.img" -o -name "Image" -o -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} release/ \; || true
+          find kernel_platform -type f \( -name "*.img" -o -name "Image*" -o -name "*.dtb" -o -name "*.dtbo" -o -name "vmlinux" -o -name "boot.img" \) -exec cp -v {} release/ \; 2>/dev/null || true
+          ls -laR release/ || true
 
       - name: Zip Artifacts
         run: |
           cd release
           zip -r ../houji-kernel.zip *
+          cd ..
+          ls -lh houji-kernel.zip || true
 
       - name: Upload Release
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: houji-${{ github.run_number }}
