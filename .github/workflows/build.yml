@@ -1,4 +1,4 @@
-name: CG+ Xiaomi 14 (SM8650) Yuki Build
+name: CG+ Xiaomi 14 (SM8650) Yuki Clang Bazel-Ready Build
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Ortam ve Toolchain Hazırlığı
+      - name: 1. Gelişmiş Ortam Hazırlığı
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,102 +35,98 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
           
-          echo "🔥 Yuki Clang 22 İndiriliyor..."
+          echo "🔥 Yuki Clang 22 (ZyCromerZ) İndiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          # Scriptte verdiğin linki kullanıyoruz
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
-          
           echo "$GITHUB_WORKSPACE/yuki-clang/bin" >> $GITHUB_PATH
-          echo "✅ Clang Hazır: $($GITHUB_WORKSPACE/yuki-clang/bin/clang --version | head -n 1)"
 
-      - name: 2. Xiaomi 14 (kplatform) Kaynak Kodunu Çek
+      - name: 2. Xiaomi 14 (kplatform) Kaynak Kodu
         run: |
-          # Senin verdiğin muazzam linki clone'luyoruz
+          # Bazel yapılandırmasını içeren kplatform branch'i
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git common
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 3. KernelSU-Next ve SUSFS Entegrasyonu
+      - name: 3. KernelSU-Next & SUSFS (SM8650 Optimizeli)
         run: |
           cd common
-          echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
           
-          echo "📦 SUSFS4KSU kurulumu..."
+          # SUSFS Yamaları
           git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/
           cp -R susfs4ksu/kernel_patches/include/* ./include/
-          
-          # Patchleri uygula
           patch -p1 < susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
           
-          # Fix: drivers/kernelsu/supercalls.c
-          if [ -f "drivers/kernelsu/supercalls.c" ]; then
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ Fixed build \*\//' drivers/kernelsu/supercalls.c || true
-          fi
+          # Xiaomi mühendisliğindeki build hatalarını önleme (DTS çakışmaları vb.)
+          find . -name "*.rej" -delete 2>/dev/null || true
 
-      - name: 4. Derleme Yapılandırması (SM8650)
+      - name: 4. Gelişmiş Config Yapılandırması
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
           
-          # Defconfig oluşturma (Xiaomi 14 için genelde gki_defconfig kullanılır)
+          # Xiaomi 14 (houji) için ana defconfig'i oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             gki_defconfig
             
           CONFIG_FILE="out/.config"
           
-          # Performans ve KernelSU Ayarları
+          # Xiaomi 14 (SM8650) Performans Ayarları
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           
-          # Xiaomi 14 mimarisi için zorunlu (Bazı kernel'larda defconfig üzerinden set edilir)
+          # Bazel dosyasında gördüğümüz modüler yapının make tarafındaki karşılığı
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             olddefconfig
 
-      - name: 5. Kernel Derleme (Snapdragon 8 Gen 3 Optimizasyonu)
+      - name: 5. Kernel & DTBO Derleme (Yuki Clang Power)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
           
-          # SM8650 (Cortex-X4) için mimari flagleri ekliyoruz
+          # Snapdragon 8 Gen 3 (Cortex-X4) Mimari Flagleri
+          # Bazel'in yaptığı optimizasyonu manuel olarak KCFLAGS ile enjekte ediyoruz
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD="ld.lld" \
-            AR="llvm-ar" \
             NM="llvm-nm" \
-            KCFLAGS="-O3 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -mtune=cortex-x4 \
-            -falign-loops=32 \
-            -fomit-frame-pointer" \
-            Image
+            AR="llvm-ar" \
+            OBJCOPY="llvm-objcopy" \
+            OBJDUMP="llvm-objdump" \
+            STRIP="llvm-strip" \
+            KCFLAGS="-O3 -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse -mtune=cortex-x4 -falign-loops=32 -fomit-frame-pointer" \
+            Image dtbo.img
             
-          echo "BOOTHASH=Xiaomi14-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+          echo "BOOTHASH=Xiaomi14-Yuki-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-      - name: 6. Paketleme (AnyKernel3)
+      - name: 6. AnyKernel3 Paketleme (Xiaomi 14 Destekli)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Xiaomi 14 (SM8650)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Balanced (Xiaomi 14)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          # Xiaomi 14 Cihaz isimlerini ekle
+          # Xiaomi 14 kod adları (Houji: Std, Shennong: Pro)
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora' anykernel.sh
           
+          # Hem Image hem DTBO kopyalıyoruz (Xiaomi 14 için DTBO kritiktir!)
           cp ../common/out/arch/arm64/boot/Image .
+          cp ../common/out/arch/arm64/boot/dtbo.img . 2>/dev/null || echo "DTBO bulunamadı, atlanıyor."
+          
           zip -r "../CG-Xiaomi14-Yuki.zip" ./*
 
-      - name: 7. Yayınla (Release)
+      - name: 7. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (SM8650) Yuki Clang Build"
+          name: "Xiaomi 14 (SM8650) Yuki Clang 22 Build"
+          body: "Source: mvaisakh kplatform | Toolchain: Yuki Clang 22 | KSU-Next + SUSFS"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
