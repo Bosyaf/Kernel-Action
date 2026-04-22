@@ -9,7 +9,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 420
+    timeout-minutes: 600
 
     steps:
       - name: Maximize Build Space
@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: clang
-          key: clang-yuki-houji-v6
+          key: clang-yuki-houji-v7
           restore-keys: |
             clang-yuki-
 
@@ -47,53 +47,57 @@ jobs:
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" \
             | tar --zstd -x -C clang
 
-      - name: Cache msm-kernel
-        id: cache-msm
+      - name: Cache All Sources
+        id: cache-all
         uses: actions/cache@v4
         with:
-          path: msm-kernel
-          key: msm-kernel-v6
-          restore-keys: |
+          path: |
+            kernel_platform
             msm-kernel
-
-      - name: Clone msm-kernel
-        if: steps.cache-msm.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_msm.git msm-kernel || \
-          git clone --depth=1 https://github.com/PixelExperience/kernel_xiaomi_msm.git msm-kernel || \
-          echo "msm-kernel clone failed"
-
-      - name: Cache Source
-        id: cache-source
-        uses: actions/cache@v4
-        with:
-          path: kernel_platform
-          key: source-xiaomi14-kplatform-v6
+            bootable
+            device
+          key: all-sources-v7
           restore-keys: |
-            source-xiaomi14-kplatform
+            all-sources
 
-      - name: Clone Xiaomi 14 kplatform Source
-        if: steps.cache-source.outputs.cache-hit != 'true'
+      - name: Clone All Repos
+        if: steps.cache-all.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 -b kplatform \
-            https://github.com/mvaisakh/xiaomi14.git kernel_platform
+          # Main kernel
+          git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git kernel_platform
+          
+          # msm-kernel (kernel extensions)
+          git clone --depth=1 https://github.com/LineageOS/android_kernel_xiaomi_msm.git msm-kernel
+          
+          # Bootable (ABL extensions için)
+          git clone --depth=1 https://github.com/LineageOS/bootable.git bootable
+          
+          # Device tree (varsa)
+          git clone --depth=1 https://github.com/mvaisakh/device_xiaomi_houji.git device 2>/dev/null || true
 
-      - name: Setup Build Directory
+      - name: Create Symlinks
         run: |
           cd kernel_platform/..
           mkdir -p build
-          if [ -d "../msm-kernel" ]; then
-            ln -sf ../msm-kernel build/msm-kernel
-          fi
+          ln -sf ../msm-kernel build/msm-kernel 2>/dev/null || true
+          ln -sf ../bootable build/bootable 2>/dev/null || true
           ls -la build/
+
+      - name: Check MODULE.bazel
+        run: |
+          ls -la kernel_platform/MODULE.bazel 2>/dev/null || echo "MODULE.bazel YOK - oluşturuluyor..."
+          # MODULE.bazel yoksa oluştur
+          if [ ! -f kernel_platform/MODULE.bazel ]; then
+            cat > kernel_platform/MODULE.bazel << 'EOF'
+module(name = "xiaomi14_kernel")
+EOF
+          fi
 
       - name: Install Bazelisk
         run: |
           sudo npm install -g @bazel/bazelisk
-          # Script'in beklediği yere symlink OLUŞTUR
           sudo mkdir -p $GITHUB_WORKSPACE/tools
           sudo ln -sf $(which bazelisk) $GITHUB_WORKSPACE/tools/bazel
-          # Kontrol
           ls -la $GITHUB_WORKSPACE/tools/
 
       - name: Build Houji Kernel (Bazel)
