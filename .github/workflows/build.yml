@@ -31,13 +31,14 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             npm openjdk-17-jdk
 
-      - name: Cache Clang Toolchain
+      - name: Cache Clang
+        id: cache-clang
         uses: actions/cache@v4
         with:
           path: clang
-          key: clang-yuki-houji-v3
+          key: clang-yuki-houji-v4
           restore-keys: |
-            clang-yuki-houji
+            clang-yuki-
 
       - name: Download Yuki Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -46,11 +47,26 @@ jobs:
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" \
             | tar --zstd -x -C clang
 
+      - name: Cache msm-kernel
+        id: cache-msm
+        uses: actions/cache@v4
+        with:
+          path: msm-kernel
+          key: msm-kernel-v4
+          restore-keys: |
+            msm-kernel
+
+      - name: Clone msm-kernel (msm_kernel_extensions için)
+        if: steps.cache-msm.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 https://github.com/mvaisakh/msm-kernel.git
+
       - name: Cache Source
+        id: cache-source
         uses: actions/cache@v4
         with:
           path: kernel_platform
-          key: source-xiaomi14-kplatform-v3
+          key: source-xiaomi14-kplatform-v4
           restore-keys: |
             source-xiaomi14-kplatform
 
@@ -60,10 +76,15 @@ jobs:
           git clone --depth=1 -b kplatform \
             https://github.com/mvaisakh/xiaomi14.git kernel_platform
 
+      - name: Create msm-kernel symlink
+        run: |
+          cd kernel_platform/..
+          ln -sf ../msm-kernel build/msm-kernel 2>/dev/null || true
+          ls -la build/ || true
+
       - name: Install Bazelisk
         run: |
           sudo npm install -g @bazel/bazelisk
-          # Script'in beklediği yere symlink oluştur
           sudo mkdir -p /home/runner/work/Kernel-Action/Kernel-Action/tools
           sudo ln -sf $(which bazelisk) /home/runner/work/Kernel-Action/Kernel-Action/tools/bazel
 
