@@ -1,4 +1,4 @@
-name: CG+ Xiaomi 14 (SM8650) ZyCromerZ Clang 23 Build
+name: CG+ Xiaomi 14 (HOUJI) Fragmented Build
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Ortam ve Toolchain (ZyCromerZ Clang 23) Hazırlığı
+      - name: 1. Ortam ve ZyCromerZ Clang 23 Hazırlığı
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -37,56 +37,50 @@ jobs:
           
           echo "🔥 ZyCromerZ Clang 23 İndiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang
-          # Verdiğin güncel Clang 23 linki
           wget -q https://github.com/ZyCromerZ/Clang/releases/download/23.0.0git-20260130-release/Clang-23.0.0git-20260130.tar.gz
           tar -xf Clang-23.0.0git-20260130.tar.gz -C $GITHUB_WORKSPACE/clang
-          
-          # PATH ayarı
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-          echo "✅ Clang Hazır: $($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1)"
 
-      - name: 2. Xiaomi 14 (kplatform) Kaynak Kodunu Çek
+      - name: 2. Kaynak Kodunu Çek
         run: |
-          # mvaisakh kplatform branch'i
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git common
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 3. Derleme Yapılandırması (SM8650 - No Root)
+      - name: 3. HOUJI Configlerini Birleştir (Engineering Step)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
-          # Defconfig oluşturma
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
-            gki_defconfig
-            
-          CONFIG_FILE="out/.config"
+          # 1. Adım: Temel GKI config'i oluştur
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           
-          # --- Performans Optimizasyonları ---
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Balanced"
+          # 2. Adım: Sizin listedeki HOUJI dosyalarını mevcut config üzerine bindir (Merge)
+          # Bu işlem Xiaomi 14'ün gerçek donanım sürücülerini (houji_GKI ve houji_consolidate) aktif eder.
+          ARCH=arm64 ./scripts/kconfig/merge_config.sh -O out out/.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/vendor/houji_consolidate.config
+            
+          # 3. Adım: Performans İnce Ayarları
+          CONFIG_FILE="out/.config"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Cromer23"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           
-          # Root/KSU istemediğin için ilgili tüm configleri kapalı tutuyoruz
+          # Root kapalı kalsın (KSU/SUSFS yok)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS
           
-          # Config'i tazele
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
-            olddefconfig
+          # 4. Adım: Config'i son haline getir
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 4. Kernel Derleme (Snapdragon 8 Gen 3 - Clang 23)
+      - name: 4. Derleme (SM8650 - Pineapple/Houji)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
-          # SM8650 (Cortex-X4) ve Clang 23 için agresif optimizasyonlar
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -100,36 +94,33 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -mtune=cortex-x4 \
             -falign-loops=32 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections" \
-            Image
+            -fomit-frame-pointer" \
+            Image dtbo.img
             
-          echo "BOOTHASH=Xiaomi14-ZyC23-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+          echo "BOOTHASH=Houji-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-      - name: 5. Paketleme (AnyKernel3)
+      - name: 5. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Xiaomi 14 (SM8650) Clang 23 No-Root/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Performance (Xiaomi 14)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          # Xiaomi 14 Kod Adları: houji (Std), shennong (Pro), aurora (Ultra)
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Xiaomi14-Clang23-Balanced.zip" ./*
+          [ -f ../common/out/arch/arm64/boot/dtbo.img ] && cp ../common/out/arch/arm64/boot/dtbo.img .
+          
+          zip -r "../CG-Houji-Clang23.zip" ./*
 
-      - name: 6. Yayınla (Release)
+      - name: 6. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (SM8650) ZyCromerZ Clang 23 Build"
+          name: "Xiaomi 14 (HOUJI) Engineering Build"
           body: |
-            ### Kernel Bilgileri
-            - **Cihaz:** Xiaomi 14 Serisi (SM8650)
-            - **Compiler:** ZyCromerZ Clang 23.0.0 (Latest)
-            - **Source:** mvaisakh kplatform
-            - **Root:** Yok (KSU/SUSFS içermez)
-            - **Optimizasyon:** Cortex-X4 (ARMv9.2-a) -O3
+            - Build: Houji Fragmented Merge
+            - Configs: houji_GKI + houji_consolidate
+            - Compiler: ZyCromerZ Clang 23
+            - Root: No
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
