@@ -28,26 +28,42 @@ jobs:
             libssl-dev libelf-dev \
             rsync unzip wget xz-utils \
             zstd zip python3-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            npm
 
       - name: Cache Clang Toolchain
-        id: cache-clang
         uses: actions/cache@v4
         with:
           path: clang
-          key: yuki-clang-houji-${{ runner.os }}
+          key: clang-yuki-houji-v2
+          restore-keys: |
+            clang-yuki-houji
 
       - name: Download Yuki Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir clang
+          mkdir -p clang
           curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" \
             | tar --zstd -x -C clang
 
+      - name: Cache Source
+        uses: actions/cache@v4
+        with:
+          path: kernel_platform
+          key: source-xiaomi14-kplatform-v2
+          restore-keys: |
+            source-xiaomi14-kplatform
+
       - name: Clone Xiaomi 14 kplatform Source
+        if: steps.cache-source.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 -b kplatform \
             https://github.com/mvaisakh/xiaomi14.git kernel_platform
+
+      - name: Install Bazelisk
+        run: |
+          sudo npm install -g @bazel/bazelisk
+          which bazelisk || which bazel
 
       - name: Build Houji Kernel (Bazel)
         run: |
@@ -59,7 +75,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          python3 build_with_bazel.py -t houji userdebug
+          bazelisk build //target:houji --verbose_failures
 
       - name: Collect Output
         run: |
