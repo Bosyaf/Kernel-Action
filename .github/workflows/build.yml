@@ -1,4 +1,4 @@
-name: CG+ Xiaomi 14 (HOUJI) Fragmented Build
+name: CG+ Xiaomi 14 (HOUJI) Official Google Clang Build
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Ortam ve ZyCromerZ Clang 23 Hazırlığı
+      - name: 1. Ortam ve Resmi Google Clang (r487747c) Hazırlığı
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,54 +35,56 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
           
-          echo "🔥 ZyCromerZ Clang 23 İndiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang
-          wget -q https://github.com/ZyCromerZ/Clang/releases/download/23.0.0git-20260130-release/Clang-23.0.0git-20260130.tar.gz
-          tar -xf Clang-23.0.0git-20260130.tar.gz -C $GITHUB_WORKSPACE/clang
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+          # Google'ın resmi Android Clang r487747c sürümünü indiriyoruz
+          mkdir -p $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c
+          
+          echo "🔥 Resmi Google Clang r487747c indiriliyor..."
+          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz -o clang.tar.gz
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/
+          
+          # PATH ayarı
+          echo "$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin" >> $GITHUB_PATH
 
-      - name: 2. Kaynak Kodunu Çek
+      - name: 2. Kaynak Kodunu Çek (HOUJI - kplatform)
         run: |
-          git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git common
+          git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git $GITHUB_WORKSPACE/common
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 3. HOUJI Configlerini Birleştir (Engineering Step)
+      - name: 3. HOUJI Full (Consolidate) Yapılandırması
         run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          cd $GITHUB_WORKSPACE/common
+          export PATH="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # 1. Adım: Temel GKI config'i oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          # 1. Temel GKI config
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            gki_defconfig
           
-          # 2. Adım: Sizin listedeki HOUJI dosyalarını mevcut config üzerine bindir (Merge)
-          # Bu işlem Xiaomi 14'ün gerçek donanım sürücülerini (houji_GKI ve houji_consolidate) aktif eder.
-          ARCH=arm64 ./scripts/kconfig/merge_config.sh -O out out/.config \
+          # 2. Houji Consolidate Merge (Full Xiaomi Mühendisliği)
+          # LLVM=1 ile GCC'ye kaçmasını engelliyoruz
+          LLVM=1 LLVM_IAS=1 ARCH=arm64 ./scripts/kconfig/merge_config.sh -O out out/.config \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
-            
-          # 3. Adım: Performans İnce Ayarları
-          CONFIG_FILE="out/.config"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Cromer23"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           
-          # Root kapalı kalsın (KSU/SUSFS yok)
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS
+          # 3. Sadece LOCALVERSION ayarı (HZ, BBR, Root yok)
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Official"
           
-          # 4. Adım: Config'i son haline getir
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          # 4. Config'i son haline getir
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            olddefconfig
 
-      - name: 4. Derleme (SM8650 - Pineapple/Houji)
+      - name: 4. Derleme (Güvenli Mod -O2)
         run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          cd $GITHUB_WORKSPACE/common
+          export PATH="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
+          # KCFLAGS -O2 olarak set edildi (Risk yok)
+          # Xiaomi'nin zorunlu __ANDROID_COMMON_KERNEL__ bayrağı eklendi
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CC="clang" \
             LD="ld.lld" \
             AR="llvm-ar" \
@@ -90,37 +92,33 @@ jobs:
             OBJCOPY="llvm-objcopy" \
             OBJDUMP="llvm-objdump" \
             STRIP="llvm-strip" \
-            KCFLAGS="-O3 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -mtune=cortex-x4 \
-            -falign-loops=32 \
-            -fomit-frame-pointer" \
+            KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__" \
             Image dtbo.img
             
-          echo "BOOTHASH=Houji-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+          echo "BOOTHASH=Houji-Official-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-      - name: 5. AnyKernel3 Paketleme
+      - name: 5. Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Performance (Xiaomi 14)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Official (Xiaomi 14)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
           [ -f ../common/out/arch/arm64/boot/dtbo.img ] && cp ../common/out/arch/arm64/boot/dtbo.img .
           
-          zip -r "../CG-Houji-Clang23.zip" ./*
+          zip -r "../CG-Houji-Official-Derleme.zip" ./*
 
-      - name: 6. Release
+      - name: 6. Yayınla (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (HOUJI) Engineering Build"
+          name: "Xiaomi 14 (HOUJI) Official Google Clang Build"
           body: |
-            - Build: Houji Fragmented Merge
-            - Configs: houji_GKI + houji_consolidate
-            - Compiler: ZyCromerZ Clang 23
-            - Root: No
+            - Build: Houji Full Consolidate
+            - Compiler: Google Clang r487747c (Official Android)
+            - Optimization: -O2 (Stock Stability)
+            - Features: Original Source Only
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
