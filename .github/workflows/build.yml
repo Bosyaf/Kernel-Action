@@ -18,20 +18,35 @@ jobs:
         
     - name: Setup Build Environment
       run: |
+        # 32-bit desteği ekle
+        sudo dpkg --add-architecture i386
         sudo apt-get update
+        
         sudo apt-get install -y bc bison build-essential ccache curl flex \
-          g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev \
-          lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
-          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
-          schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
-          
+          g++-multilib gcc-multilib git gnupg gperf imagemagick \
+          libc6-dev-i386 libncurses5:i386 libncurses5-dev \
+          lib32z1-dev liblz4-tool libsdl1.2-dev libssl-dev \
+          libxml2 libxml2-utils lzop pngcrush rsync \
+          schedtool squashfs-tools xsltproc zip zlib1g-dev \
+          python3 python-is-python3 python3-pip
+
+    - name: Cache Clang
+      id: cache-clang
+      uses: actions/cache@v4
+      with:
+        path: ~/clang
+        key: clang-neutron-v1
+        restore-keys: |
+          clang-neutron
+
     - name: Download Yuki Clang
+      if: steps.cache-clang.outputs.cache-hit != 'true'
       run: |
         mkdir -p ~/clang
         cd ~/clang
-        wget https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/22000000/neutron-clang-22000000-ubuntu-latest.tar.zst
+        wget -q https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/22000000/neutron-clang-22000000-ubuntu-latest.tar.zst
         tar --zstd -xf neutron-clang-22000000-ubuntu-latest.tar.zst
-        
+
     - name: Build Kernel
       run: |
         export PATH=~/clang/bin:$PATH
@@ -40,6 +55,8 @@ jobs:
         export CLANG_TRIPLE=aarch64-linux-gnu-
         export CROSS_COMPILE=aarch64-linux-gnu-
         export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+        export CC=clang
+        export CXX=clang++
         
         make O=out ARCH=arm64 CC=clang gki_defconfig
         make -j$(nproc --all) O=out \
@@ -48,7 +65,7 @@ jobs:
           CLANG_TRIPLE=aarch64-linux-gnu- \
           CROSS_COMPILE=aarch64-linux-gnu- \
           CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          
+
     - name: Upload Kernel Image
       uses: actions/upload-artifact@v4
       with:
