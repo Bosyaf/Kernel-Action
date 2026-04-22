@@ -1,4 +1,4 @@
-name: CG+ Xiaomi 14 (HOUJI) Official Clang r584948 Build
+name: CG+ Xiaomi 14 (HOUJI) Pure Official r584948
 
 permissions:
   contents: write
@@ -35,58 +35,54 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
           
-          # Kaynağı çek (Xiaomi 14 kplatform)
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git $GITHUB_WORKSPACE/common
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 2. Resmi Google Clang r584948 Kurulumu
+      - name: 2. Clang r584948 Kurulumu (Garantili Yöntem)
         run: |
-          echo "🔥 Resmi Google Clang r584948 indiriliyor..."
+          echo "🔥 Google Clang r584948 indiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-dir
           
-          # Kaynağın build.config dosyalarındaki yapıyı bozmamak için:
-          # Clang r584948 sürümünü senin verdiğin mirror branch'inden çekiyoruz.
-          mkdir -p $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86
+          # Clang'i çekiyoruz
+          cd $GITHUB_WORKSPACE/clang-dir
+          git clone --depth=1 -b mirror-goog-main-llvm-toolchain-source https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-repo
           
-          git clone --depth=1 -b mirror-goog-main-llvm-toolchain-source https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-temp
+          # Kaynağın beklediği yere taşı (r487747c ismini kullanıyoruz ki configlerle çakışmasın)
+          mkdir -p $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c
+          cp -r clang-repo/clang-r584948/* $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/
           
-          # Sadece r584948 klasörünü asıl yere taşıyoruz
-          mv $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-temp/clang-r584948 $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c
-          
-          # Not: Source içinde CLANG_VERSION=r487747c yazdığı için klasör adını öyle yaptık 
-          # ki sistem derleyiciyi otomatik bulsun.
-          
+          # PATH tanımla
           echo "$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin" >> $GITHUB_PATH
 
-      - name: 3. HOUJI Full (Consolidate) Config Hazırlığı
+      - name: 3. HOUJI Full (Consolidate) Config Merge
         run: |
           cd $GITHUB_WORKSPACE/common
           export PATH="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # 1. Temel GKI
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            gki_defconfig
+          # Hataları önlemek için derleyiciyi değişkenlere çakıyoruz
+          export CLANG_BIN="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin"
           
-          # 2. Houji Consolidate Merge (Full Xiaomi Mühendisliği)
-          LLVM=1 LLVM_IAS=1 ARCH=arm64 ./scripts/kconfig/merge_config.sh -O out out/.config \
+          # 1. Temel
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
+          
+          # 2. Merge İşlemi (ZORLAYICI MOD)
+          # merge_config içindeki make'e de LLVM parametrelerini geçiyoruz
+          ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
           
-          # 3. İsimlendirme ve Temizlik
-          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Official-r584948"
+          # 3. Ayar ve Finalize
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Official"
           
-          # 4. Final Kontrol
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            olddefconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-      - name: 4. Derleme (Güvenli Mod -O2)
+      - name: 4. Derleme (-O2 Güvenli Mod)
         run: |
           cd $GITHUB_WORKSPACE/common
           export PATH="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # Derlemeyi başlat (Image + DTBO)
+          # Image ve DTBO derle
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
@@ -98,14 +94,14 @@ jobs:
             OBJDUMP="llvm-objdump" \
             STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__" \
-            Image dtbo.img
+            Image dtbo.img || { echo "❌ Derleme sırasında hata oluştu!"; exit 1; }
             
-          echo "BOOTHASH=Houji-r584948-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+          echo "BOOTHASH=Houji-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
       - name: 5. Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Official Clang 584948/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Official (r584948)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji' anykernel.sh
           
@@ -114,16 +110,11 @@ jobs:
           
           zip -r "../CG-Houji-Official-r584948.zip" ./*
 
-      - name: 6. Release (Yayınla)
+      - name: 6. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (HOUJI) Clang r584948 Official Build"
-          body: |
-            - Build: Houji Full Consolidate
-            - Compiler: Google Clang r584948 (mirror-goog-main)
-            - Optimization: -O2
-            - Note: Pure source build, no custom mods.
+          name: "Xiaomi 14 (HOUJI) Official Build"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
