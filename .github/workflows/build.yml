@@ -1,4 +1,4 @@
-name: CG+ Xiaomi 14 (HOUJI) Pure Official Cache Build
+name: CG+ Xiaomi 14 (HOUJI) Official Pure Build
 
 permissions:
   contents: write
@@ -35,31 +35,30 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
 
-      - name: 2. Kaynak Kodunu Çek
+      - name: 2. Kaynak Kodunu Çek (HOUJI)
         run: |
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git $GITHUB_WORKSPACE/common
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 3. Clang r584948 Önbellek (Cache) Kontrolü
+      - name: 3. Clang r584948 Önbellek (Cache)
         id: cache-clang
         uses: actions/cache@v4
         with:
           path: common/prebuilts/clang/host/linux-x86/clang-r487747c
           key: clang-r584948-v1
 
-      - name: 4. Resmi Google Clang r584948 İndir (Sadece Cache Yoksa)
+      - name: 4. Clang r584948 İndir (Cache yoksa)
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           echo "🔥 Clang Cache bulunamadı, indiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-temp
           cd $GITHUB_WORKSPACE/clang-temp
           git clone --depth=1 -b mirror-goog-main-llvm-toolchain-source https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-repo
-          
           mkdir -p $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c
           cp -r clang-repo/clang-r584948/* $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/
           rm -rf $GITHUB_WORKSPACE/clang-temp
 
-      - name: 5. HOUJI Full (Consolidate) Config Merge
+      - name: 5. HOUJI Full (Consolidate) Config Hazırlığı
         run: |
           cd $GITHUB_WORKSPACE/common
           export PATH="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
@@ -67,22 +66,23 @@ jobs:
           # 1. Temel GKI
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
           
-          # 2. Merge (Garantili Mod)
+          # 2. Merge - SADECE HOUJI ÖZEL
           ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
           
-          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Official"
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Pure"
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-      - name: 6. Derleme (Sadece Image)
+      - name: 6. Derleme (SADECE Image - Hatasız Mod)
         run: |
           cd $GITHUB_WORKSPACE/common
           export PATH="$GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # dtbo.img hatasını almamak için sadece Image ve dtbs derliyoruz
+          # dtbs veya dtbo derlemiyoruz, Allwinner hatalarından kaçıyoruz.
+          # Sadece kernel'ın ana gövdesi (Image) derlenecek.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
@@ -94,7 +94,7 @@ jobs:
             OBJDUMP="llvm-objdump" \
             STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__" \
-            Image dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
             
           echo "BOOTHASH=Houji-Official-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
@@ -105,23 +105,19 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji' anykernel.sh
           
-          # Derlenen Image dosyasını kopyala
+          # Sadece derlenen Image'ı alıyoruz
           cp ../common/out/arch/arm64/boot/Image .
-          
-          # Eğer dtbs içinden dtbo çıktıysa onları da alabiliriz (Opsiyonel)
-          # Xiaomi 14'te dtbo genelde Image'a gömülü veya ayrı partitiondadır.
-          
           zip -r "../CG-Houji-Official-SM8650.zip" ./*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (HOUJI) Official Clang r584948"
+          name: "Xiaomi 14 (HOUJI) Pure Official Build"
           body: |
             - Build: Houji Full Consolidate
-            - Compiler: Google Clang r584948 (Cached)
             - Optimization: -O2
+            - Note: Only Image compiled to avoid DTS errors.
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
