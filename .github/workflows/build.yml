@@ -3,6 +3,9 @@ name: Xiaomi 14 Houji Full Stock (kplatform)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,7 +28,7 @@ jobs:
             libssl-dev libelf-dev \
             rsync unzip wget xz-utils \
             zstd zip python3-dev \
-            aarch64-linux-gnu arm-linux-gnueabi
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Cache Clang Toolchain
         id: cache-clang
