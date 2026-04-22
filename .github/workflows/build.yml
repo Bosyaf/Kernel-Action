@@ -1,4 +1,4 @@
-name: CG+ Xiaomi 14 (SM8650) Yuki Build
+name: CG+ Xiaomi 14 (SM8650) ZyCromerZ Clang 23 Build
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Ortam ve Toolchain Hazırlığı
+      - name: 1. Ortam ve Toolchain (ZyCromerZ Clang 23) Hazırlığı
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,80 +35,101 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
           
-          echo "🔥 Yuki Clang 22 İndiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/yuki-clang
-          # Scriptte verdiğin linki kullanıyoruz
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/yuki-clang
+          echo "🔥 ZyCromerZ Clang 23 İndiriliyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang
+          # Verdiğin güncel Clang 23 linki
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/23.0.0git-20260130-release/Clang-23.0.0git-20260130.tar.gz
+          tar -xf Clang-23.0.0git-20260130.tar.gz -C $GITHUB_WORKSPACE/clang
           
-          echo "$GITHUB_WORKSPACE/yuki-clang/bin" >> $GITHUB_PATH
-          echo "✅ Clang Hazır: $($GITHUB_WORKSPACE/yuki-clang/bin/clang --version | head -n 1)"
+          # PATH ayarı
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+          echo "✅ Clang Hazır: $($GITHUB_WORKSPACE/clang/bin/clang --version | head -n 1)"
+
       - name: 2. Xiaomi 14 (kplatform) Kaynak Kodunu Çek
         run: |
-          # Senin verdiğin muazzam linki clone'luyoruz
+          # mvaisakh kplatform branch'i
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git common
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
- 
-      - name: 4. Derleme Yapılandırması (SM8650)
+
+      - name: 3. Derleme Yapılandırması (SM8650 - No Root)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
-          # Defconfig oluşturma (Xiaomi 14 için genelde gki_defconfig kullanılır)
+          # Defconfig oluşturma
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             gki_defconfig
             
           CONFIG_FILE="out/.config"
           
-          # Performans ve KernelSU Ayarları
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laurelin-X"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          # --- Performans Optimizasyonları ---
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-CG-Balanced"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT
           
-          # Xiaomi 14 mimarisi için zorunlu (Bazı kernel'larda defconfig üzerinden set edilir)
+          # Root/KSU istemediğin için ilgili tüm configleri kapalı tutuyoruz
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS
+          
+          # Config'i tazele
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             olddefconfig
-      - name: 5. Kernel Derleme (Snapdragon 8 Gen 3 Optimizasyonu)
+
+      - name: 4. Kernel Derleme (Snapdragon 8 Gen 3 - Clang 23)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/yuki-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
-          # SM8650 (Cortex-X4) için mimari flagleri ekliyoruz
+          # SM8650 (Cortex-X4) ve Clang 23 için agresif optimizasyonlar
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             LD="ld.lld" \
             AR="llvm-ar" \
             NM="llvm-nm" \
-            KCFLAGS="-O2 \
+            OBJCOPY="llvm-objcopy" \
+            OBJDUMP="llvm-objdump" \
+            STRIP="llvm-strip" \
+            KCFLAGS="-O3 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -mtune=cortex-x4 \
             -falign-loops=32 \
-            -fomit-frame-pointer" \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections" \
             Image
             
-          echo "BOOTHASH=Xiaomi14-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
-      - name: 6. Paketleme (AnyKernel3)
+          echo "BOOTHASH=Xiaomi14-ZyC23-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+
+      - name: 5. Paketleme (AnyKernel3)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Yuki Xiaomi 14 (SM8650)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Xiaomi 14 (SM8650) Clang 23 No-Root/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          # Xiaomi 14 Cihaz isimlerini ekle
+          # Xiaomi 14 Kod Adları: houji (Std), shennong (Pro), aurora (Ultra)
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Xiaomi14-Yuki.zip" ./*
-      - name: 7. Yayınla (Release)
+          zip -r "../CG-Xiaomi14-Clang23-Balanced.zip" ./*
+
+      - name: 6. Yayınla (Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (SM8650) Yuki Clang Build"
+          name: "Xiaomi 14 (SM8650) ZyCromerZ Clang 23 Build"
+          body: |
+            ### Kernel Bilgileri
+            - **Cihaz:** Xiaomi 14 Serisi (SM8650)
+            - **Compiler:** ZyCromerZ Clang 23.0.0 (Latest)
+            - **Source:** mvaisakh kplatform
+            - **Root:** Yok (KSU/SUSFS içermez)
+            - **Optimizasyon:** Cortex-X4 (ARMv9.2-a) -O3
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
