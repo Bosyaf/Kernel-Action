@@ -1,19 +1,12 @@
-name: CG+ Yuki Houji (Kernel Only Test)
-
-permissions:
-  contents: write
-  actions: write
+name: Xiaomi 14 Houji Full Stock (kplatform)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 420
-    env:
-      KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
       - name: Maximize Space
@@ -23,128 +16,52 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 8
 
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Cache Clang
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/clang-yuki
-          key: clang-yuki-bolt-20260124
-
-      - name: Download Clang
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/clang-yuki
-          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" | tar --zstd -xC $GITHUB_WORKSPACE/clang-yuki
-
-      - name: Cache Kernel Source
-        id: cache-kernel
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/common
-          key: kernel-source-ramabondanp-6.1-staging-${{ github.sha }}
-          restore-keys: |
-            kernel-source-ramabondanp-
-
-      - name: Clone Device Trees
-        run: |
-          git clone -b kplatform --depth=1 https://github.com/mvaisakh/xiaomi14-devicetrees.git dt_tmp
-
-      - name: Install Dependencies (DWARVES EKLENDİ)
+      - name: Install Dependencies
         run: |
           sudo apt update -qq
-          sudo apt install -y --no-install-recommends \
-            libelf-dev zlib1g-dev libfdt-dev libssl-dev \
-            python3 python3-pip dwarves binutils
+          sudo apt install -y \
+            git curl python3 python3-pip \
+            build-essential bc bison flex \
+            libssl-dev libelf-dev \
+            rsync unzip wget xz-utils \
+            zstd zip
 
-      - name: Integrate Device Trees
+      - name: Download Yuki Clang
         run: |
-          cd common
-          
-          echo "📦 Device tree dosyaları kopyalanıyor..."
-          
-          # ✅ BINDINGS (ana dizine)
-          cp -rv ../dt_tmp/bindings ./bindings/
-          
-          # ✅ QCOM (DTS dizinine)
-          cp -v ../dt_tmp/qcom/houji* arch/arm64/boot/dts/qcom/ || true
-          cp -v ../dt_tmp/qcom/pineapple* arch/arm64/boot/dts/qcom/ || true
-          cp -rv ../dt_tmp/qcom/audio arch/arm64/boot/dts/qcom/ || true
-          cp -rv ../dt_tmp/qcom/camera arch/arm64/boot/dts/qcom/ || true
-          cp -rv ../dt_tmp/qcom/display arch/arm64/boot/dts/qcom/ || true
-          
-          rm -rf ../dt_tmp
-          
-          echo "✅ Device trees entegre edildi!"
-          echo "📋 Bindings:"
-          ls bindings/ | head -10
-          echo "📋 DTS dosyaları:"
-          ls arch/arm64/boot/dts/qcom/houji* || echo "⚠️ Houji DTS bulunamadı!"
-          ls arch/arm64/boot/dts/qcom/pineapple* || echo "⚠️ Pineapple DTS bulunamadı!"
+          mkdir clang
+          curl -L "https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst" \
+            | tar --zstd -x -C clang
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
-      - name: Build Kernel (Test)
+      - name: Clone Xiaomi 14 kplatform Source
         run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
-          
-          echo "🔥 Derleme başlıyor..."
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld \
-            AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            gki_defconfig 2>&1 | tee config.log
-          
-          ./scripts/config --file out/.config --set-val CONFIG_HZ 300
-          ./scripts/config --file out/.config --enable CONFIG_PREEMPT
-          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Test"
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee olddefconfig.log
-          
-          # ✅ DOĞRU ERROR DETECTION
-          if make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld \
-            AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            Image 2>&1 | tee build.log; then
-            echo "BUILD_SUCCESS=1" >> $GITHUB_ENV
-            echo "✅ Build başarılı!"
-          else
-            echo "BUILD_FAILED=1" >> $GITHUB_ENV
-            echo "❌ Build başarısız!"
-            exit 1
-          fi
-          
-          echo ""
-          echo "=== BUILD HATALARI ==="
-          grep -i "error:" build.log | head -30 || echo "Hata yok!"
-          
-          echo ""
-          echo "=== DERLENEN DTB/DTBO DOSYALARI ==="
-          ls -lh out/arch/arm64/boot/dts/qcom/houji*.dtb || echo "⚠️ Houji DTB bulunamadı!"
-          ls -lh out/arch/arm64/boot/dts/qcom/houji*.dtbo || echo "⚠️ Houji DTBO bulunamadı!"
+          git clone --depth=1 -b kplatform \
+            https://github.com/mvaisakh/xiaomi14.git kernel_platform
 
-      - name: Upload Build Log
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Build Houji Kernel (Bazel)
+        run: |
+          cd kernel_platform
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          export CC=clang
+          export CXX=clang++
+
+          python3 build_with_bazel.py
+
+      - name: Collect Output
+        run: |
+          mkdir release
+          find kernel_platform -type f \( -name "*.img" -o -name "Image" -o -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} release/ \; || true
+
+      - name: Zip Artifacts
+        run: |
+          cd release
+          zip -r ../houji-kernel.zip *
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: build-logs
-          path: |
-            common/config.log
-            common/olddefconfig.log
-            common/build.log
-
-      - name: Check Build Status
-        run: |
-          if [ "$BUILD_SUCCESS" == "1" ]; then
-            echo "✅ Build başarılı!"
-            ls -lh common/out/arch/arm64/boot/Image || true
-          else
-            echo "❌ Build başarısız! Logları kontrol et."
-            exit 1
-          fi
+          tag_name: houji-${{ github.run_number }}
+          name: Xiaomi14-Houji-FullStock
+          files: houji-kernel.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
