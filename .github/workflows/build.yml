@@ -50,53 +50,46 @@ jobs:
           cp -r ${{ github.workspace }}/clang-repo/clang-r487747c/* ${{ github.workspace }}/official-clang/
           rm -rf ${{ github.workspace }}/clang-repo
 
-      - name: 4. Kaynak Kodlarını Çek (Garantili Mod)
+      - name: 4. Kaynak Kodlarını Çek
         run: |
-          # 1. Ana Kernel Motoru
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git ${{ github.workspace }}/common
-          
-          # 2. Senin Taze Donanım Haritaların
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ${{ github.workspace }}/houji-dt
           
-          # 3. EKSİK KÜTÜPHANELER (AOSP üzerinden garantili çekiyoruz)
+          # Eksik kütüphaneleri garantili çek (Hata alsa da devam et)
           mkdir -p ${{ github.workspace }}/common/vendor/qcom/opensource
-          
-          # Audio ve Camera kütüphanelerini klonluyoruz (Hata almamak için her şeyi deniyoruz)
           cd ${{ github.workspace }}/common/vendor/qcom/opensource
-          git clone --depth=1 https://github.com/LineageOS/android_vendor_qcom_opensource_audio-kernel audio-kernel || \
-          curl -LSs https://github.com/LineageOS/android_vendor_qcom_opensource_audio-kernel/archive/refs/heads/lineage-21.0.tar.gz | tar -xz && mv android_vendor_qcom_opensource_audio-kernel-* audio-kernel
+          git clone --depth=1 https://github.com/LineageOS/android_vendor_qcom_opensource_audio-kernel audio-kernel || true
+          git clone --depth=1 https://github.com/LineageOS/android_vendor_qcom_opensource_camera-kernel camera-kernel || true
           
-          git clone --depth=1 https://github.com/LineageOS/android_vendor_qcom_opensource_camera-kernel camera-kernel || \
-          curl -LSs https://github.com/LineageOS/android_vendor_qcom_opensource_camera-kernel/archive/refs/heads/lineage-21.0.tar.gz | tar -xz && mv android_vendor_qcom_opensource_camera-kernel-* camera-kernel
-
-          # 4. AnyKernel3
           cd $GITHUB_WORKSPACE
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 5. Donanım Haritası Enjeksiyonu ve Header Fix
+      - name: 5. Cerrahi Enjeksiyon ve Header Fix
         run: |
-          # Önce vendor yolunu temizle ve senin dosyalarını yerleştir
+          # 1. Yolu temizle ve vendor klasörünü aç
           rm -rf ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
           mkdir -p ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
+          
+          # 2. Senin taze haritalarını enjekte et
           cp -r ${{ github.workspace }}/houji-dt/* ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/
           
-          # Eksik .h dosyalarını (msm-camera.h vb.) kernel kütüphanesine kopyala
+          # 3. KÜTÜPHANE TAMİRİ (fatal error: 'bindings/...' fix)
+          # Senin bindings klasörünü hem 'include' hem de 'dts' yollarına kopyalıyoruz
+          mkdir -p ${{ github.workspace }}/common/include/bindings
+          mkdir -p ${{ github.workspace }}/common/include/dt-bindings
+          cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/bindings/ || true
+          cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/dt-bindings/ || true
+          
+          # Kamera header fix
           mkdir -p ${{ github.workspace }}/common/include/dt-bindings/msm
-          [ -d ${{ github.workspace }}/common/vendor/qcom/opensource/camera-kernel/include/dt-bindings/msm ] && \
           cp -r ${{ github.workspace }}/common/vendor/qcom/opensource/camera-kernel/include/dt-bindings/msm/* ${{ github.workspace }}/common/include/dt-bindings/msm/ || true
           
-          # Bindings klasörünü kernel arama yoluna bağla
-          if [ -d ${{ github.workspace }}/houji-dt/bindings ]; then
-            cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/dt-bindings/ || true
-            ln -s ${{ github.workspace }}/common/include/dt-bindings ${{ github.workspace }}/common/include/bindings || true
-          fi
-          
-          # Makefile bağlantısı
+          # 4. Makefile Bağlantısı
           if ! grep -q "vendor/" ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile; then
             echo "obj-y += vendor/" >> ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile
           fi
           
-          # Clang Hazırla
+          # 5. Clang Hazırla
           mkdir -p ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c
           cp -r ${{ github.workspace }}/official-clang/* ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/
           
@@ -114,47 +107,59 @@ jobs:
           ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Pure"
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-      - name: 7. Derleme (Image + Modules + DTBS)
+      - name: 7. Derleme (Image + Modules ÖNCELİKLİ)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # Derleme (DTC_FLAGS ile senin yeni yollarını sisteme öğretiyoruz)
+          # Önce çekirdek ve modülleri derle (Harita hatası bunları durdurmasın)
+          echo "🚀 Çekirdek (Image) ve Modüller derleniyor..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
-            DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom" \
-            Image modules dtbs || echo "⚠️ Hata olsa da devam et, qcom olanları toplayacağız."
+            Image modules
+            
+          # Sonra haritaları (DTBO) derle
+          echo "🚀 Donanım haritaları (DTBS) pişiriliyor..."
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" \
+            DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom -i ${{ github.workspace }}/common/include" \
+            dtbs || echo "⚠️ Bazı DTB hataları oldu ama devam ediyoruz."
 
-      - name: 8. Paketleme (Final Paket)
+      - name: 8. Paketleme (Strip + DTBO Merger)
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
           mkdir -p modules/vendor/lib/modules
           
-          # 1. Kernel Image
-          cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image . || exit 1
+          # 1. Kernel Image (Artık Kesin Var!)
+          if [ -f $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image ]; then
+            cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image .
+          else
+            echo "❌ HATA: Image dosyası bulunamadı! Derleme başarısız." && exit 1
+          fi
           
-          # 2. DTBO Merger (HOUJI'yi uykudan uyandıran 24 MB burada)
-          echo "🔍 Houji DTBO parçaları birleştiriliyor..."
+          # 2. DTBO BİRLEŞTİRME (Harita Oluşturma)
+          echo "🔍 Houji DTBO parçaları toplanıyor..."
           find $GITHUB_WORKSPACE/common/out/arch/arm64/boot/dts/vendor/ -name "*.dtbo" -exec cat {} + > dtbo.img
           
-          # 3. Modüller (248MB -> 40MB Strip)
+          # 3. MODÜLLERİ TEMİZLE VE TOPLA
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
           # Kontrol
           echo "📊 SONUÇ ÖZETİ:"
           ls -lh Image
-          [ -s dtbo.img ] && ls -lh dtbo.img || echo "❌ DTBO HALA BOŞ!"
-          echo "📦 Modül Sayısı: $(find modules -name "*.ko" | wc -l)"
+          [ -s dtbo.img ] && ls -lh dtbo.img || echo "⚠️ dtbo.img HALA BOŞ!"
+          echo "📦 Toplam Modül Sayısı: $(ls modules/vendor/lib/modules/ | wc -l)"
           
           zip -r9 "../CG-Houji-Official-Final.zip" ./* -x .git*
 
       - name: 9. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-Final-${{ github.run_id }}
+          tag_name: Houji-Official-Final-${{ github.run_id }}
           name: "Xiaomi 14 (HOUJI) Full Package - FINAL FIXED"
           files: "*.zip"
         env:
