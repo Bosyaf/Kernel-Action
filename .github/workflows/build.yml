@@ -95,34 +95,40 @@ jobs:
             
           echo "BOOTHASH=Houji-Full-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-      - name: 8. Paketleme (Eksiksiz Toplama)
+      - name: 8. Paketleme (PROFESYONEL MODÜL TOPLAMA)
         run: |
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji Official Full Package/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji' anykernel.sh
-          
-          # 1. Image kopyala
-          cp ../common/out/arch/arm64/boot/Image .
-          
-          # 2. DTBO'ları bul ve birleştir (0 byte sorununu çözmek için tarıyoruz)
-          echo "🔍 Xiaomi/Qualcomm DTBO'ları aranıyor..."
-          # out içindeki tüm .dtbo dosyalarını bul ve tek bir dtbo.img yap
-          find ../common/out/arch/arm64/boot/dts/vendor/qcom/ -name "*.dtbo" -exec cat {} + > dtbo.img || echo "⚠️ DTBO bulunamadı!"
-          
-          # Kontrol: Eğer hala 0 byte ise daha geniş tara
-          if [ ! -s dtbo.img ]; then
-            find ../common/out -name "*.dtbo" -exec cat {} + > dtbo.img
-          fi
-
-          # 3. 248MB Modülleri kopyala
+          # 1. Klasörleri Hazırla
+          cd $GITHUB_WORKSPACE/AnyKernel3
           mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          echo "✅ Paket içeriği özeti:"
-          du -sh Image dtbo.img modules/
+          # 2. IMAGE KOPYALA (Zaten oluştuğunu biliyoruz)
+          cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image . || echo "❌ Image bulunamadı!"
           
-          zip -r "../CG-Houji-Official-Final.zip" ./*
+          # 3. MODÜLLERİ RESMİ YOLLA TOPLA (modules_install)
+          # Bu komut tüm .ko dosyalarını bulur ve AnyKernel içine düzgünce dizer
+          cd $GITHUB_WORKSPACE/common
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 INSTALL_MOD_PATH=$GITHUB_WORKSPACE/AnyKernel3/modules/vendor modules_install
+          
+          # 4. MODÜL KLASÖRÜNÜ DÜZENLE (Gereksiz alt klasörleri temizle)
+          # make modules_install "lib/modules/6.1.xxx" gibi bir yapı kurar, biz onu sadeleştiriyoruz
+          cd $GITHUB_WORKSPACE/AnyKernel3/modules/vendor
+          mv lib/modules/*/* . || echo "⚠️ Modüller taşınamadı!"
+          rm -rf lib/
+          
+          # 5. DTBO TOPLAMA (Tüm out klasörünü tara)
+          cd $GITHUB_WORKSPACE/AnyKernel3
+          echo "🔍 DTBO aranıyor..."
+          find $GITHUB_WORKSPACE/common/out -name "*.dtbo" -exec cat {} + > dtbo.img || echo "⚠️ DTBO bulunamadı!"
+          
+          # 6. KONTROL (Loglarda gör)
+          echo "📊 PAKET ÖZETİ:"
+          ls -lh Image
+          ls -lh dtbo.img
+          echo "📦 Toplam Modül Sayısı: $(find modules -name "*.ko" | wc -l)"
+          du -sh modules
+          
+          # 7. ZİPLE (Zorlayıcı mod)
+          zip -r9 "../CG-Houji-Official-Final.zip" ./* -x .git*
 
       - name: 9. Release
         uses: softprops/action-gh-release@v2
