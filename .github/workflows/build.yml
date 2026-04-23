@@ -78,12 +78,10 @@ jobs:
           HOUJI="${{ github.workspace }}/houji-dt"
           CLANG_DST="${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c"
 
-          # --- DTS vendor dizini ---
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
           mkdir -p ${COMMON}/arch/arm64/boot/dts/vendor
           cp -r ${HOUJI}/* ${COMMON}/arch/arm64/boot/dts/vendor/
 
-          # --- Bindings header'ları ---
           rm -rf ${COMMON}/include/bindings
           rm -rf ${COMMON}/include/dt-bindings/bindings
           mkdir -p ${COMMON}/include/bindings
@@ -94,7 +92,6 @@ jobs:
             cp -r ${HOUJI}/bindings/* ${COMMON}/include/dt-bindings/
           fi
 
-          # --- Vendor config dosyalarını kopyala ---
           if [ -d "${HOUJI}/configs" ]; then
             mkdir -p ${COMMON}/arch/arm64/configs/vendor/
             cp -f ${HOUJI}/configs/* ${COMMON}/arch/arm64/configs/vendor/
@@ -103,12 +100,10 @@ jobs:
             cp -f ${HOUJI}/arch/arm64/configs/vendor/* ${COMMON}/arch/arm64/configs/vendor/
           fi
 
-          # --- DTS Makefile vendor ekleme (duplicate korumalı) ---
           DTS_MK="${COMMON}/arch/arm64/boot/dts/Makefile"
           grep -qxF 'obj-y += vendor/' "$DTS_MK" \
             || echo "obj-y += vendor/" >> "$DTS_MK"
 
-          # --- Clang symlink ---
           mkdir -p "$(dirname ${CLANG_DST})"
           ln -sfn ${{ github.workspace }}/official-clang ${CLANG_DST}
 
@@ -120,59 +115,58 @@ jobs:
           STUB_FILE="${COMMON}/drivers/soc/qcom/cg_stubs.c"
           QCOM_MK="${COMMON}/drivers/soc/qcom/Makefile"
 
-          echo "🔧 ADIM A: Kaynak ağacındaki çakışan EXPORT_SYMBOL satırlarını devre dışı bırak"
+          echo "🔧 ADIM A: Hangi semboller built-in, hangileri modülde — tespit et"
 
           # ============================================================
           # Fonksiyon: Belirli bir sembolün EXPORT_SYMBOL satirini
           # kaynak agacinda bulup yorum satirina cevir.
-          # Stub'daki tanim built-in olacagi icin moduldeki export
-          # cikarilmali — yoksa "exported twice" hatasi olur.
+          # Sadece stub'da tanimlanacak semboller icin calistirilir.
           # ============================================================
           disable_module_export() {
             local symbol="$1"
-            local search_dir="$2"
-            echo "  🔍 Araniyor: ${symbol} -> ${search_dir}"
-            local files=$(grep -rl "EXPORT_SYMBOL.*${symbol}" "${search_dir}" 2>/dev/null || true)
-            for f in $files; do
-              # cg_stubs.c'yi atla
-              if echo "$f" | grep -q "cg_stubs.c"; then continue; fi
-              sed -i "s|^\(EXPORT_SYMBOL.*${symbol}.*\)|// CG_DISABLED: \1|" "$f"
-              echo "    ✅ Devre disi: $f"
+            shift
+            for search_dir in "$@"; do
+              local files=$(grep -rl "EXPORT_SYMBOL.*\b${symbol}\b" "${search_dir}" 2>/dev/null || true)
+              for f in $files; do
+                if echo "$f" | grep -q "cg_stubs.c"; then continue; fi
+                sed -i "s|^\(EXPORT_SYMBOL.*\b${symbol}\b.*\)|// CG_DISABLED: \1|" "$f"
+                echo "    ✅ Devre disi: $f -> ${symbol}"
+              done
             done
           }
 
-          # --- CRM modülü (drivers/soc/qcom/ ve drivers/interconnect/qcom/) ---
+          echo "🔧 ADIM B: Config sonrasi built-in olan sembollerin stub gerektirip gerekmedigini kontrol et"
+
+          # qcom_hwspinlock_bust → qcom_hwspinlock.c'de BUILT-IN olarak var
+          # CONFIG_HWSPINLOCK_QCOM=y oldugu icin stub'a GEREK YOK
+          # Bu sembol icin hicbir sey yapma!
+
+          # gh_get_irq, gh_put_irq → gunyah modülde, built-in kodlar referans veriyor
+          disable_module_export "gh_get_irq" "${COMMON}/arch/arm64" "${COMMON}/drivers"
+          disable_module_export "gh_put_irq" "${COMMON}/arch/arm64" "${COMMON}/drivers"
+
+          # crm_* → crm modülde, bcm-voter ve rpmh-rsc built-in
           disable_module_export "crm_write_bw_vote" "${COMMON}/drivers"
           disable_module_export "crm_get_device" "${COMMON}/drivers"
           disable_module_export "crm_dump_regs" "${COMMON}/drivers"
           disable_module_export "crm_dump_drv_regs" "${COMMON}/drivers"
 
-          # --- ICC Debug (drivers/interconnect/qcom/) ---
+          # icc debug → icc-rpmh built-in, debug modülde
           disable_module_export "qcom_icc_debug_register" "${COMMON}/drivers"
           disable_module_export "qcom_icc_debug_unregister" "${COMMON}/drivers"
 
-          # --- Gunyah (arch/arm64/gunyah/ ve drivers/) ---
-          disable_module_export "gh_rm_get_this_vmid" "${COMMON}/arch/arm64"
-          disable_module_export "gh_rm_get_this_vmid" "${COMMON}/drivers"
+          # gunyah rm → qtee_shmbridge built-in, gh modülde
+          disable_module_export "gh_rm_get_this_vmid" "${COMMON}/arch/arm64" "${COMMON}/drivers"
 
-          # --- HW Spinlock ---
-          disable_module_export "qcom_hwspinlock_bust" "${COMMON}/drivers"
-
-          # --- DMA buf ---
+          # dma buf → built-in referans, modülde tanim
           disable_module_export "qcom_is_dma_buf_file" "${COMMON}/drivers"
 
-          # --- Debug symbol ---
+          # debug symbol → built-in referans, modülde tanim
           disable_module_export "debug_symbol_lookup_name" "${COMMON}/drivers"
           disable_module_export "debug_symbol_available" "${COMMON}/drivers"
 
-          # --- Gunyah irq ---
-          disable_module_export "gh_get_irq" "${COMMON}/arch/arm64"
-          disable_module_export "gh_get_irq" "${COMMON}/drivers"
-          disable_module_export "gh_put_irq" "${COMMON}/arch/arm64"
-          disable_module_export "gh_put_irq" "${COMMON}/drivers"
-
           echo ""
-          echo "🔧 ADIM B: Stub dosyasi olustur (sadece eksik semboller icin)"
+          echo "🔧 ADIM C: Stub dosyasi (qcom_hwspinlock_bust HARIC — o zaten built-in)"
 
           cat << 'STUBEOF' > "${STUB_FILE}"
           #include <linux/module.h>
@@ -180,9 +174,11 @@ jobs:
           #include <linux/kernel.h>
 
           /* CG+ Stub: Built-in kodlarin ihtiyac duydugu ama
-             modullerde tanimlanan semboller icin boskoprular */
+             sadece modullerde tanimlanan semboller.
+             NOT: qcom_hwspinlock_bust BURADA YOK cunku
+             qcom_hwspinlock.c'de built-in olarak zaten var. */
 
-          /* --- CRM (bcm-voter.c ve rpmh-rsc.c built-in, crm modülde) --- */
+          /* --- CRM --- */
           void crm_write_bw_vote(void) {}
           EXPORT_SYMBOL(crm_write_bw_vote);
 
@@ -195,14 +191,14 @@ jobs:
           void crm_dump_drv_regs(void) {}
           EXPORT_SYMBOL(crm_dump_drv_regs);
 
-          /* --- ICC Debug (icc-rpmh.c built-in, debug modülde) --- */
+          /* --- ICC Debug --- */
           int qcom_icc_debug_register(void *provider) { return 0; }
           EXPORT_SYMBOL(qcom_icc_debug_register);
 
           void qcom_icc_debug_unregister(void *provider) {}
           EXPORT_SYMBOL(qcom_icc_debug_unregister);
 
-          /* --- Gunyah (qtee_shmbridge.c built-in, gh modülde) --- */
+          /* --- Gunyah --- */
           int gh_rm_get_this_vmid(void *vmid) { return 0; }
           EXPORT_SYMBOL(gh_rm_get_this_vmid);
 
@@ -211,10 +207,6 @@ jobs:
 
           void gh_put_irq(void) {}
           EXPORT_SYMBOL(gh_put_irq);
-
-          /* --- HW Spinlock --- */
-          void qcom_hwspinlock_bust(void *lock) {}
-          EXPORT_SYMBOL(qcom_hwspinlock_bust);
 
           /* --- DMA buf --- */
           bool qcom_is_dma_buf_file(void *file) { return false; }
@@ -231,11 +223,10 @@ jobs:
           MODULE_DESCRIPTION("CG+ stub symbols for built-in references");
           STUBEOF
 
-          # Makefile'a ekle (duplicate korumalı)
           grep -qxF 'obj-y += cg_stubs.o' "${QCOM_MK}" \
             || echo "obj-y += cg_stubs.o" >> "${QCOM_MK}"
 
-          echo "✅ Cerrahi stub yaması tamamlandı"
+          echo "✅ Cerrahi stub yaması tamamlandı (qcom_hwspinlock_bust hariç)"
 
       - name: 7. Config Merge ve Ayarlar
         run: |
@@ -328,7 +319,6 @@ jobs:
 
           mkdir -p modules/vendor/lib/modules
 
-          # --- Image ---
           if [ -f "${COMMON}/out/arch/arm64/boot/Image" ]; then
             cp ${COMMON}/out/arch/arm64/boot/Image .
             echo "✅ Image kopyalandı ($(ls -lh Image | awk '{print $5}'))"
@@ -336,14 +326,13 @@ jobs:
             echo "❌ Image bulunamadı!" && exit 1
           fi
 
-          # --- DTBO ---
           DTBO_COUNT=$(find ${COMMON}/out -name "*.dtbo" 2>/dev/null | wc -l)
           if [ "$DTBO_COUNT" -gt 0 ]; then
             if [ -f "${COMMON}/scripts/dtc/mkdtboimg.py" ]; then
               python3 ${COMMON}/scripts/dtc/mkdtboimg.py create dtbo.img \
                 $(find ${COMMON}/out -name "*.dtbo" | sort)
               echo "✅ dtbo.img oluşturuldu (mkdtboimg, ${DTBO_COUNT} overlay)"
-            elif python3 -c "import struct" 2>/dev/null; then
+            else
               find ${COMMON}/out -name "*.dtbo" | sort | xargs cat > dtbo.img
               echo "⚠️ dtbo.img oluşturuldu (cat fallback, ${DTBO_COUNT} overlay)"
             fi
@@ -351,20 +340,17 @@ jobs:
             echo "⚠️ DTBO dosyası bulunamadı"
           fi
 
-          # --- DTB ---
           DTB_COUNT=$(find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" 2>/dev/null | wc -l)
           if [ "$DTB_COUNT" -gt 0 ]; then
             find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" | sort | xargs cat > dtb
             echo "✅ DTB birleştirildi (${DTB_COUNT} dosya)"
           fi
 
-          # --- Modules ---
           find ${COMMON}/out -name "*.ko" -exec ${CLANG_BIN}/llvm-strip --strip-debug {} \;
           find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           KO_COUNT=$(find modules/vendor/lib/modules/ -name "*.ko" | wc -l)
           echo "✅ ${KO_COUNT} modül kopyalandı"
 
-          # --- ZIP ---
           zip -r9 "${{ github.workspace }}/CG-Houji-Official-Final.zip" ./* -x .git*
           ls -lh ${{ github.workspace }}/CG-Houji-Official-Final.zip
           echo "✅ Paketleme tamamlandı"
