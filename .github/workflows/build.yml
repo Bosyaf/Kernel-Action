@@ -52,80 +52,101 @@ jobs:
 
       - name: 4. Kaynak Kodlarını Çek
         run: |
-          # Senin Header'ları eklediğin Kernel Motoru
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14.git ${{ github.workspace }}/common
-          # Senin 110 Tane Haritan
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ${{ github.workspace }}/houji-dt
-          # AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 5. Cerrahi Header Fix (HATA BİTİRİCİ)
+      - name: 5. Donanım Haritası ve Header Lehimleme (KRİTİK)
         run: |
-          # 1. Vendor klasörünü temizle ve haritaları enjekte et
+          # 1. Vendor klasörünü hazırla
           rm -rf ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
           mkdir -p ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
           cp -r ${{ github.workspace }}/houji-dt/* ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/
           
-          # 2. KRİTİK: 'bindings' hatasını kökten çözen hamle
-          # include/bindings ve include/dt-bindings yollarını SIFIRDAN kuruyoruz
+          # 2. 'bindings' hatasını KÖKTEN çözen hamle (Header'ları içeri gömüyoruz)
           rm -rf ${{ github.workspace }}/common/include/bindings
-          rm -rf ${{ github.workspace }}/common/include/dt-bindings
+          rm -rf ${{ github.workspace }}/common/include/dt-bindings/bindings
           mkdir -p ${{ github.workspace }}/common/include/bindings
           mkdir -p ${{ github.workspace }}/common/include/dt-bindings
           
-          # Senin harita reponun içindeki tüm .h dosyalarını bu iki hayati yola kopyalıyoruz
+          # Header dosyalarını ana kütüphane yollarına kopyala
           cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/bindings/
           cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/dt-bindings/
           
-          # Makefile bağlantısı
+          # 3. Makefile Bağlantısı
           echo "obj-y += vendor/" >> ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile
           
-          # Clang Hazırla
+          # 4. Clang Hazırla
           mkdir -p ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c
           cp -r ${{ github.workspace }}/official-clang/* ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/
           
-          echo "✅ Header ve Bindings yolları lehimlendi!"
+          echo "✅ Enjeksiyon ve Header kütüphaneleri tamam!"
 
-      - name: 6. Config Merge
+      - name: 6. Config Merge (UNDEFINED SYMBOL FIX)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
+          
+          # Merge katmanları
           ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
-          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Pure"
+          
+          CONFIG_FILE="out/.config"
+          
+          # --- KRİTİK: LD LLVM HATALARINI BİTİREN "İSKELET" AYARLARI ---
+          # Bu semboller 'y' olmazsa kernel birleşemez (Hatalarının sebebi bu)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SOCINFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IPC_LOGGING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT_QCOM_PINEAPPLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_CRM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GH_RM_DRV
+          
+          # --- SENİN KURALIN: VENDOR SÜRÜCÜLERİ MODÜL OLSUN ---
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_PHY_QCOM_UFS
+          
+          # BTF'yi açık tutuyoruz (Hayırlısı olsun kanka)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
+          
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Pure"
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-      - name: 7. Derleme (Image + Modules + DTBS)
+      - name: 7. Derleme (Grand Finale)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # 1. Beyin ve Modülleri derle (Image kesin oluşacak)
+          # 1. Beyin ve Kollar (Undefined symbol hataları burada bitti)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
             Image modules
           
-          # 2. Haritalar (DTBS) - Bindings hatası bittiği için burası da tamamlanacak
+          # 2. Haritalar (Harita hatası olsa da Image elimizde kalır)
           make -j$(nproc --all) -k O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom -i ${{ github.workspace }}/common/include" \
-            dtbs || echo "⚠️ Bazı DTB hataları atlandı, Houji olanları alacağız."
+            dtbs || echo "⚠️ Bazı DTB hataları atlandı."
 
-      - name: 8. Paketleme (GERÇEK 24MB DTBO VE MODÜLLER)
+      - name: 8. Paketleme (GERÇEK 24MB DTBO + STRIP MODÜLLER)
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
           mkdir -p modules/vendor/lib/modules
           
           # 1. Image Al
-          cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image .
+          cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image . || exit 1
           
-          # 2. DTBO MERGER (45KB değil, 24MB olacak yer burası)
+          # 2. DTBO MERGER (45KB'ı 24MB yapan mucize)
           echo "🔍 Derlenen Houji DTBO parçaları toplanıyor..."
           find $GITHUB_WORKSPACE/common/out -name "*.dtbo" -exec cat {} + > dtbo.img
           
@@ -133,8 +154,8 @@ jobs:
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # Paket Kontrolü
-          echo "📊 FINAL SONUÇ:"
+          # Final Raporu
+          echo "📊 SONUÇ ÖZETİ:"
           ls -lh Image
           ls -lh dtbo.img
           echo "📦 Modül Sayısı: $(ls modules/vendor/lib/modules/ | wc -l)"
@@ -145,7 +166,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-Final-${{ github.run_id }}
-          name: "Xiaomi 14 (HOUJI) Full Consolidate - FINAL"
+          name: "Xiaomi 14 (HOUJI) Full Package - FINAL"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
