@@ -126,48 +126,21 @@ jobs:
           STUB_FILE="${COMMON}/drivers/soc/qcom/cg_stubs.c"
           QCOM_MK="${COMMON}/drivers/soc/qcom/Makefile"
 
-          echo "🔧 Eksik fonksiyonlar için stub'lar oluşturuluyor..."
-
-          cat << 'EOF' > "${STUB_FILE}"
-          #include <linux/module.h>
-          #include <linux/types.h>
-
-          __attribute__((weak)) void crm_write_bw_vote(void) {}
-          EXPORT_SYMBOL(crm_write_bw_vote);
-
-          __attribute__((weak)) void *crm_get_device(void) { return NULL; }
-          EXPORT_SYMBOL(crm_get_device);
-
-          __attribute__((weak)) int gh_get_irq(void) { return 0; }
-          EXPORT_SYMBOL(gh_get_irq);
-
-          __attribute__((weak)) void gh_put_irq(void) {}
-          EXPORT_SYMBOL(gh_put_irq);
-
-          __attribute__((weak)) bool qcom_is_dma_buf_file(void *file) { return false; }
-          EXPORT_SYMBOL(qcom_is_dma_buf_file);
-
-          __attribute__((weak)) const char *debug_symbol_lookup_name(unsigned long addr) { return NULL; }
-          EXPORT_SYMBOL(debug_symbol_lookup_name);
-
-          __attribute__((weak)) bool debug_symbol_available(void) { return false; }
-          EXPORT_SYMBOL(debug_symbol_available);
-
-          __attribute__((weak)) void qcom_hwspinlock_bust(void *lock) {}
-          EXPORT_SYMBOL(qcom_hwspinlock_bust);
-
-          __attribute__((weak)) void crm_dump_regs(void) {}
-          EXPORT_SYMBOL(crm_dump_regs);
-
-          __attribute__((weak)) void crm_dump_drv_regs(void) {}
-          EXPORT_SYMBOL(crm_dump_drv_regs);
-          EOF
-
-          # Duplicate korumalı Makefile ekleme
-          grep -qxF 'obj-y += cg_stubs.o' "${QCOM_MK}" \
-            || echo "obj-y += cg_stubs.o" >> "${QCOM_MK}"
-
-          echo "✅ Stub Yaması Tamam!"
+          echo "🔧 Stub dosyası artık gerekli değil — semboller zaten kaynak ağacında mevcut"
+          
+          # Eğer önceki çalışmadan stub kaldıysa temizle
+          if [ -f "${STUB_FILE}" ]; then
+            rm -f "${STUB_FILE}"
+            echo "🗑️ cg_stubs.c silindi"
+          fi
+          
+          # Makefile'dan stub referansını kaldır
+          if grep -q 'cg_stubs' "${QCOM_MK}"; then
+            sed -i '/cg_stubs/d' "${QCOM_MK}"
+            echo "🗑️ Makefile'dan cg_stubs referansı kaldırıldı"
+          fi
+          
+          echo "✅ Temizlik tamamlandı — stub'lara gerek yok"
 
       - name: 7. Config Merge ve Ayarlar
         run: |
