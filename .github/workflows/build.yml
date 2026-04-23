@@ -29,8 +29,7 @@ jobs:
       - name: Debug - Disk ve Workspace Kontrolü
         run: |
           echo "📁 Workspace: ${{ github.workspace }}"
-          pwd
-          df -h
+          pwd && df -h
 
       - name: 1. Paket Kurulumu
         run: |
@@ -39,20 +38,8 @@ jobs:
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd pahole
-          
-          # Pahole/dwarves güncel versiyonunu kur
-          PAHOLE_VER=$(pahole --version 2>/dev/null || echo "0")
-          echo "Mevcut pahole versiyonu: $PAHOLE_VER"
-          
-          # Kaynak koddan güncel dwarves/pahole derle
-          git clone --depth=1 -b v1.25 https://github.com/acmel/dwarves.git /tmp/dwarves
-          cd /tmp/dwarves
-          mkdir build && cd build
-          cmake -DCMAKE_INSTALL_PREFIX=/usr ..
-          make -j$(nproc)
-          sudo make install
-          echo "✅ Pahole güncellendi: $(pahole --version)"
+            pkg-config zstd pahole cmake
+          echo "✅ Pahole versiyonu: $(pahole --version)"
 
       - name: 2. Clang Cache
         id: cache-clang
@@ -105,55 +92,150 @@ jobs:
           if [ -d "${HOUJI}/bindings" ]; then
             cp -r ${HOUJI}/bindings/* ${COMMON}/include/bindings/
             cp -r ${HOUJI}/bindings/* ${COMMON}/include/dt-bindings/
-          else
-            echo "⚠️ bindings dizini bulunamadı, atlanıyor"
           fi
 
-          # --- Vendor config dosyalarını da kopyala (KRITIK DÜZELTME) ---
+          # --- Vendor config dosyalarını kopyala ---
           if [ -d "${HOUJI}/configs" ]; then
             mkdir -p ${COMMON}/arch/arm64/configs/vendor/
             cp -f ${HOUJI}/configs/* ${COMMON}/arch/arm64/configs/vendor/
-            echo "✅ Vendor config dosyaları kopyalandı"
           elif [ -d "${HOUJI}/arch/arm64/configs/vendor" ]; then
             mkdir -p ${COMMON}/arch/arm64/configs/vendor/
             cp -f ${HOUJI}/arch/arm64/configs/vendor/* ${COMMON}/arch/arm64/configs/vendor/
-            echo "✅ Vendor config dosyaları (alt dizinden) kopyalandı"
-          else
-            echo "⚠️ Vendor config dizini bulunamadı — zaten common repo'da olabilir"
           fi
 
-          # --- DTS Makefile'a vendor ekle (duplicate korumalı) ---
+          # --- DTS Makefile vendor ekleme (duplicate korumalı) ---
           DTS_MK="${COMMON}/arch/arm64/boot/dts/Makefile"
           grep -qxF 'obj-y += vendor/' "$DTS_MK" \
             || echo "obj-y += vendor/" >> "$DTS_MK"
 
-          # --- Clang symlink (kopyalama yerine, hız kazanımı) ---
+          # --- Clang symlink ---
           mkdir -p "$(dirname ${CLANG_DST})"
           ln -sfn ${{ github.workspace }}/official-clang ${CLANG_DST}
 
           echo "✅ Lehimleme tamamlandı"
 
-      - name: 6. Stub Injection (Eksik Sembol Yaması)
+      - name: 6. Cerrahi Stub Injection + Çakışma Önleme
         run: |
           COMMON="${{ github.workspace }}/common"
           STUB_FILE="${COMMON}/drivers/soc/qcom/cg_stubs.c"
           QCOM_MK="${COMMON}/drivers/soc/qcom/Makefile"
 
-          echo "🔧 Stub dosyası artık gerekli değil — semboller zaten kaynak ağacında mevcut"
-          
-          # Eğer önceki çalışmadan stub kaldıysa temizle
-          if [ -f "${STUB_FILE}" ]; then
-            rm -f "${STUB_FILE}"
-            echo "🗑️ cg_stubs.c silindi"
-          fi
-          
-          # Makefile'dan stub referansını kaldır
-          if grep -q 'cg_stubs' "${QCOM_MK}"; then
-            sed -i '/cg_stubs/d' "${QCOM_MK}"
-            echo "🗑️ Makefile'dan cg_stubs referansı kaldırıldı"
-          fi
-          
-          echo "✅ Temizlik tamamlandı — stub'lara gerek yok"
+          echo "🔧 ADIM A: Kaynak ağacındaki çakışan EXPORT_SYMBOL satırlarını devre dışı bırak"
+
+          # ============================================================
+          # Fonksiyon: Belirli bir sembolün EXPORT_SYMBOL satirini
+          # kaynak agacinda bulup yorum satirina cevir.
+          # Stub'daki tanim built-in olacagi icin moduldeki export
+          # cikarilmali — yoksa "exported twice" hatasi olur.
+          # ============================================================
+          disable_module_export() {
+            local symbol="$1"
+            local search_dir="$2"
+            echo "  🔍 Araniyor: ${symbol} -> ${search_dir}"
+            local files=$(grep -rl "EXPORT_SYMBOL.*${symbol}" "${search_dir}" 2>/dev/null || true)
+            for f in $files; do
+              # cg_stubs.c'yi atla
+              if echo "$f" | grep -q "cg_stubs.c"; then continue; fi
+              sed -i "s|^\(EXPORT_SYMBOL.*${symbol}.*\)|// CG_DISABLED: \1|" "$f"
+              echo "    ✅ Devre disi: $f"
+            done
+          }
+
+          # --- CRM modülü (drivers/soc/qcom/ ve drivers/interconnect/qcom/) ---
+          disable_module_export "crm_write_bw_vote" "${COMMON}/drivers"
+          disable_module_export "crm_get_device" "${COMMON}/drivers"
+          disable_module_export "crm_dump_regs" "${COMMON}/drivers"
+          disable_module_export "crm_dump_drv_regs" "${COMMON}/drivers"
+
+          # --- ICC Debug (drivers/interconnect/qcom/) ---
+          disable_module_export "qcom_icc_debug_register" "${COMMON}/drivers"
+          disable_module_export "qcom_icc_debug_unregister" "${COMMON}/drivers"
+
+          # --- Gunyah (arch/arm64/gunyah/ ve drivers/) ---
+          disable_module_export "gh_rm_get_this_vmid" "${COMMON}/arch/arm64"
+          disable_module_export "gh_rm_get_this_vmid" "${COMMON}/drivers"
+
+          # --- HW Spinlock ---
+          disable_module_export "qcom_hwspinlock_bust" "${COMMON}/drivers"
+
+          # --- DMA buf ---
+          disable_module_export "qcom_is_dma_buf_file" "${COMMON}/drivers"
+
+          # --- Debug symbol ---
+          disable_module_export "debug_symbol_lookup_name" "${COMMON}/drivers"
+          disable_module_export "debug_symbol_available" "${COMMON}/drivers"
+
+          # --- Gunyah irq ---
+          disable_module_export "gh_get_irq" "${COMMON}/arch/arm64"
+          disable_module_export "gh_get_irq" "${COMMON}/drivers"
+          disable_module_export "gh_put_irq" "${COMMON}/arch/arm64"
+          disable_module_export "gh_put_irq" "${COMMON}/drivers"
+
+          echo ""
+          echo "🔧 ADIM B: Stub dosyasi olustur (sadece eksik semboller icin)"
+
+          cat << 'STUBEOF' > "${STUB_FILE}"
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <linux/kernel.h>
+
+          /* CG+ Stub: Built-in kodlarin ihtiyac duydugu ama
+             modullerde tanimlanan semboller icin boskoprular */
+
+          /* --- CRM (bcm-voter.c ve rpmh-rsc.c built-in, crm modülde) --- */
+          void crm_write_bw_vote(void) {}
+          EXPORT_SYMBOL(crm_write_bw_vote);
+
+          void *crm_get_device(void) { return NULL; }
+          EXPORT_SYMBOL(crm_get_device);
+
+          void crm_dump_regs(void) {}
+          EXPORT_SYMBOL(crm_dump_regs);
+
+          void crm_dump_drv_regs(void) {}
+          EXPORT_SYMBOL(crm_dump_drv_regs);
+
+          /* --- ICC Debug (icc-rpmh.c built-in, debug modülde) --- */
+          int qcom_icc_debug_register(void *provider) { return 0; }
+          EXPORT_SYMBOL(qcom_icc_debug_register);
+
+          void qcom_icc_debug_unregister(void *provider) {}
+          EXPORT_SYMBOL(qcom_icc_debug_unregister);
+
+          /* --- Gunyah (qtee_shmbridge.c built-in, gh modülde) --- */
+          int gh_rm_get_this_vmid(void *vmid) { return 0; }
+          EXPORT_SYMBOL(gh_rm_get_this_vmid);
+
+          int gh_get_irq(void) { return 0; }
+          EXPORT_SYMBOL(gh_get_irq);
+
+          void gh_put_irq(void) {}
+          EXPORT_SYMBOL(gh_put_irq);
+
+          /* --- HW Spinlock --- */
+          void qcom_hwspinlock_bust(void *lock) {}
+          EXPORT_SYMBOL(qcom_hwspinlock_bust);
+
+          /* --- DMA buf --- */
+          bool qcom_is_dma_buf_file(void *file) { return false; }
+          EXPORT_SYMBOL(qcom_is_dma_buf_file);
+
+          /* --- Debug symbol --- */
+          const char *debug_symbol_lookup_name(unsigned long addr) { return NULL; }
+          EXPORT_SYMBOL(debug_symbol_lookup_name);
+
+          bool debug_symbol_available(void) { return false; }
+          EXPORT_SYMBOL(debug_symbol_available);
+
+          MODULE_LICENSE("GPL");
+          MODULE_DESCRIPTION("CG+ stub symbols for built-in references");
+          STUBEOF
+
+          # Makefile'a ekle (duplicate korumalı)
+          grep -qxF 'obj-y += cg_stubs.o' "${QCOM_MK}" \
+            || echo "obj-y += cg_stubs.o" >> "${QCOM_MK}"
+
+          echo "✅ Cerrahi stub yaması tamamlandı"
 
       - name: 7. Config Merge ve Ayarlar
         run: |
@@ -161,10 +243,8 @@ jobs:
           CLANG_BIN="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin"
           export PATH="${CLANG_BIN}:$PATH"
 
-          # --- Base defconfig ---
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
 
-          # --- Vendor config merge (varsa) ---
           MERGE_CONFIGS="out/.config"
           for cfg in \
             arch/arm64/configs/vendor/pineapple_GKI.config \
@@ -183,12 +263,10 @@ jobs:
 
           CONFIG_FILE="out/.config"
 
-          # --- Debug birimlerini kapat ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MSM_MINIDUMP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_QCOM_MINIDUMP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_IPC_LOGGING
 
-          # --- Platform mekanizması ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
@@ -198,18 +276,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HWSPINLOCK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HWSPINLOCK_QCOM
 
-          # --- Modüller ---
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_PHY_QCOM_UFS
-
-          # --- Genel ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Pure"
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-          echo "✅ Config hazır"
+          echo "✅ Final config hazır"
           grep "CONFIG_LOCALVERSION" out/.config
 
       - name: 8. Derleme - Image ve Modules
@@ -225,6 +297,9 @@ jobs:
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
             Image modules
 
+          echo "✅ Image ve modüller derlendi"
+          ls -lh out/arch/arm64/boot/Image
+
       - name: 8b. Derleme - DTBs
         run: |
           cd ${{ github.workspace }}/common
@@ -237,11 +312,10 @@ jobs:
             DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom -i ${{ github.workspace }}/common/include" \
             dtbs 2>&1 | tee ${{ github.workspace }}/dtbs_build.log
 
-          # DTB hata kontrolü
-          if grep -ci "error:" ${{ github.workspace }}/dtbs_build.log; then
-            echo "⚠️ DTB derleme hataları tespit edildi!"
-            grep -i "error:" ${{ github.workspace }}/dtbs_build.log
-            echo "Devam ediliyor ama kontrol et..."
+          DTB_ERRORS=$(grep -ci "error:" ${{ github.workspace }}/dtbs_build.log || true)
+          if [ "$DTB_ERRORS" -gt 0 ]; then
+            echo "⚠️ ${DTB_ERRORS} DTB hatası tespit edildi"
+            grep -i "error:" ${{ github.workspace }}/dtbs_build.log | head -20
           else
             echo "✅ DTB derleme başarılı"
           fi
@@ -257,50 +331,45 @@ jobs:
           # --- Image ---
           if [ -f "${COMMON}/out/arch/arm64/boot/Image" ]; then
             cp ${COMMON}/out/arch/arm64/boot/Image .
-            echo "✅ Image kopyalandı"
+            echo "✅ Image kopyalandı ($(ls -lh Image | awk '{print $5}'))"
           else
-            echo "❌ Image bulunamadı!"
-            exit 1
+            echo "❌ Image bulunamadı!" && exit 1
           fi
 
           # --- DTBO ---
-          DTBO_FILES=$(find ${COMMON}/out -name "*.dtbo" 2>/dev/null)
-          if [ -n "$DTBO_FILES" ]; then
-            # mkdtboimg.py varsa onu kullan, yoksa cat fallback
+          DTBO_COUNT=$(find ${COMMON}/out -name "*.dtbo" 2>/dev/null | wc -l)
+          if [ "$DTBO_COUNT" -gt 0 ]; then
             if [ -f "${COMMON}/scripts/dtc/mkdtboimg.py" ]; then
               python3 ${COMMON}/scripts/dtc/mkdtboimg.py create dtbo.img \
                 $(find ${COMMON}/out -name "*.dtbo" | sort)
-              echo "✅ dtbo.img (mkdtboimg) oluşturuldu"
-            else
+              echo "✅ dtbo.img oluşturuldu (mkdtboimg, ${DTBO_COUNT} overlay)"
+            elif python3 -c "import struct" 2>/dev/null; then
               find ${COMMON}/out -name "*.dtbo" | sort | xargs cat > dtbo.img
-              echo "⚠️ dtbo.img (cat fallback) oluşturuldu — mkdtboimg.py bulunamadı"
+              echo "⚠️ dtbo.img oluşturuldu (cat fallback, ${DTBO_COUNT} overlay)"
             fi
           else
-            echo "⚠️ DTBO dosyası bulunamadı, atlanıyor"
+            echo "⚠️ DTBO dosyası bulunamadı"
           fi
 
           # --- DTB ---
-          DTB_FILES=$(find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" 2>/dev/null)
-          if [ -n "$DTB_FILES" ]; then
+          DTB_COUNT=$(find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" 2>/dev/null | wc -l)
+          if [ "$DTB_COUNT" -gt 0 ]; then
             find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" | sort | xargs cat > dtb
-            echo "✅ DTB birleştirildi"
-          else
-            echo "⚠️ DTB dosyası bulunamadı"
+            echo "✅ DTB birleştirildi (${DTB_COUNT} dosya)"
           fi
 
           # --- Modules ---
           find ${COMMON}/out -name "*.ko" -exec ${CLANG_BIN}/llvm-strip --strip-debug {} \;
           find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-
           KO_COUNT=$(find modules/vendor/lib/modules/ -name "*.ko" | wc -l)
           echo "✅ ${KO_COUNT} modül kopyalandı"
 
           # --- ZIP ---
           zip -r9 "${{ github.workspace }}/CG-Houji-Official-Final.zip" ./* -x .git*
-
           ls -lh ${{ github.workspace }}/CG-Houji-Official-Final.zip
+          echo "✅ Paketleme tamamlandı"
 
-      - name: 10. DTB Build Log Upload (Debug)
+      - name: 10. DTB Build Log (Debug Artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
