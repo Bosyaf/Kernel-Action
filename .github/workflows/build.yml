@@ -35,7 +35,7 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
 
-      - name: 2. Clang r487747c Önbellek (Cache) Kontrolü
+      - name: 2. Clang r487747c Önbellek (Cache)
         id: cache-clang
         uses: actions/cache@v4
         with:
@@ -50,102 +50,102 @@ jobs:
           cp -r ${{ github.workspace }}/clang-repo/clang-r487747c/* ${{ github.workspace }}/official-clang/
           rm -rf ${{ github.workspace }}/clang-repo
 
-      - name: 4. Kaynak Kodlarını Çek (Kernel + DeviceTree)
+      - name: 4. Kaynak Kodlarını Çek
         run: |
-          # 1. Kernel Ana Motoru (mvaisakh)
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git ${{ github.workspace }}/common
-          # 2. Senin Taze Donanım Haritaların (Bosyaf)
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ${{ github.workspace }}/houji-dt
-          # 3. AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 5. Donanım Haritası Enjeksiyonu (KESİN ÇÖZÜM)
+      - name: 5. Donanım Haritası ve Header Enjeksiyonu (FIX)
         run: |
-          # Mevcut 'vendor' çakışmasını (dosya/link) kökten siliyoruz
+          # Önce yolu temizle ve vendor klasörünü oluştur
           rm -rf ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
-          
-          # Şimdi tertemiz bir vendor klasörü oluşturuyoruz
           mkdir -p ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
           
-          # Senin taze dosyalarını kernel motorunun içine kopyalıyoruz
+          # 1. Senin taze dosyalarını (qcom ve bindings) enjekte et
           cp -r ${{ github.workspace }}/houji-dt/* ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/
           
-          # Kernel'ın ana Makefile'ına senin yeni klasörünü bağlıyoruz
+          # 2. KRİTİK: 'bindings' klasörünü kernel'ın ana include yoluna linkle
+          # Bu sayede <bindings/qcom,...> hatası çözülür.
+          mkdir -p ${{ github.workspace }}/common/include/dt-bindings
+          ln -s ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/bindings ${{ github.workspace }}/common/include/bindings
+          
+          # 3. Ana Makefile bağlantısı
           if ! grep -q "vendor/" ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile; then
             echo "obj-y += vendor/" >> ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile
           fi
           
-          # Clang'i kernelin beklediği yola yerleştir
+          # 4. Clang hazırlığı
           mkdir -p ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c
           cp -r ${{ github.workspace }}/official-clang/* ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/
           
-          echo "✅ Enjeksiyon tamam: Çakışan dosyalar silindi ve yeni haritalar bağlandı!"
+          echo "✅ Enjeksiyon ve Header bağlantıları tamam!"
 
-      - name: 6. HOUJI Full Config Merge
+      - name: 6. Config Merge
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
-          
-          # Adım adım birleştirme (Xiaomi Mühendisliği)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
-          
           ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
-          
           ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-Houji-Pure"
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-      - name: 7. Derleme (Image + Modules + DTBS)
+      - name: 7. Derleme (Step-by-Step Recovery)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # Derleme (DTS parçalarını üretmek için dtbs dahil edildi)
+          # Önce Image ve modülleri derliyoruz (Hata alsa da dursun istemiyoruz)
+          echo "🚀 Çekirdek ve Modüller derleniyor..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
-            Image modules dtbs || echo "⚠️ Bazı DTB hataları olsa da qcom olanları toplayacağız."
+            Image modules
+          
+          # Sonra DTBS derlemesine geçiyoruz (DTC include path ekleyerek)
+          echo "🚀 Donanım haritaları pişiriliyor..."
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" \
+            DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor" \
+            dtbs || echo "⚠️ Bazı DTB'ler hata verdi ama biz qcom'u toplayacağız."
 
-      - name: 8. Paketleme (Strip + DTBO Merger + Modules)
+      - name: 8. Paketleme (Final Fix)
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
           mkdir -p modules/vendor/lib/modules
           
-          # 1. Kernel Image
-          cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image .
+          # Image kontrolü ve kopyalama
+          if [ -f $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image ]; then
+            cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image .
+          else
+            echo "❌ HATA: Image dosyası üretilemedi!" && exit 1
+          fi
           
-          # 2. DTBO BİRLEŞTİRME (Senin enjekte ettiğin klasörü hedef alır)
-          echo "🔍 Derlenen Houji DTBO parçaları birleştiriliyor..."
+          # DTBO Merger (SADECE SENİN ENJEKTE ETTİĞİN KLASÖRÜ TARA)
+          echo "🔍 Derlenen Houji DTBO parçaları toplanıyor..."
           find $GITHUB_WORKSPACE/common/out/arch/arm64/boot/dts/vendor/ -name "*.dtbo" -exec cat {} + > dtbo.img
           
-          # 3. MODÜLLERİ TEMİZLE VE TOPLA (248MB -> 40MB)
-          echo "🔍 Modüller temizleniyor (Strip)..."
+          # Modülleri temizle ve kopyala
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # Sonuç Kontrolü
-          echo "📊 SONUÇ ÖZETİ:"
+          echo "📊 PAKET ÖZETİ:"
           ls -lh Image
-          ls -lh dtbo.img
+          [ -s dtbo.img ] && ls -lh dtbo.img || echo "⚠️ dtbo.img hala boş!"
           echo "📦 Modül Sayısı: $(find modules -name "*.ko" | wc -l)"
-          du -sh modules/vendor/lib/modules/
           
           zip -r9 "../CG-Houji-Official-Final.zip" ./* -x .git*
 
       - name: 9. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-Final-${{ github.run_id }}
-          name: "Xiaomi 14 (HOUJI) Full Consolidate Final"
-          body: |
-            - Build: Houji Full (Enjected DTS)
-            - Kernel: 34MB Image (Official Clang)
-            - DTBO: Auto-Merged (~24MB expected)
-            - Modules: Full Driver Set (Stripped)
+          tag_name: Houji-Fixed-${{ github.run_id }}
+          name: "Xiaomi 14 (HOUJI) Full Package - Header Fixed"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
