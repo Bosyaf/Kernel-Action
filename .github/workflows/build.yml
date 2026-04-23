@@ -1,4 +1,4 @@
-name: CG+ Houji Pure Engineering Final Build
+name: CG+ Houji Full Pure Engineering Final
 
 permissions:
   contents: write
@@ -35,7 +35,7 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
 
-      - name: 2. Clang r487747c Önbellek (Cache)
+      - name: 2. Clang r487747c Önbellek (Cache) Kontrolü
         id: cache-clang
         uses: actions/cache@v4
         with:
@@ -52,30 +52,36 @@ jobs:
 
       - name: 4. Kaynak Kodlarını Çek (Kernel + DeviceTree)
         run: |
-          # Kernel Kaynağı (kplatform)
+          # 1. Kernel Ana Motoru (mvaisakh)
           git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14.git ${{ github.workspace }}/common
-          # Senin taze Device Tree Kaynağın
+          # 2. Senin Taze Donanım Haritaların (Bosyaf)
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ${{ github.workspace }}/houji-dt
-          # AnyKernel3
+          # 3. AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-      - name: 5. Donanım Haritası Enjeksiyonu (Mühendislik Adımı)
+      - name: 5. Donanım Haritası Enjeksiyonu (HAYATİ ADIM)
         run: |
-          # Kernel kaynağındaki boş dts/vendor klasörünü temizle ve senin taze dosyalarını oraya çak!
-          rm -rf ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/*
+          # common içinde olmayan 'vendor' klasör hiyerarşisini oluşturuyoruz
+          mkdir -p ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
+          
+          # Senin taze dosyalarını (qcom, bindings vb.) kernel motorunun içine enjekte ediyoruz
           cp -r ${{ github.workspace }}/houji-dt/* ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/
           
-          # Clang'i kaynağın beklediği yere yerleştir
+          # Kernel'ın ana Makefile'ını senin yeni klasörüne bakması için bağlıyoruz
+          echo "obj-y += vendor/" >> ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile
+          
+          # Clang'i kernelin beklediği yola yerleştir
           mkdir -p ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c
           cp -r ${{ github.workspace }}/official-clang/* ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/
           
-          echo "✅ Donanım haritaları enjekte edildi ve Clang hazırlandı!"
+          echo "✅ Enjeksiyon ve hazırlık tamamlandı!"
 
       - name: 6. HOUJI Full Config Merge
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
+          # Sırasıyla merge: GKI -> Pineapple -> Houji GKI -> Houji Consolidate
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
           
           ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
@@ -91,32 +97,32 @@ jobs:
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # Image ve Modülleri derle
+          # Derlemeyi başlat (Image, Sürücüler ve Donanım Haritası)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
-            Image modules dtbs || echo "⚠️ DTBS derlemesinde bazı uyarılar olabilir, devam ediyoruz."
+            Image modules dtbs || echo "⚠️ Bazı DTB hataları olabilir, devam ediyoruz..."
 
-      - name: 8. Paketleme (Strip + DTBO Merger + Modüller)
+      - name: 8. Paketleme (Strip + DTBO Merger)
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
           mkdir -p modules/vendor/lib/modules
           
-          # 1. Kernel Image
+          # 1. Kernel Image Al
           cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image .
           
-          # 2. DTBO MERGER (İşte senin 24 MB burada oluşacak!)
-          echo "🔍 Enjekte edilen dosyalar birleştiriliyor..."
-          find $GITHUB_WORKSPACE/common/out -name "*.dtbo" -exec cat {} + > dtbo.img
+          # 2. DTBO BİRLEŞTİRME (Senin 24 MB burada oluşuyor!)
+          # out içindeki tüm .dtbo parçalarını bul ve tek dosya yap
+          find $GITHUB_WORKSPACE/common/out/arch/arm64/boot/dts/vendor/ -name "*.dtbo" -exec cat {} + > dtbo.img
           
-          # 3. MODÜL TEMİZLİĞİ (248MB -> 40MB)
-          echo "🔍 Modüller temizleniyor (Strip)..."
+          # 3. MODÜLLERİ TEMİZLE VE TOPLA (248MB -> 40MB)
+          echo "🔍 Modüller temizleniyor..."
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # Kontrol Logları
+          # Paket Özeti
           echo "📊 SONUÇ ÖZETİ:"
           ls -lh Image
           ls -lh dtbo.img
@@ -128,13 +134,13 @@ jobs:
       - name: 9. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-Final-${{ github.run_id }}
-          name: "Xiaomi 14 (HOUJI) Full Consolidate Final"
+          tag_name: Houji-Official-${{ github.run_id }}
+          name: "Xiaomi 14 (HOUJI) Full Package - FINAL"
           body: |
-            - Build: Houji Full (Device Tree Enjected)
-            - Kernel: 34MB Image
-            - DTBO: Auto-Merged (24MB target)
-            - Modules: Full Set (Cleaned with Strip)
+            - Build: Houji Full (Consolidate)
+            - Kernel: Official Clang r487747c
+            - DTBO: Auto-Merged from Enjected DTS
+            - Modules: Full Set (Stripped)
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
