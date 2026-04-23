@@ -26,6 +26,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug - Disk ve Workspace Kontrolü
+        run: |
+          echo "📁 Workspace: ${{ github.workspace }}"
+          pwd
+          df -h
+
       - name: 1. Paket Kurulumu
         run: |
           sudo apt update -qq
@@ -46,40 +52,83 @@ jobs:
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p ${{ github.workspace }}/official-clang
-          git clone --depth=1 -b android14-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ${{ github.workspace }}/clang-repo
+          git clone --depth=1 -b android14-release \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            ${{ github.workspace }}/clang-repo
           cp -r ${{ github.workspace }}/clang-repo/clang-r487747c/* ${{ github.workspace }}/official-clang/
           rm -rf ${{ github.workspace }}/clang-repo
 
       - name: 4. Kaynak Kodlarını Çek
         run: |
-          git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14.git ${{ github.workspace }}/common
-          git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ${{ github.workspace }}/houji-dt
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          git clone --depth=1 -b kplatform \
+            https://github.com/Bosyaf/xiaomi14.git \
+            ${{ github.workspace }}/common
+
+          git clone --depth=1 -b kplatform \
+            https://github.com/Bosyaf/xiaomi14-devicetrees.git \
+            ${{ github.workspace }}/houji-dt
+
+          git clone --depth=1 \
+            https://github.com/osm0sis/AnyKernel3.git \
+            ${{ github.workspace }}/AnyKernel3
 
       - name: 5. Donanım Haritası ve Header Lehimleme
         run: |
-          rm -rf ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
-          mkdir -p ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
-          cp -r ${{ github.workspace }}/houji-dt/* ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/
-          
-          rm -rf ${{ github.workspace }}/common/include/bindings
-          rm -rf ${{ github.workspace }}/common/include/dt-bindings/bindings
-          mkdir -p ${{ github.workspace }}/common/include/bindings
-          mkdir -p ${{ github.workspace }}/common/include/dt-bindings
-          
-          cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/bindings/
-          cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/dt-bindings/
-          
-          echo "obj-y += vendor/" >> ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile
-          
-          mkdir -p ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c
-          cp -r ${{ github.workspace }}/official-clang/* ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/
+          COMMON="${{ github.workspace }}/common"
+          HOUJI="${{ github.workspace }}/houji-dt"
+          CLANG_DST="${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c"
 
-      - name: 6. KÖK ÇÖZÜM - Stub Injection (Eksik Sembol Yaması)
+          # --- DTS vendor dizini ---
+          rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
+          mkdir -p ${COMMON}/arch/arm64/boot/dts/vendor
+          cp -r ${HOUJI}/* ${COMMON}/arch/arm64/boot/dts/vendor/
+
+          # --- Bindings header'ları ---
+          rm -rf ${COMMON}/include/bindings
+          rm -rf ${COMMON}/include/dt-bindings/bindings
+          mkdir -p ${COMMON}/include/bindings
+          mkdir -p ${COMMON}/include/dt-bindings
+
+          if [ -d "${HOUJI}/bindings" ]; then
+            cp -r ${HOUJI}/bindings/* ${COMMON}/include/bindings/
+            cp -r ${HOUJI}/bindings/* ${COMMON}/include/dt-bindings/
+          else
+            echo "⚠️ bindings dizini bulunamadı, atlanıyor"
+          fi
+
+          # --- Vendor config dosyalarını da kopyala (KRITIK DÜZELTME) ---
+          if [ -d "${HOUJI}/configs" ]; then
+            mkdir -p ${COMMON}/arch/arm64/configs/vendor/
+            cp -f ${HOUJI}/configs/* ${COMMON}/arch/arm64/configs/vendor/
+            echo "✅ Vendor config dosyaları kopyalandı"
+          elif [ -d "${HOUJI}/arch/arm64/configs/vendor" ]; then
+            mkdir -p ${COMMON}/arch/arm64/configs/vendor/
+            cp -f ${HOUJI}/arch/arm64/configs/vendor/* ${COMMON}/arch/arm64/configs/vendor/
+            echo "✅ Vendor config dosyaları (alt dizinden) kopyalandı"
+          else
+            echo "⚠️ Vendor config dizini bulunamadı — zaten common repo'da olabilir"
+          fi
+
+          # --- DTS Makefile'a vendor ekle (duplicate korumalı) ---
+          DTS_MK="${COMMON}/arch/arm64/boot/dts/Makefile"
+          grep -qxF 'obj-y += vendor/' "$DTS_MK" \
+            || echo "obj-y += vendor/" >> "$DTS_MK"
+
+          # --- Clang symlink (kopyalama yerine, hız kazanımı) ---
+          mkdir -p "$(dirname ${CLANG_DST})"
+          ln -sfn ${{ github.workspace }}/official-clang ${CLANG_DST}
+
+          echo "✅ Lehimleme tamamlandı"
+
+      - name: 6. Stub Injection (Eksik Sembol Yaması)
         run: |
-          echo "🔧 Eksik olan debug ve minidump fonksiyonları için içi boş köprüler (stub) oluşturuluyor..."
-          
-          cat << 'EOF' > ${{ github.workspace }}/common/drivers/soc/qcom/cg_stubs.c
+          COMMON="${{ github.workspace }}/common"
+          STUB_FILE="${COMMON}/drivers/soc/qcom/cg_stubs.c"
+          QCOM_MK="${COMMON}/drivers/soc/qcom/Makefile"
+
+          echo "🔧 Eksik fonksiyonlar için stub'lar oluşturuluyor..."
+
+          cat << 'EOF' > "${STUB_FILE}"
           #include <linux/module.h>
           #include <linux/types.h>
 
@@ -113,30 +162,47 @@ jobs:
           __attribute__((weak)) void crm_dump_drv_regs(void) {}
           EXPORT_SYMBOL(crm_dump_drv_regs);
           EOF
-          
-          # Bu sahte dosyayı kernelin derleme listesine ekliyoruz
-          echo "obj-y += cg_stubs.o" >> ${{ github.workspace }}/common/drivers/soc/qcom/Makefile
-          echo "✅ Bypass Yaması Tamam!"
+
+          # Duplicate korumalı Makefile ekleme
+          grep -qxF 'obj-y += cg_stubs.o' "${QCOM_MK}" \
+            || echo "obj-y += cg_stubs.o" >> "${QCOM_MK}"
+
+          echo "✅ Stub Yaması Tamam!"
 
       - name: 7. Config Merge ve Ayarlar
         run: |
           cd ${{ github.workspace }}/common
-          export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
+          CLANG_BIN="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin"
+          export PATH="${CLANG_BIN}:$PATH"
+
+          # --- Base defconfig ---
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
-          
-          ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
+
+          # --- Vendor config merge (varsa) ---
+          MERGE_CONFIGS="out/.config"
+          for cfg in \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
-            arch/arm64/configs/vendor/houji_consolidate.config
-          
+            arch/arm64/configs/vendor/houji_consolidate.config; do
+            if [ -f "$cfg" ]; then
+              MERGE_CONFIGS="$MERGE_CONFIGS $cfg"
+              echo "✅ Merge edilecek: $cfg"
+            else
+              echo "⚠️ Config bulunamadı, atlanıyor: $cfg"
+            fi
+          done
+
+          ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang \
+            ./scripts/kconfig/merge_config.sh -O out $MERGE_CONFIGS
+
           CONFIG_FILE="out/.config"
-          
-          # --- GEREKSİZ DEBUG BİRİMLERİNİ KAPAT (Hafifletme) ---
+
+          # --- Debug birimlerini kapat ---
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MSM_MINIDUMP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_QCOM_MINIDUMP
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_IPC_LOGGING
-          
-          # --- MEKANİĞİ SAĞLAMLAŞTIR ---
+
+          # --- Platform mekanizması ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
@@ -145,53 +211,122 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HWSPINLOCK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HWSPINLOCK_QCOM
-          
-          # --- SENİN KURALIN ---
+
+          # --- Modüller ---
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
           ./scripts/config --file $CONFIG_FILE --module CONFIG_PHY_QCOM_UFS
-          
+
+          # --- Genel ---
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Pure"
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-      - name: 8. Derleme (Grand Finale)
+          echo "✅ Config hazır"
+          grep "CONFIG_LOCALVERSION" out/.config
+
+      - name: 8. Derleme - Image ve Modules
         run: |
           cd ${{ github.workspace }}/common
-          export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
-          
+          CLANG_BIN="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin"
+          export PATH="${CLANG_BIN}:$PATH"
+
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+            OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
             Image modules
-          
-          make -j$(nproc --all) -k O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+
+      - name: 8b. Derleme - DTBs
+        run: |
+          cd ${{ github.workspace }}/common
+          CLANG_BIN="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin"
+          export PATH="${CLANG_BIN}:$PATH"
+
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom -i ${{ github.workspace }}/common/include" \
-            dtbs || echo "⚠️ Bazı DTB hataları atlandı."
+            dtbs 2>&1 | tee ${{ github.workspace }}/dtbs_build.log
+
+          # DTB hata kontrolü
+          if grep -ci "error:" ${{ github.workspace }}/dtbs_build.log; then
+            echo "⚠️ DTB derleme hataları tespit edildi!"
+            grep -i "error:" ${{ github.workspace }}/dtbs_build.log
+            echo "Devam ediliyor ama kontrol et..."
+          else
+            echo "✅ DTB derleme başarılı"
+          fi
 
       - name: 9. Paketleme
         run: |
-          cd $GITHUB_WORKSPACE/AnyKernel3
-          mkdir -p modules/vendor/lib/modules
-          
-          cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image . || exit 1
-          
-          find $GITHUB_WORKSPACE/common/out -name "*.dtbo" -exec cat {} + > dtbo.img
-          
-          find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
-          find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          
-          zip -r9 "../CG-Houji-Official-Final.zip" ./* -x .git*
+          cd ${{ github.workspace }}/AnyKernel3
+          COMMON="${{ github.workspace }}/common"
+          CLANG_BIN="${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c/bin"
 
-      - name: 10. Release
+          mkdir -p modules/vendor/lib/modules
+
+          # --- Image ---
+          if [ -f "${COMMON}/out/arch/arm64/boot/Image" ]; then
+            cp ${COMMON}/out/arch/arm64/boot/Image .
+            echo "✅ Image kopyalandı"
+          else
+            echo "❌ Image bulunamadı!"
+            exit 1
+          fi
+
+          # --- DTBO ---
+          DTBO_FILES=$(find ${COMMON}/out -name "*.dtbo" 2>/dev/null)
+          if [ -n "$DTBO_FILES" ]; then
+            # mkdtboimg.py varsa onu kullan, yoksa cat fallback
+            if [ -f "${COMMON}/scripts/dtc/mkdtboimg.py" ]; then
+              python3 ${COMMON}/scripts/dtc/mkdtboimg.py create dtbo.img \
+                $(find ${COMMON}/out -name "*.dtbo" | sort)
+              echo "✅ dtbo.img (mkdtboimg) oluşturuldu"
+            else
+              find ${COMMON}/out -name "*.dtbo" | sort | xargs cat > dtbo.img
+              echo "⚠️ dtbo.img (cat fallback) oluşturuldu — mkdtboimg.py bulunamadı"
+            fi
+          else
+            echo "⚠️ DTBO dosyası bulunamadı, atlanıyor"
+          fi
+
+          # --- DTB ---
+          DTB_FILES=$(find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" 2>/dev/null)
+          if [ -n "$DTB_FILES" ]; then
+            find ${COMMON}/out -name "*.dtb" ! -name "*.dtbo" | sort | xargs cat > dtb
+            echo "✅ DTB birleştirildi"
+          else
+            echo "⚠️ DTB dosyası bulunamadı"
+          fi
+
+          # --- Modules ---
+          find ${COMMON}/out -name "*.ko" -exec ${CLANG_BIN}/llvm-strip --strip-debug {} \;
+          find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+
+          KO_COUNT=$(find modules/vendor/lib/modules/ -name "*.ko" | wc -l)
+          echo "✅ ${KO_COUNT} modül kopyalandı"
+
+          # --- ZIP ---
+          zip -r9 "${{ github.workspace }}/CG-Houji-Official-Final.zip" ./* -x .git*
+
+          ls -lh ${{ github.workspace }}/CG-Houji-Official-Final.zip
+
+      - name: 10. DTB Build Log Upload (Debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtbs-build-log
+          path: ${{ github.workspace }}/dtbs_build.log
+          if-no-files-found: ignore
+
+      - name: 11. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-Final-${{ github.run_id }}
           name: "Xiaomi 14 (HOUJI) Full Package - FINAL"
-          files: "*.zip"
+          files: ${{ github.workspace }}/CG-Houji-Official-Final.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
