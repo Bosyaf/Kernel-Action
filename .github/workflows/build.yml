@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketleri Kur
+      - name: 1. Paket Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -62,7 +62,7 @@ jobs:
           mkdir -p ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor
           cp -r ${{ github.workspace }}/houji-dt/* ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/
           
-          # Header Fixes
+          # Header Fixes (Derleyicinin dosyaları bulması için)
           mkdir -p ${{ github.workspace }}/common/include/bindings
           mkdir -p ${{ github.workspace }}/common/include/dt-bindings
           cp -r ${{ github.workspace }}/houji-dt/bindings/* ${{ github.workspace }}/common/include/bindings/
@@ -71,14 +71,16 @@ jobs:
           echo "obj-y += vendor/" >> ${{ github.workspace }}/common/arch/arm64/boot/dts/Makefile
           mkdir -p ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c
           cp -r ${{ github.workspace }}/official-clang/* ${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/
-          
-          echo "✅ Hazırlık tamam!"
 
-      - name: 6. Config Merge (UNDEFINED SYMBOL & BTF FIX)
+      - name: 6. Config Merge (SENİN DEDİĞİN GİBİ - PURE MODULES)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
+          
+          # 1. GKI Defconfig oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
+          
+          # 2. Houji Parçalarını Merge Et (Orijinal Modül Ayarları Korunur)
           ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
@@ -86,25 +88,15 @@ jobs:
           
           CONFIG_FILE="out/.config"
           
-          # --- KRİTİK: BAĞIMLILIKLARI GÖMÜYORUZ (Undefined Symbols Fix) ---
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SOCINFO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IPC_LOGGING
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_MINIDUMP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT_QCOM_PINEAPPLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_DEV_QCOM_ICE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCSI_UFS_QCOM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PHY_QCOM_UFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_CLK_RPMH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GUNYAH_QCOM_PLATFORM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_SMMU_QCOM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMEM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMP2P
+          # --- ÇAKIŞMALARI ÖNLEME (Linker Fix) ---
+          # Eğer UFS kernel içindeyse (y), bağımlılıkları da 'y' yapmalıyız. 
+          # Eğer her şey 'm' kalsın istiyorsan, UFS'yi de 'm' yapmalıyız.
+          # Senin dediğin gibi her şeyi MODÜL (=m) moduna çekiyoruz:
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_RPMH
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_MSM_CRM
           
-          # BTF'yi açık tutuyoruz ama derleyici hatalarını önlemek için strip etmiyoruz
+          # BTF'yi açık tutuyoruz (Hata vermemesi için kallsyms'i zorluyoruz)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Pure"
@@ -115,36 +107,39 @@ jobs:
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # Image ve Modülleri derle
+          # Beyin (Image) ve Kollar (Modüller)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
             Image modules
-            
-          # DTBS pişir
+          
+          # Haritalar (DTBS)
           make -j$(nproc --all) -k O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
             DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom" \
             dtbs || echo "⚠️ DTB hataları atlandı."
 
-      - name: 8. Paketleme (Final 24MB DTBO ve Modüller)
+      - name: 8. Paketleme (Strip + DTBO Merger + Modules)
         run: |
           cd $GITHUB_WORKSPACE/AnyKernel3
           mkdir -p modules/vendor/lib/modules
+          
+          # 1. Kernel Image
           cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image .
           
-          # DTBO parcalarını birleştir
+          # 2. DTBO Birleştirme
           find $GITHUB_WORKSPACE/common/out/arch/arm64/boot/dts/vendor/ -name "*.dtbo" -exec cat {} + > dtbo.img
           
-          # Modülleri temizle ve paketle
+          # 3. MODÜLLER (Strip Edilmiş - Senin bildiğin yola)
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
+          # Özet
           echo "📊 SONUÇ ÖZETİ:"
           ls -lh Image
-          [ -s dtbo.img ] && ls -lh dtbo.img || echo "❌ DTBO HALA BOŞ!"
+          ls -lh dtbo.img
           echo "📦 Modül Sayısı: $(ls modules/vendor/lib/modules/ | wc -l)"
           
           zip -r9 "../CG-Houji-Official-Final.zip" ./* -x .git*
@@ -153,7 +148,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-Final-${{ github.run_id }}
-          name: "Xiaomi 14 (HOUJI) Full Package - BTF ENABLED"
+          name: "Xiaomi 14 (HOUJI) Full Package - MODULES ENABLED"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
