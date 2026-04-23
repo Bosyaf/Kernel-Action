@@ -97,23 +97,41 @@ jobs:
           CONFIG_FILE="out/.config"
           
           # --- KRİTİK: LD LLVM HATALARINI BİTİREN "İSKELET" AYARLARI ---
-          # Bu semboller 'y' olmazsa kernel birleşemez (Hatalarının sebebi bu)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMHPD
+          
+          # 1. SOCINFO ve mecburi bağımlılığı SMEM (socinfo_get_part_info hatası için)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMEM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SOCINFO
+          
+          # 2. IPC Logging ve Minidump (msm_minidump_enabled hatası için)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IPC_LOGGING
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_MINIDUMP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_MINIDUMP
+          
+          # 3. Interconnect ve Debug Sürücüleri (qcom_icc_debug_register hatası için)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT_QCOM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT_QCOM_PINEAPPLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT_QCOM_DEBUG
+          
+          # 4. CRM Sürücüleri (crm_write_bw_vote ve crm_dump_regs hatası için)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_CRM
+          
+          # 5. Gunyah Virtualization (gh_get_irq vb. tüm "gh_" sembol hataları için)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GUNYAH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_GUNYAH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_GH_RM_DRV
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GH_DBL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_GH_MSGQ
           
           # --- SENİN KURALIN: VENDOR SÜRÜCÜLERİ MODÜL OLSUN ---
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
           ./scripts/config --file $CONFIG_FILE --module CONFIG_PHY_QCOM_UFS
           
-          # BTF'yi açık tutuyoruz (Hayırlısı olsun kanka)
+          # BTF'yi açık tutuyoruz (Zincirleme hata çözüldüğü için artık pahole patlamamalı)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Houji-Pure"
@@ -124,14 +142,14 @@ jobs:
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
           
-          # 1. Beyin ve Kollar (Undefined symbol hataları burada bitti)
+          # 1. Beyin ve Kollar
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -D__ANDROID_COMMON_KERNEL__ -Wno-error" \
             Image modules
           
-          # 2. Haritalar (Harita hatası olsa da Image elimizde kalır)
+          # 2. Haritalar
           make -j$(nproc --all) -k O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" \
@@ -146,11 +164,11 @@ jobs:
           # 1. Image Al
           cp $GITHUB_WORKSPACE/common/out/arch/arm64/boot/Image . || exit 1
           
-          # 2. DTBO MERGER (45KB'ı 24MB yapan mucize)
+          # 2. DTBO MERGER
           echo "🔍 Derlenen Houji DTBO parçaları toplanıyor..."
           find $GITHUB_WORKSPACE/common/out -name "*.dtbo" -exec cat {} + > dtbo.img
           
-          # 3. MODÜLLER (Strip edip senin bildiğin yola koyuyoruz)
+          # 3. MODÜLLER
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec $GITHUB_WORKSPACE/common/prebuilts/clang/host/linux-x86/clang-r487747c/bin/llvm-strip --strip-debug {} \;
           find $GITHUB_WORKSPACE/common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
@@ -170,3 +188,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
