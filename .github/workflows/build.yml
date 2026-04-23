@@ -40,6 +40,19 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd pahole
+          
+          # Pahole/dwarves güncel versiyonunu kur
+          PAHOLE_VER=$(pahole --version 2>/dev/null || echo "0")
+          echo "Mevcut pahole versiyonu: $PAHOLE_VER"
+          
+          # Kaynak koddan güncel dwarves/pahole derle
+          git clone --depth=1 -b v1.25 https://github.com/acmel/dwarves.git /tmp/dwarves
+          cd /tmp/dwarves
+          mkdir build && cd build
+          cmake -DCMAKE_INSTALL_PREFIX=/usr ..
+          make -j$(nproc)
+          sudo make install
+          echo "✅ Pahole güncellendi: $(pahole --version)"
 
       - name: 2. Clang Cache
         id: cache-clang
