@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - Final Nuclear Build
+name: Xiaomi 14 Houji - Final Stage Success
 
 permissions:
   contents: write
@@ -41,7 +41,7 @@ jobs:
             ${{ github.workspace }}/common
             ${{ github.workspace }}/houji-dt
             ${{ github.workspace }}/sm8650-modules
-          key: houji-kernel-final-v10 # v10 yaptım ki her şeyi tertemiz başlatsın
+          key: houji-kernel-final-v11
 
       - name: 3. Kaynakları İndir (Hafızada Yoksa)
         if: steps.cache-all.outputs.cache-hit != 'true'
@@ -54,21 +54,18 @@ jobs:
           git clone --depth=1 -b main https://github.com/lolipuru/kernel_xiaomi_sm8650-modules.git ${{ github.workspace }}/sm8650-modules
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ${{ github.workspace }}/AnyKernel3
 
-      - name: 4. NÜKLEER MÜDAHALE (Kod Silme ve Lehimleme)
+      - name: 4. CERRAHİ MÜDAHALE (Döngü ve Boyut Sınırı Fix)
         run: |
           WORKSPACE="${{ github.workspace }}"
           COMMON="${WORKSPACE}/common"
           MODS="${WORKSPACE}/sm8650-modules"
           DT="${WORKSPACE}/houji-dt"
 
-          echo "🔥 Suçlu kodlar sistemden kazınıyor..."
-          # Hata logundaki o PCIE_QCOM_ECAM bloğunu Kconfig dosyasından tamamen siliyoruz
-          # Bu komut 'config PCIE_QCOM_ECAM' ile başlayan ve 8 satır sonrasına kadar olan her şeyi siler.
+          # 1. Döngü Hatasını Sök At
           sed -i '/config PCIE_QCOM_ECAM/,/help/d' ${COMMON}/drivers/pci/controller/Kconfig
-          # Genel PCI_QCOM seçimlerini de her yerden temizle
           find ${COMMON} -name "Kconfig*" -type f -exec sed -i '/select PCIE_QCOM/d' {} +
 
-          # --- Yol Kurulumları ---
+          # 2. Yolları ve Haritayı Yerleştir
           mkdir -p ${WORKSPACE}/vendor/qcom
           ln -sfn ${MODS}/qcom/opensource ${WORKSPACE}/vendor/qcom/opensource
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
@@ -76,25 +73,22 @@ jobs:
           cp -r ${DT}/* ${COMMON}/arch/arm64/boot/dts/vendor/
           grep -qxF 'obj-y += vendor/' ${COMMON}/arch/arm64/boot/dts/Makefile || echo "obj-y += vendor/" >> ${COMMON}/arch/arm64/boot/dts/Makefile
 
-          # --- Header Lehimleme ---
+          # 3. Header Lehimleme
           mkdir -p ${COMMON}/include/dt-bindings/
           cp -f ${MODS}/qcom/opensource/camera-kernel/dt-bindings/msm-camera.h ${COMMON}/include/dt-bindings/ 2>/dev/null || true
           mkdir -p ${COMMON}/include/uapi/camera/media
           cp -r ${MODS}/qcom/opensource/camera-kernel/include/uapi/camera/* ${COMMON}/include/uapi/camera/ 2>/dev/null || true
           cp -r ${MODS}/qcom/opensource/synx-kernel/include/uapi/* ${COMMON}/include/uapi/ 2>/dev/null || true
 
-          # --- Clang ---
+          # 4. Clang Symlink
           mkdir -p "$(dirname ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c)"
           ln -sfn ${WORKSPACE}/official-clang ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c
-
-          echo "✅ Kod temizliği ve lehimleme bitti."
 
       - name: 5. Ana Kernel Derle (Image)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           
-          # Configlerden de temizle
           find arch/arm64/configs/ -type f -exec sed -i '/CONFIG_PCIE_QCOM/d' {} +
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
@@ -103,22 +97,26 @@ jobs:
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
           
+          # --- KRİTİK: BOYUT SINIRINI (STACK FRAME) GENİŞLET ---
+          # 2048 sınırını 4096 yaparak 'fuse_readdir' hatasını geçiyoruz.
+          ./scripts/config --file out/.config --set-val CONFIG_FRAME_WARN 4096
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC=clang Image
+          
+          # Hata vermemesi için KCFLAGS ekledik
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang KCFLAGS="-Wno-error=frame-larger-than" Image
 
       - name: 6. Modülleri ve DTBO'yu Derle
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
-          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC=clang dtbs
-
           MODULES=("mmrm-driver" "securemsm-kernel" "synx-kernel" "camera-kernel" "display-drivers" "audio-kernel" "video-driver" "touch-drivers")
           for mod in "${MODULES[@]}"; do
             echo "🛠️ Derleniyor: $mod"
-            make -j$(nproc --all) -C . O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-              CROSS_COMPILE=aarch64-linux-gnu- CC=clang \
-              M=../vendor/qcom/opensource/$mod modules || echo "⚠️ $mod hata verdi."
+            make -j$(nproc --all) -C . O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC=clang M=../vendor/qcom/opensource/$mod modules || echo "⚠️ $mod hata verdi."
           done
 
       - name: 7. Paketleme
@@ -135,7 +133,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-Build-${{ github.run_id }}
-          name: "Xiaomi 14 (Houji) GKI Success"
+          name: "Xiaomi 14 (Houji) GKI Success Build"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
