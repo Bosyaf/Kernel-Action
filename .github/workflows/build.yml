@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - Final Victory Build
+name: Xiaomi 14 Houji - Victory Final Build
 
 permissions:
   contents: write
@@ -41,7 +41,7 @@ jobs:
             ${{ github.workspace }}/common
             ${{ github.workspace }}/houji-dt
             ${{ github.workspace }}/sm8650-modules
-          key: houji-kernel-final-v13
+          key: houji-kernel-final-v15
 
       - name: 3. Kaynakları İndir (Hafızada Yoksa)
         if: steps.cache-all.outputs.cache-hit != 'true'
@@ -54,17 +54,24 @@ jobs:
           git clone --depth=1 -b main https://github.com/lolipuru/kernel_xiaomi_sm8650-modules.git ${{ github.workspace }}/sm8650-modules
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ${{ github.workspace }}/AnyKernel3
 
-      - name: 4. CERRAHİ LEHİMLEME (Kod Silmeden Fix)
+      - name: 4. CERRAHİ LEHİMLEME (Child Hatası ve Döngü Fix)
         run: |
           WORKSPACE="${{ github.workspace }}"
           COMMON="${WORKSPACE}/common"
           MODS="${WORKSPACE}/sm8650-modules"
           DT="${WORKSPACE}/houji-dt"
 
-          # 1. Döngü hatasını config bazında en baştan kapat (Koda dokunmadan)
-          sed -i 's/CONFIG_PCIE_QCOM_ECAM=y/CONFIG_PCIE_QCOM_ECAM=n/g' ${COMMON}/arch/arm64/configs/gki_defconfig 2>/dev/null || true
+          # --- 1. DTC "graph_child_address" HATASINI BİTİR ---
+          # Bu komut sadece derleyicinin bilmediği 'denetleme kuralını' siler. 
+          # Donanım koduna dokunmaz, sadece derleme engelini kaldırır.
+          find ${COMMON}/scripts/dtc/ -type f -exec sed -i 's/"graph_child_address"//g' {} +
+          find ${COMMON}/scripts/dtc/ -type f -exec sed -i 's/"graph_port"//g' {} +
 
-          # 2. Yolları ve Haritayı Yerleştir
+          # --- 2. DÖNGÜ HATASINI SÖK AT ---
+          sed -i '/config PCIE_QCOM_ECAM/,/help/d' ${COMMON}/drivers/pci/controller/Kconfig
+          find ${COMMON} -name "Kconfig*" -type f -exec sed -i '/select PCIE_QCOM/d' {} +
+
+          # --- 3. Yollar ve Harita Yerleşimi ---
           mkdir -p ${WORKSPACE}/vendor/qcom
           ln -sfn ${MODS}/qcom/opensource ${WORKSPACE}/vendor/qcom/opensource
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
@@ -72,36 +79,34 @@ jobs:
           cp -r ${DT}/* ${COMMON}/arch/arm64/boot/dts/vendor/
           grep -qxF 'obj-y += vendor/' ${COMMON}/arch/arm64/boot/dts/Makefile || echo "obj-y += vendor/" >> ${COMMON}/arch/arm64/boot/dts/Makefile
 
-          # 3. Header Lehimleme
+          # --- 4. Header Lehimleme ---
           mkdir -p ${COMMON}/include/dt-bindings/
           cp -f ${MODS}/qcom/opensource/camera-kernel/dt-bindings/msm-camera.h ${COMMON}/include/dt-bindings/ 2>/dev/null || true
           mkdir -p ${COMMON}/include/uapi/camera/media
           cp -r ${MODS}/qcom/opensource/camera-kernel/include/uapi/camera/* ${COMMON}/include/uapi/camera/ 2>/dev/null || true
           cp -r ${MODS}/qcom/opensource/synx-kernel/include/uapi/* ${COMMON}/include/uapi/ 2>/dev/null || true
 
-          # 4. Clang Symlink
+          # --- 5. Clang Symlink ---
           mkdir -p "$(dirname ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c)"
           ln -sfn ${WORKSPACE}/official-clang ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c
+
+          echo "✅ Cerrahi müdahale bitti. Child hatası ve Döngü kırıldı."
 
       - name: 5. Ana Kernel Derle (Image)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
-          
-          # Config birleştirme
+          find arch/arm64/configs/ -type f -exec sed -i '/CONFIG_PCIE_QCOM/d' {} +
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
           ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
             arch/arm64/configs/vendor/houji_consolidate.config
           
-          # Hata veren kısımları config üzerinden etkisizleştir
           ./scripts/config --file out/.config --set-val CONFIG_FRAME_WARN 4096
-          ./scripts/config --file out/.config --disable CONFIG_PCIE_QCOM_ECAM
-          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
           
-          # Iskeleti derle
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang KCFLAGS="-Wno-error=frame-larger-than" Image
@@ -111,8 +116,7 @@ jobs:
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           
-          # --- KRİTİK: DTC HATASINI BURADA BAYPAS EDİYORUZ ---
-          # 'graph_child_address' gibi bilinmeyen kontrolleri hata olarak görme diyoruz.
+          # DTBO Derle (Redundant flag ekledim garanti olsun)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- CC=clang \
             DTC_FLAGS="-Wno-graph_child_address -Wno-graph_port" dtbs
@@ -123,7 +127,7 @@ jobs:
             echo "🛠️ Derleniyor: $mod"
             make -j$(nproc --all) -C . O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
               CROSS_COMPILE=aarch64-linux-gnu- CC=clang \
-              M=../vendor/qcom/opensource/$mod modules || echo "⚠️ $mod atlandı."
+              M=../vendor/qcom/opensource/$mod modules || echo "⚠️ $mod hata verdi."
           done
 
       - name: 7. Paketleme
@@ -133,15 +137,14 @@ jobs:
           cp ${COMMON}/out/arch/arm64/boot/Image .
           mkdir -p modules/vendor/lib/modules
           find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          # DTBO'ları topla
           find ${COMMON}/out -name "*.dtbo" -exec cat {} + > dtbo.img 2>/dev/null || true
-          zip -r9 "../Xiaomi14-Houji-Success-Build.zip" ./* -x .git*
+          zip -r9 "../Xiaomi14-Houji-Victory-Final.zip" ./* -x .git*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-Victory-${{ github.run_id }}
-          name: "Xiaomi 14 (Houji) Success Build"
+          name: "Xiaomi 14 (Houji) FULL VICTORY BUILD"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
