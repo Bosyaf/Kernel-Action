@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - B Planı Final Build
+name: Xiaomi 14 Houji - Final Nuclear Build
 
 permissions:
   contents: write
@@ -41,35 +41,34 @@ jobs:
             ${{ github.workspace }}/common
             ${{ github.workspace }}/houji-dt
             ${{ github.workspace }}/sm8650-modules
-          key: houji-kernel-b-plan-v1
+          key: houji-kernel-final-v10 # v10 yaptım ki her şeyi tertemiz başlatsın
 
       - name: 3. Kaynakları İndir (Hafızada Yoksa)
         if: steps.cache-all.outputs.cache-hit != 'true'
         run: |
-          # Clang
           mkdir -p ${{ github.workspace }}/official-clang
           git clone --depth=1 -b android14-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 ${{ github.workspace }}/clang-repo
           cp -r ${{ github.workspace }}/clang-repo/clang-r487747c/* ${{ github.workspace }}/official-clang/
-          
-          # Sourcelar
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14.git ${{ github.workspace }}/common
           git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ${{ github.workspace }}/houji-dt
           git clone --depth=1 -b main https://github.com/lolipuru/kernel_xiaomi_sm8650-modules.git ${{ github.workspace }}/sm8650-modules
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ${{ github.workspace }}/AnyKernel3
 
-      - name: 4. CERRAHİ MÜDAHALE (B Planı - Susturucu)
+      - name: 4. NÜKLEER MÜDAHALE (Kod Silme ve Lehimleme)
         run: |
           WORKSPACE="${{ github.workspace }}"
           COMMON="${WORKSPACE}/common"
           MODS="${WORKSPACE}/sm8650-modules"
           DT="${WORKSPACE}/houji-dt"
 
-          echo "🔍 Suçlular aranıyor ve susturuluyor..."
-          # Tüm Kconfig dosyalarında 'select PCIE_QCOM' geçen her şeyi bul ve başına '#' koyarak sustur
-          find ${COMMON} -name "Kconfig*" -type f -exec sed -i 's/select PCIE_QCOM/# select PCIE_QCOM/g' {} +
-          find ${COMMON} -name "Kconfig*" -type f -exec sed -i 's/select PCIE_QCOM_ECAM/# select PCIE_QCOM_ECAM/g' {} +
+          echo "🔥 Suçlu kodlar sistemden kazınıyor..."
+          # Hata logundaki o PCIE_QCOM_ECAM bloğunu Kconfig dosyasından tamamen siliyoruz
+          # Bu komut 'config PCIE_QCOM_ECAM' ile başlayan ve 8 satır sonrasına kadar olan her şeyi siler.
+          sed -i '/config PCIE_QCOM_ECAM/,/help/d' ${COMMON}/drivers/pci/controller/Kconfig
+          # Genel PCI_QCOM seçimlerini de her yerden temizle
+          find ${COMMON} -name "Kconfig*" -type f -exec sed -i '/select PCIE_QCOM/d' {} +
 
-          # --- Yolları ve Haritayı Yerleştir ---
+          # --- Yol Kurulumları ---
           mkdir -p ${WORKSPACE}/vendor/qcom
           ln -sfn ${MODS}/qcom/opensource ${WORKSPACE}/vendor/qcom/opensource
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
@@ -77,27 +76,27 @@ jobs:
           cp -r ${DT}/* ${COMMON}/arch/arm64/boot/dts/vendor/
           grep -qxF 'obj-y += vendor/' ${COMMON}/arch/arm64/boot/dts/Makefile || echo "obj-y += vendor/" >> ${COMMON}/arch/arm64/boot/dts/Makefile
 
-          # --- Header Lehimlemesi ---
+          # --- Header Lehimleme ---
           mkdir -p ${COMMON}/include/dt-bindings/
           cp -f ${MODS}/qcom/opensource/camera-kernel/dt-bindings/msm-camera.h ${COMMON}/include/dt-bindings/ 2>/dev/null || true
           mkdir -p ${COMMON}/include/uapi/camera/media
           cp -r ${MODS}/qcom/opensource/camera-kernel/include/uapi/camera/* ${COMMON}/include/uapi/camera/ 2>/dev/null || true
           cp -r ${MODS}/qcom/opensource/synx-kernel/include/uapi/* ${COMMON}/include/uapi/ 2>/dev/null || true
 
-          # --- Clang Symlink ---
+          # --- Clang ---
           mkdir -p "$(dirname ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c)"
           ln -sfn ${WORKSPACE}/official-clang ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c
 
-          echo "✅ B Planı operasyonu bitti. Suçlular susturuldu."
+          echo "✅ Kod temizliği ve lehimleme bitti."
 
       - name: 5. Ana Kernel Derle (Image)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           
-          # Config dosyalarından da bu ayarı tamamen temizle
+          # Configlerden de temizle
           find arch/arm64/configs/ -type f -exec sed -i '/CONFIG_PCIE_QCOM/d' {} +
-          
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
           ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
@@ -130,13 +129,13 @@ jobs:
           mkdir -p modules/vendor/lib/modules
           find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           find ${COMMON}/out -name "*.dtbo" -exec cat {} + > dtbo.img 2>/dev/null || true
-          zip -r9 "../Xiaomi14-Houji-Final-B-Plan.zip" ./* -x .git*
+          zip -r9 "../Xiaomi14-Houji-Final-Package.zip" ./* -x .git*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-B-Plan-${{ github.run_id }}
-          name: "Xiaomi 14 (Houji) B-Plan Success"
+          tag_name: Houji-Build-${{ github.run_id }}
+          name: "Xiaomi 14 (Houji) GKI Success"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
