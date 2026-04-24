@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - Bismillah Final Build
+name: Xiaomi 14 Houji - B Planı Final Build
 
 permissions:
   contents: write
@@ -41,7 +41,7 @@ jobs:
             ${{ github.workspace }}/common
             ${{ github.workspace }}/houji-dt
             ${{ github.workspace }}/sm8650-modules
-          key: houji-kernel-final-v6
+          key: houji-kernel-b-plan-v1
 
       - name: 3. Kaynakları İndir (Hafızada Yoksa)
         if: steps.cache-all.outputs.cache-hit != 'true'
@@ -57,19 +57,19 @@ jobs:
           git clone --depth=1 -b main https://github.com/lolipuru/kernel_xiaomi_sm8650-modules.git ${{ github.workspace }}/sm8650-modules
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ${{ github.workspace }}/AnyKernel3
 
-      - name: 4. Cerrahi Lehimleme ve Döngü Kırma
+      - name: 4. CERRAHİ MÜDAHALE (B Planı - Susturucu)
         run: |
           WORKSPACE="${{ github.workspace }}"
           COMMON="${WORKSPACE}/common"
           MODS="${WORKSPACE}/sm8650-modules"
           DT="${WORKSPACE}/houji-dt"
 
-          # --- A. Döngü Hatasını (Recursive Dependency) Kökten Bitir ---
-          # Bu satır, PCIe sürücüsünün o hatalı X86 ayarlarını seçmesini engeller. 
-          # Config dosyası ne derse desin, artık döngü oluşamaz.
-          sed -i 's/select PCIE_QCOM_ECAM//g' ${COMMON}/drivers/pci/controller/Kconfig
+          echo "🔍 Suçlular aranıyor ve susturuluyor..."
+          # Tüm Kconfig dosyalarında 'select PCIE_QCOM' geçen her şeyi bul ve başına '#' koyarak sustur
+          find ${COMMON} -name "Kconfig*" -type f -exec sed -i 's/select PCIE_QCOM/# select PCIE_QCOM/g' {} +
+          find ${COMMON} -name "Kconfig*" -type f -exec sed -i 's/select PCIE_QCOM_ECAM/# select PCIE_QCOM_ECAM/g' {} +
 
-          # --- B. Yolları ve Haritayı Yerleştir ---
+          # --- Yolları ve Haritayı Yerleştir ---
           mkdir -p ${WORKSPACE}/vendor/qcom
           ln -sfn ${MODS}/qcom/opensource ${WORKSPACE}/vendor/qcom/opensource
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
@@ -77,23 +77,25 @@ jobs:
           cp -r ${DT}/* ${COMMON}/arch/arm64/boot/dts/vendor/
           grep -qxF 'obj-y += vendor/' ${COMMON}/arch/arm64/boot/dts/Makefile || echo "obj-y += vendor/" >> ${COMMON}/arch/arm64/boot/dts/Makefile
 
-          # --- C. Header Lehimlemesi ---
+          # --- Header Lehimlemesi ---
           mkdir -p ${COMMON}/include/dt-bindings/
           cp -f ${MODS}/qcom/opensource/camera-kernel/dt-bindings/msm-camera.h ${COMMON}/include/dt-bindings/ 2>/dev/null || true
           mkdir -p ${COMMON}/include/uapi/camera/media
           cp -r ${MODS}/qcom/opensource/camera-kernel/include/uapi/camera/* ${COMMON}/include/uapi/camera/ 2>/dev/null || true
           cp -r ${MODS}/qcom/opensource/synx-kernel/include/uapi/* ${COMMON}/include/uapi/ 2>/dev/null || true
 
-          # --- D. Clang Symlink ---
+          # --- Clang Symlink ---
           mkdir -p "$(dirname ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c)"
           ln -sfn ${WORKSPACE}/official-clang ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c
+
+          echo "✅ B Planı operasyonu bitti. Suçlular susturuldu."
 
       - name: 5. Ana Kernel Derle (Image)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           
-          # Hatalı ayarları her yerden temizle
+          # Config dosyalarından da bu ayarı tamamen temizle
           find arch/arm64/configs/ -type f -exec sed -i '/CONFIG_PCIE_QCOM/d' {} +
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
@@ -103,8 +105,6 @@ jobs:
             arch/arm64/configs/vendor/houji_consolidate.config
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
-          
-          # Sadece 'Image' derliyoruz, 'Image.gz-dtb' Houji için uygun olmayabilir
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC=clang Image
 
       - name: 6. Modülleri ve DTBO'yu Derle
@@ -112,10 +112,8 @@ jobs:
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           
-          # DTBO Derleme
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC=clang dtbs
 
-          # Sürücüleri Derleme
           MODULES=("mmrm-driver" "securemsm-kernel" "synx-kernel" "camera-kernel" "display-drivers" "audio-kernel" "video-driver" "touch-drivers")
           for mod in "${MODULES[@]}"; do
             echo "🛠️ Derleniyor: $mod"
@@ -132,13 +130,13 @@ jobs:
           mkdir -p modules/vendor/lib/modules
           find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           find ${COMMON}/out -name "*.dtbo" -exec cat {} + > dtbo.img 2>/dev/null || true
-          zip -r9 "../Xiaomi14-Houji-Final-Package.zip" ./* -x .git*
+          zip -r9 "../Xiaomi14-Houji-Final-B-Plan.zip" ./* -x .git*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-Build-${{ github.run_id }}
-          name: "Xiaomi 14 (Houji) GKI Final Build"
+          tag_name: Houji-B-Plan-${{ github.run_id }}
+          name: "Xiaomi 14 (Houji) B-Plan Success"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
