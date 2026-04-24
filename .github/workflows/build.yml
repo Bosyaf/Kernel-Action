@@ -57,7 +57,6 @@ jobs:
             ${{ github.workspace }}/common
             ${{ github.workspace }}/houji-dt
             ${{ github.workspace }}/sm8650-modules
-          # Bu key'i değiştirerek (örneğin v1 -> v2) hafızayı sıfırlayabilirsin
           key: kernel-sources-houji-v1
 
       - name: 3.1 Kaynakları İndir (Hafızada Yoksa)
@@ -74,24 +73,19 @@ jobs:
           MODS="${{ github.workspace }}/sm8650-modules"
           DT="${{ github.workspace }}/houji-dt"
 
-          # 1. Eksik msm-camera.h dosyasını kopyala
           mkdir -p ${COMMON}/include/dt-bindings/
           cp ${MODS}/qcom/opensource/camera-kernel/dt-bindings/msm-camera.h ${COMMON}/include/dt-bindings/ 2>/dev/null || true
 
-          # 2. Donanım Haritası (DTS) temizle ve kopyala
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
           mkdir -p ${COMMON}/arch/arm64/boot/dts/vendor
           cp -r ${DT}/* ${COMMON}/arch/arm64/boot/dts/vendor/
           
-          # DTS Makefile ekle (yoksa)
           DTS_MK="${COMMON}/arch/arm64/boot/dts/Makefile"
           grep -qxF 'obj-y += vendor/' "$DTS_MK" || echo "obj-y += vendor/" >> "$DTS_MK"
 
-          # 3. Kamera UAPI Headerlarını kopyala
           mkdir -p ${COMMON}/include/uapi/camera
           cp -r ${MODS}/qcom/opensource/camera-kernel/include/uapi/camera/* ${COMMON}/include/uapi/camera/ 2>/dev/null || true
 
-          # 4. Clang Symlink (Derleme sistemi için)
           mkdir -p "$(dirname ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c)"
           ln -sfn ${{ github.workspace }}/official-clang ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c
 
@@ -100,42 +94,45 @@ jobs:
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           
+          # --- KRİTİK DÜZELTME: Merge işleminden önce sorunlu config satırlarını dosyalardan sil ---
+          # Bu ayar ARM64 yerine X86 bağımlılıklarını tetiklediği için döngü hatasına sebep oluyor.
+          sed -i 's/CONFIG_PCIE_QCOM_ECAM=y/# CONFIG_PCIE_QCOM_ECAM is not set/' arch/arm64/configs/vendor/pineapple_GKI.config 2>/dev/null || true
+          sed -i 's/CONFIG_PCIE_QCOM_ECAM=y/# CONFIG_PCIE_QCOM_ECAM is not set/' arch/arm64/configs/vendor/houji_GKI.config 2>/dev/null || true
+
+          # 1. Base config
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang gki_defconfig
           
-          ./scripts/kconfig/merge_config.sh -O out out/.config \
+          # 2. Merge config (Artık döngü hatası vermeyecek çünkü dosyaların içinden sildik)
+          ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config
 
-          # --- ÖNCEKİ HATAYI ÇÖZEN KRİTİK SATIR (Döngü hatasını kapatır) ---
-          ./scripts/config --file out/.config --disable CONFIG_PCIE_QCOM_ECAM
-          
+          # 3. Son kontroller
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang olddefconfig
 
-          # Image derleme (hata olursa alternatif Image hedefini dener)
+          # 4. Derleme
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang Image.gz-dtb || make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC=clang Image
           
           echo "✅ Ana Kernel Image hazır."
 
-      - name: 6. MODÜLLERİ DERLE (Stage 2 - Sürücüler)
+      - name: 6. MODÜLLERİ DERLE (Stage 2)
         run: |
           cd ${{ github.workspace }}/common
           export PATH="${{ github.workspace }}/official-clang/bin:$PATH"
           COMMON_SRC="${{ github.workspace }}/common"
           MODS_ROOT="${{ github.workspace }}/sm8650-modules/qcom/opensource"
           
-          # Sürücü derleme sırası (bağımlılıklara göre)
           MODULES=("mmrm-driver" "securemsm-kernel" "synx-kernel" "camera-kernel" "display-drivers" "audio-kernel" "video-driver" "touch-drivers")
 
           for mod in "${MODULES[@]}"; do
             if [ -d "${MODS_ROOT}/${mod}" ]; then
               echo "🛠️ Derleniyor: $mod"
-              # KERNEL_SRC parametresi lolipuru sourcesi için kritiktir
               make -j$(nproc --all) -C $COMMON_SRC M=../sm8650-modules/qcom/opensource/$mod \
                 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
                 CROSS_COMPILE=aarch64-linux-gnu- \
-                CC=clang KERNEL_SRC=$COMMON_SRC modules || echo "⚠️ $mod derlenirken hata verdi, atlanıyor."
+                CC=clang KERNEL_SRC=$COMMON_SRC modules || echo "⚠️ $mod atlandı."
             fi
           done
 
@@ -144,23 +141,18 @@ jobs:
           cd ${{ github.workspace }}/AnyKernel3
           COMMON="${{ github.workspace }}/common"
           
-          # Image dosyasını bul ve kopyala
           find ${COMMON}/out/arch/arm64/boot -name "Image*" -exec cp {} . \;
-          
-          # .ko modüllerini topla
           mkdir -p modules/vendor/lib/modules
           find ${COMMON}/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          find ${COMMON}/out -name "*.dtbo" -exec cat {} + > dtbo.img 2>/dev/null || echo "DTBO yok."
           
-          # DTBO oluştur
-          find ${COMMON}/out -name "*.dtbo" -exec cat {} + > dtbo.img 2>/dev/null || echo "DTBO bulunamadı."
-          
-          zip -r9 "../Xiaomi14-Houji-Official-Build.zip" ./* -x .git*
+          zip -r9 "../Xiaomi14-Houji-Engineering-Build.zip" ./* -x .git*
 
       - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-Cached-${{ github.run_id }}
-          name: "Xiaomi 14 (Houji) Cached Build"
+          tag_name: Houji-Build-${{ github.run_id }}
+          name: "Xiaomi 14 (Houji) GKI Engineering Build"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
