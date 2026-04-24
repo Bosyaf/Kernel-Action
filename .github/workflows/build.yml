@@ -64,7 +64,6 @@ jobs:
           HOUJI="${{ github.workspace }}/houji-dt"
           CLANG_DST="${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c"
 
-          # HATA VEREN KISIM: rm -rf ile temizleyip yeniden oluşturalım
           rm -rf ${COMMON}/arch/arm64/boot/dts/vendor
           mkdir -p ${COMMON}/arch/arm64/boot/dts/vendor
           cp -r ${HOUJI}/* ${COMMON}/arch/arm64/boot/dts/vendor/
@@ -87,44 +86,40 @@ jobs:
           mkdir -p "$(dirname ${CLANG_DST})"
           ln -sfn ${{ github.workspace }}/official-clang ${CLANG_DST}
 
-      - name: 6. Cerrahi Stub Injection (Tüm Semboller)
+      - name: 6. Cerrahi Stub Injection (Sembol Çakışma Önleyici)
         run: |
           COMMON="${{ github.workspace }}/common"
           STUB_FILE="${COMMON}/drivers/soc/qcom/cg_stubs.c"
           QCOM_MK="${COMMON}/drivers/soc/qcom/Makefile"
 
+          # Kaynak kodda çakışmaya neden olan tüm EXPORT satırlarını bulup susturan fonksiyon
           disable_module_export() {
             local symbol="$1"
-            local search_dir="${COMMON}/$2"
-            echo "🔍 Devre dışı bırakılıyor: ${symbol} in ${search_dir}"
-            local files=$(grep -rl "EXPORT_SYMBOL.*\b${symbol}\b" "${search_dir}" 2>/dev/null || true)
-            for f in $files; do
-              if echo "$f" | grep -qv "cg_stubs.c"; then
-                sed -i "s|^\(EXPORT_SYMBOL.*\b${symbol}\b.*\)|// CG_DISABLED: \1|" "$f"
-              fi
+            echo "🔍 Susturuluyor: ${symbol}"
+            find "${COMMON}" -type f -name "*.c" ! -name "cg_stubs.c" -exec grep -l "EXPORT_SYMBOL.*\b${symbol}\b" {} + | while read -r f; do
+              sed -i "s|^\(EXPORT_SYMBOL.*\b${symbol}\b.*\)|// CG_DISABLED: \1|" "$f"
+              echo "   ✅ Kapatıldı: $f"
             done
           }
 
-          # --- Modül Çakışmalarını Engelle ---
-          disable_module_export "crm_write_bw_vote" "drivers"
-          disable_module_export "crm_get_device" "drivers"
-          disable_module_export "crm_dump_regs" "drivers"
-          disable_module_export "crm_dump_drv_regs" "drivers"
-          disable_module_export "qcom_icc_debug_register" "drivers"
-          disable_module_export "qcom_icc_debug_unregister" "drivers"
-          disable_module_export "gh_rm_get_this_vmid" "arch/arm64"
-          disable_module_export "gh_get_irq" "drivers"
-          disable_module_export "gh_put_irq" "drivers"
-          disable_module_export "qcom_is_dma_buf_file" "drivers"
-          disable_module_export "debug_symbol_lookup_name" "drivers"
-          disable_module_export "debug_symbol_available" "drivers"
-          disable_module_export "crypto_qti_disable" "drivers"
-          disable_module_export "crypto_qti_debug" "drivers"
-          disable_module_export "sched_set_boost" "kernel/sched/walt"
-          disable_module_export "ufshcd_qti_hba_init_crypto_capabilities" "drivers/ufs"
-          disable_module_export "qcom_clk_set_flags" "drivers/clk/qcom"
-
-          # NOT: qcom_hwspinlock_bust stub içine eklenmedi çünkü o zaten built-in (duplicate vermemesi için)
+          # --- HATA VEREN VE RİSKLİ TÜM SEMBOLLER ---
+          disable_module_export "gh_get_irq"
+          disable_module_export "gh_put_irq"
+          disable_module_export "gh_rm_get_this_vmid"
+          disable_module_export "crm_write_bw_vote"
+          disable_module_export "crm_get_device"
+          disable_module_export "crm_dump_regs"
+          disable_module_export "crm_dump_drv_regs"
+          disable_module_export "qcom_icc_debug_register"
+          disable_module_export "qcom_icc_debug_unregister"
+          disable_module_export "qcom_is_dma_buf_file"
+          disable_module_export "debug_symbol_lookup_name"
+          disable_module_export "debug_symbol_available"
+          disable_module_export "crypto_qti_disable"
+          disable_module_export "crypto_qti_debug"
+          disable_module_export "sched_set_boost"
+          disable_module_export "ufshcd_qti_hba_init_crypto_capabilities"
+          disable_module_export "qcom_clk_set_flags"
 
           cat << 'STUBEOF' > "${STUB_FILE}"
           #include <linux/module.h>
@@ -141,19 +136,21 @@ jobs:
           void crm_dump_drv_regs(void) {}
           EXPORT_SYMBOL(crm_dump_drv_regs);
 
-          /* ICC Debug Stubs */
+          /* ICC Stubs */
           int qcom_icc_debug_register(void *p) { return 0; }
           EXPORT_SYMBOL(qcom_icc_debug_register);
           void qcom_icc_debug_unregister(void *p) {}
           EXPORT_SYMBOL(qcom_icc_debug_unregister);
 
-          /* Gunyah & Debug Stubs */
+          /* Gunyah Stubs */
           int gh_rm_get_this_vmid(void *v) { return 0; }
           EXPORT_SYMBOL(gh_rm_get_this_vmid);
           int gh_get_irq(void) { return 0; }
           EXPORT_SYMBOL(gh_get_irq);
           void gh_put_irq(void) {}
           EXPORT_SYMBOL(gh_put_irq);
+
+          /* Debug & Misc Stubs */
           bool qcom_is_dma_buf_file(void *f) { return false; }
           EXPORT_SYMBOL(qcom_is_dma_buf_file);
           const char *debug_symbol_lookup_name(unsigned long a) { return NULL; }
@@ -161,7 +158,7 @@ jobs:
           bool debug_symbol_available(void) { return false; }
           EXPORT_SYMBOL(debug_symbol_available);
 
-          /* UFS, WALT & Crypto Stubs */
+          /* Crypto & UFS & WALT Stubs */
           void crypto_qti_disable(void *v) {}
           EXPORT_SYMBOL(crypto_qti_disable);
           void crypto_qti_debug(void *v) {}
@@ -212,7 +209,7 @@ jobs:
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- CC="clang" \
             DTC_FLAGS="-i ${{ github.workspace }}/common/arch/arm64/boot/dts/vendor/qcom -i ${{ github.workspace }}/common/include" \
-            dtbs || echo "⚠️ DTB derleme hatası oluştu."
+            dtbs || echo "⚠️ DTB derleme hataları atlandı."
 
       - name: 9. Paketleme
         run: |
