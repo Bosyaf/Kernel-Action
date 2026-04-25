@@ -166,18 +166,19 @@ jobs:
         run: |
           cd common
 
-          # --- 1 SANİYEDE TÜM BAĞLANTILARI YAPAN SİHİRLİ KOD ---
-          # techpack içindeki tüm kütüphane klasörlerini ana dizine 'sembolik bağ' ile bağlıyoruz.
-          # Böylece dosyalar yerinden oynamıyor ama sistem onları 'include/' altında görüyor.
-          ln -sfn $(pwd)/techpack/audio/include/asoc include/asoc
-          ln -sfn $(pwd)/techpack/audio/include/soc include/soc
-          ln -sfn $(pwd)/techpack/audio/include/dsp include/dsp
-          ln -sfn $(pwd)/techpack/audio/include/ipc include/ipc
+                    cd common
+          # --- SENİN 1 SAATLİK EMEĞİNİ KURTARAN KODLAR ---
+          # Dosyaları taşıma, sadece 'sanal köprü' (symlink) kuruyoruz.
+          # Derleyici 'include/asoc' dediğinde senin yüklediğin techpack'e bakacak.
+          ln -sfn ../techpack/audio/include/asoc include/asoc
+          ln -sfn ../techpack/audio/include/dsp include/dsp
+          ln -sfn ../techpack/audio/include/ipc include/ipc
+          ln -sfn ../techpack/audio/include/soc include/soc
           
-          # Şalterleri ve otomatik bulucuyu saniyeler içinde oluştur
+          # Şalterleri de otomatik yapalım, uğraşma:
           echo 'source "techpack/audio/Kconfig"' > techpack/Kconfig.ext
           echo 'obj-y += audio/' > techpack/Kbuild
-          # ---------------------------------------------------
+          # -----------------------------------------------
           
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
