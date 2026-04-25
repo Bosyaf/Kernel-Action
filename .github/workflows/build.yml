@@ -83,6 +83,10 @@ jobs:
           echo "💉 DTC 'child_address' hatası baypas ediliyor..."
           find ${COMMON}/scripts/dtc/ -type f -exec sed -i 's/"graph_child_address"//g' {} +
 
+          # Donanım config dosyalarını kernelin içine kopyalıyoruz (Hata buradaydı)
+          mkdir -p ${COMMON}/arch/arm64/configs/vendor/
+          cp -f ${DT}/arch/arm64/configs/vendor/*.config ${COMMON}/arch/arm64/configs/vendor/ 2>/dev/null || cp -f ${DT}/configs/*.config ${COMMON}/arch/arm64/configs/vendor/ 2>/dev/null || true
+
           echo "🛠️ Techpack bağlantıları kuruluyor..."
           mkdir -p ${COMMON}/techpack
           ln -sfn ${MODS}/qcom/opensource/audio-kernel ${COMMON}/techpack/audio
