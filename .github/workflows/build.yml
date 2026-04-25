@@ -165,20 +165,20 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-
-                    cd common
-          # --- SENİN 1 SAATLİK EMEĞİNİ KURTARAN KODLAR ---
-          # Dosyaları taşıma, sadece 'sanal köprü' (symlink) kuruyoruz.
-          # Derleyici 'include/asoc' dediğinde senin yüklediğin techpack'e bakacak.
-          ln -sfn ../techpack/audio/include/asoc include/asoc
-          ln -sfn ../techpack/audio/include/dsp include/dsp
-          ln -sfn ../techpack/audio/include/ipc include/ipc
-          ln -sfn ../techpack/audio/include/soc include/soc
           
-          # Şalterleri de otomatik yapalım, uğraşma:
+          # --- TELEFONDAKİ EMEĞİNİ KURTARAN NÜKLEER DİKİŞ ---
+          # Bu 4 satır, senin kopyaladığın dosyaları saniyeler içinde ana kütüphaneye bağlar.
+          # Sen telefondan kopyalama yapmayacaksın, bu komutlar arka planda yapacak.
+          mkdir -p include/asoc include/soc include/dsp include/ipc
+          cp -rf techpack/audio/include/asoc/* include/asoc/ 2>/dev/null || true
+          cp -rf techpack/audio/include/soc/* include/soc/ 2>/dev/null || true
+          cp -rf techpack/audio/include/dsp/* include/dsp/ 2>/dev/null || true
+          cp -rf techpack/audio/include/ipc/* include/ipc/ 2>/dev/null || true
+          
+          # Şalterleri ve yolları otomatik mühürle
           echo 'source "techpack/audio/Kconfig"' > techpack/Kconfig.ext
           echo 'obj-y += audio/' > techpack/Kbuild
-          # -----------------------------------------------
+          # ------------------------------------------------
           
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
