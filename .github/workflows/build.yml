@@ -243,6 +243,10 @@ jobs:
           
           # ========== SENİN EKLEDİĞİN MODÜL ==========
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_PINEAPPLE
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_CS35L41
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_CS35L41_I2C
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_CS35L41_SPI
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
