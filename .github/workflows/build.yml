@@ -166,24 +166,18 @@ jobs:
         run: |
           cd common
 
-          # --- 1 SAATLİK EMEĞİ KURTARAN VE HATALARI BİTİREN KOD ---
-          # 1. Klasör yapısını kernelin içine doğru şekilde kur
-          mkdir -p techpack/audio
+          # --- 1 SANİYEDE TÜM BAĞLANTILARI YAPAN SİHİRLİ KOD ---
+          # techpack içindeki tüm kütüphane klasörlerini ana dizine 'sembolik bağ' ile bağlıyoruz.
+          # Böylece dosyalar yerinden oynamıyor ama sistem onları 'include/' altında görüyor.
+          ln -sfn $(pwd)/techpack/audio/include/asoc include/asoc
+          ln -sfn $(pwd)/techpack/audio/include/soc include/soc
+          ln -sfn $(pwd)/techpack/audio/include/dsp include/dsp
+          ln -sfn $(pwd)/techpack/audio/include/ipc include/ipc
           
-          # 2. Senin ana dizine yüklediğin o dosyaları kernelin içine çek
-          cp -rf ../techpack/audio/* techpack/audio/ 2>/dev/null || true
-          
-          # 3. 'Can't open techpack/Kconfig.ext' hatasını bitiren satır
+          # Şalterleri ve otomatik bulucuyu saniyeler içinde oluştur
           echo 'source "techpack/audio/Kconfig"' > techpack/Kconfig.ext
-          
-          # 4. mvaisakh'ın 'otomatik modül bulucu' kodunu techpack içine mühürle
-          cat << 'EOF' > techpack/Kbuild
-          #SPDX-License-Identifier: GPL-2.0-only
-          TECHPACK?=y
-          techpack-dirs := $(shell find $(srctree)/techpack -maxdepth 1 -mindepth 1 -type d -not -name ".*")
-          obj-${TECHPACK} += $(addsuffix /,$(subst $(srctree)/techpack/,,$(techpack-dirs)))
-          EOF
-          # -------------------------------------------------------
+          echo 'obj-y += audio/' > techpack/Kbuild
+          # ---------------------------------------------------
           
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
