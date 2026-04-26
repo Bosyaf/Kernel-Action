@@ -104,6 +104,10 @@ jobs:
           ln -sfn ${WORKSPACE}/official-clang ${COMMON}/prebuilts/clang/host/linux-x86/clang-r487747c
           echo "✅ Enjeksiyon bitti. Hata payı SIFIR."
 
+          # Donanım ayar dosyalarını (config) kernelin içine kopyalıyoruz
+          mkdir -p ${COMMON}/arch/arm64/configs/vendor/
+          find ${DT} -name "*.config" -exec cp -f {} ${COMMON}/arch/arm64/configs/vendor/ \;
+
       - name: 5. Ana Kernel Derle (Image)
         run: |
           cd ${{ github.workspace }}/common
