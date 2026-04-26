@@ -54,7 +54,7 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-          # WLAN Kaynağı (mvaisakh)
+          # WiFi 7 (Kiwi v2) modül kaynağı
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14-modules.git --depth=1 sm8650-modules
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
@@ -124,19 +124,21 @@ jobs:
             fi
           fi
 
-      - name: 5. WiFi 7 (WLAN) Lehimleme ve Asya Yamaları
+      - name: 5. WLAN Lehimleme ve Asya Yamaları
         run: |
           cd common
-          # --- WLAN LEHİMLEME ---
-          # mvaisakh reposundan 210MB'lık WiFi canavarını çekip senin kerneldeki odaya koyuyoruz
+          # 1. WiFi 7 (Kiwi v2) Modüllerini Yerleştiriyoruz
           mkdir -p techpack/wlan
-          cp -rf ../sm8650-modules/qcom/opensource/wlan/* techpack/wlan/ 2>/dev/null || true
-          # Derleyicinin WiFi kütüphanelerini bulması için kısa yol
-          mkdir -p include/uapi/wlan
-          ln -sfn ../../techpack/wlan/qcacld-3.0/include include/uapi/wlan/include
-          # --- WLAN LEHİMLEME BİTİŞ ---
+          cp -rf ../sm8650-modules/qcom/opensource/wlan/qcacld-3.0 techpack/wlan/
+          cp -rf ../sm8650-modules/qcom/opensource/wlan/qca-wifi-host-cmn techpack/wlan/cmn
+          cp -rf ../sm8650-modules/qcom/opensource/wlan/fw-api techpack/wlan/fw-api
+          cp -rf ../sm8650-modules/qcom/opensource/wlan/platform techpack/wlan/platform
+          
+          # 2. Şalterleri mühürle
+          echo 'source "techpack/wlan/qcacld-3.0/Kconfig"' > techpack/Kconfig.ext
+          echo 'obj-y += wlan/qcacld-3.0/' > techpack/Kbuild
 
-          # WiFi patch'i sildim, sadece Baseband Guard ve LSM ayarı kaldı
+          # 3. Asya Yamaları (wifi.patch silindi)
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
