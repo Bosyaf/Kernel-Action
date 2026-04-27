@@ -53,7 +53,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          git clone https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
@@ -121,12 +121,6 @@ jobs:
               fi
             fi
           fi
-
-      - name: 5.Asya Yamaları
-        run: |
-          cd common
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
@@ -161,9 +155,6 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-
-          # WiFi Kconfig'deki o gıcık '\' karakter hatalarını temizle (Syntax hatasıdır, mecburi)
-          find techpack/wlan/qcacld-3.0 -name "Kconfig" -exec sed -i 's/\\$//g' {} + || true
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
