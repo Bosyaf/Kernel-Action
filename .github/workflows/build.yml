@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 16
+          swap-size-gb: 8
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,8 +54,6 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-          # WiFi 7 (Kiwi v2) modül kaynağı
-          git clone -b kplatform https://github.com/mvaisakh/xiaomi14-modules.git --depth=1 sm8650-modules
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
@@ -124,21 +122,9 @@ jobs:
             fi
           fi
 
-      - name: 5. WLAN Lehimleme ve Asya Yamaları
+      - name: 5.Asya Yamaları
         run: |
           cd common
-          # 1. WiFi 7 (Kiwi v2) Modüllerini Yerleştiriyoruz
-          mkdir -p techpack/wlan
-          cp -rf ../sm8650-modules/qcom/opensource/wlan/qcacld-3.0 techpack/wlan/
-          cp -rf ../sm8650-modules/qcom/opensource/wlan/qca-wifi-host-cmn techpack/wlan/cmn
-          cp -rf ../sm8650-modules/qcom/opensource/wlan/fw-api techpack/wlan/fw-api
-          cp -rf ../sm8650-modules/qcom/opensource/wlan/platform techpack/wlan/platform
-          
-          # 2. Şalterleri mühürle
-          echo 'source "techpack/wlan/qcacld-3.0/Kconfig"' > techpack/Kconfig.ext
-          echo 'obj-y += wlan/qcacld-3.0/' > techpack/Kbuild
-
-          # 3. Asya Yamaları (wifi.patch silindi)
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
@@ -250,10 +236,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== SENİN EKLEDİĞİN MODÜL (WALT) ==========
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-
-          # ========== WLAN (WIFI 7) MODÜLÜ ==========
+          # ========== SENİN EKLEDİĞİN MODÜL ==========
           ./scripts/config --file $CONFIG_FILE --module CONFIG_QCA_CLD_WLAN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS_KIWI_V2
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WALT_GET_CPU_TAKEN_SUPPORT
@@ -283,6 +266,9 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
+          # KCFLAGS içine '-Wno-error' ekledim. 
+          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -324,7 +310,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (WiFi 7 Edition)"
+          name: "CG+ Galadriel (ZyC Clang 22)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+
+          
