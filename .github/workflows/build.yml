@@ -21,7 +21,7 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 8
+          swap-size-gb: 16
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,6 +53,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          # Yeni forkladığın tertemiz repo (Techpack içinde olan)
           git clone https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
@@ -121,6 +122,13 @@ jobs:
               fi
             fi
           fi
+
+      - name: 5. Asya Yamaları
+        run: |
+          cd common
+          # wifi.patch SİLİNDİ - Dosyalar zaten repo içindeki techpack/wlan klasöründe
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
@@ -186,9 +194,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
@@ -230,7 +235,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== SENİN EKLEDİĞİN MODÜL ==========
+          # ========== WLAN (WIFI 7) MODÜLÜ ==========
           ./scripts/config --file $CONFIG_FILE --module CONFIG_QCA_CLD_WLAN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS_KIWI_V2
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WALT_GET_CPU_TAKEN_SUPPORT
@@ -256,14 +261,12 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
+      - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          # KCFLAGS içine '-Wno-error' ekledim. 
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
-          
+          # 'modules' ekledim, 'WALT' sildim, format hatalarını baypas ettim
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -274,10 +277,9 @@ jobs:
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
+            -Wno-constant-logical-operand \
             -Wno-error \
-            -Wno-format \
-            -Wno-format-extra-args \
-            -Wno-constant-logical-operand" \
+            -Wno-format" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
@@ -285,8 +287,8 @@ jobs:
             -Wl,-O2" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-          
+          echo "BOOTHASH=Galadriel-ZyC22-$(date +%s)" >> $GITHUB_ENV
+
       - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
@@ -297,6 +299,7 @@ jobs:
           
           cp ../common/out/arch/arm64/boot/Image .
           mkdir -p modules/vendor/lib/modules
+          # Senin elinle yüklediğin techpack içinden derlenen WLAN .ko dosyasını bulup toplar
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           zip -r "../CG-Galadriel.zip" ./*
 
@@ -304,10 +307,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (ZyC Clang 22)"
+          name: "CG+ Galadriel (WiFi 7 Build)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-
-          
