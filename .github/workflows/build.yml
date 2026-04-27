@@ -217,6 +217,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
@@ -254,6 +255,12 @@ jobs:
           
           # ========== SENİN EKLEDİĞİN MODÜL ==========
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          # WiFi 7 (WLAN) Ana Şalteri
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCA_CLD_WLAN
+          # Kiwi v2 Çipi İçin Özel Talimat
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS_KIWI_V2
+          # WiFi'yi WALT beynine bağlayan dikiş (ÇOK ÖNEMLİ)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WALT_GET_CPU_TAKEN_SUPPORT
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
