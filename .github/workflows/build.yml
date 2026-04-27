@@ -164,6 +164,12 @@ jobs:
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
+          # 1. Klasörü oluştur ve Techpack içindeki tüm ayar dosyalarını buraya kopyala
+          # Bu sayede merge_config.sh dosyaları 'bulamadım' diyemeyecek
+          mkdir -p arch/arm64/configs/vendor/
+          find techpack/ -name "*.config" -exec cp -f {} arch/arm64/configs/vendor/ \;
+          find techpack/ -name "*_defconfig" -exec cp -f {} arch/arm64/configs/vendor/ \;
+          
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
@@ -173,16 +179,20 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
           
+          # 2. Base config oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
             
           CONFIG_FILE="out/.config"
+
+          # 3. Merge İşlemi (Dosyalar artık vendor klasöründe olduğu için hata vermez)
           ./scripts/kconfig/merge_config.sh -O out out/.config \
           arch/arm64/configs/vendor/pineapple_GKI.config \
           arch/arm64/configs/vendor/houji_GKI.config \
-          techpack/wlan/qcacld-3.0/configs/houji_gki_kiwi-v2_defconfig
+          arch/arm64/configs/vendor/houji_gki_kiwi-v2_defconfig
+            
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
