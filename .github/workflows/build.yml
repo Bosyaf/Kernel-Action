@@ -125,15 +125,9 @@ jobs:
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
-          # 1. WLAN Kconfig içindeki o 'multi-line strings' hatasına sebep olan bozuk karakterleri siliyoruz
-          # Logda hata veren o ters slash (\) işaretlerini temizler
-          find techpack/wlan/qcacld-3.0/ -name "Kconfig" -exec sed -i 's/\\//g' {} +
-          # 1. WiFi 7 (qcacld-3.0) yollarını mühürlüyoruz (Hata almamak için)
-          # Eğer bu dikişleri repo'na bizzat elinle eklediysen bu satırlar sadece onay görevi görür.
-          sed -i 's/drivers-y	:=/drivers-y	:= drivers\/ techpack\//' Makefile
-          if ! grep -q "techpack/Kconfig.ext" arch/arm64/Kconfig; then
-            echo 'source "techpack/Kconfig.ext"' >> arch/arm64/Kconfig
-          fi
+          # 🔥 KRİTİK: 'Error in reading' hatasına sebep olan bozuk karakterleri siliyoruz
+          # WiFi klasöründeki tüm Kconfig dosyalarındaki hatalı ters slashları temizler
+          find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
           
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
@@ -272,6 +266,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
