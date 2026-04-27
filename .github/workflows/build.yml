@@ -176,7 +176,7 @@ jobs:
           ./scripts/kconfig/merge_config.sh -O out out/.config \
           arch/arm64/configs/vendor/pineapple_GKI.config \
           arch/arm64/configs/vendor/houji_GKI.config \
-          arch/arm64/configs/vendor/kiwi-v2_defconfig
+          arch/arm64/configs/vendor/pineapple_gki_kiwi-v2_defconfig
             
           CONFIG_FILE="out/.config"
 
