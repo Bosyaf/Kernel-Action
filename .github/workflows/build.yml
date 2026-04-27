@@ -164,26 +164,19 @@ jobs:
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          # 1. Klasörü oluştur ve Techpack içindeki tüm ayar dosyalarını buraya kopyala
-          # Bu sayede merge_config.sh dosyaları 'bulamadım' diyemeyecek
-          mkdir -p arch/arm64/configs/vendor/
-          find techpack/ -name "*.config" -exec cp -f {} arch/arm64/configs/vendor/ \;
-          find techpack/ -name "*_defconfig" -exec cp -f {} arch/arm64/configs/vendor/ \;
-          
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          touch .scmversion
-          
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          EOF
-          chmod +x scripts/check-local-export
-          
-          # 2. Base config oluştur
+          # 1. Base config oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
+          CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+          AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+          gki_defconfig
+            
+          CONFIG_FILE="out/.config"
+
+          # 2. Merge İşlemi (Dosya isimlerini senin verdiğin gibi güncelledim)
+          ./scripts/kconfig/merge_config.sh -O out out/.config \
+          arch/arm64/configs/vendor/pineapple_GKI.config \
+          arch/arm64/configs/vendor/houji_GKI.config \
+          arch/arm64/configs/vendor/kiwi-v2_defconfig
             
           CONFIG_FILE="out/.config"
 
