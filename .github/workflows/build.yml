@@ -179,7 +179,10 @@ jobs:
             gki_defconfig
             
           CONFIG_FILE="out/.config"
-          
+          ./scripts/kconfig/merge_config.sh -O out out/.config \
+          arch/arm64/configs/vendor/pineapple_GKI.config \
+          arch/arm64/configs/vendor/houji_GKI.config \
+          techpack/wlan/qcacld-3.0/configs/houji_gki_kiwi-v2_defconfig
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
