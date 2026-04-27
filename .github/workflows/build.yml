@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 22)
+name: CG+ ZyC wlan+walt Kernel
 
 permissions:
   contents: write
@@ -16,17 +16,6 @@ jobs:
       KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: GitHub Hafızasını Komple Temizle (Free Disk Space)
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
-
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
@@ -136,11 +125,6 @@ jobs:
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
-          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          rm -f wifi.patch
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
