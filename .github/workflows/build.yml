@@ -161,6 +161,9 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+
+          # WiFi Kconfig'deki o gıcık '\' karakter hatalarını temizle (Syntax hatasıdır, mecburi)
+          find techpack/wlan/qcacld-3.0 -name "Kconfig" -exec sed -i 's/\\$//g' {} + || true
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
