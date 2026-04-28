@@ -122,10 +122,15 @@ jobs:
             fi
           fi
 
-      - name: 5. Asya Yamaları (WiFi Patch Silindi)
+      - name: 5. Asya Yamaları ve WLAN Cerrahi Tamiri
         run: |
           cd common
-          # wifi.patch SİLİNDİ - Dosyalar techpack içinde
+          # 1. WLAN Kconfig içindeki o döngüye sebep olan her şeyi temizle
+          # Multi-line strings ve ters slash hatalarını kökten siler
+          find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
+          find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/default ni/default n/g' {} +
+          
+          # 2. Asya Yamaları (wifi.patch SİLİNDİ)
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
@@ -162,32 +167,17 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          # 1. WLAN Kconfig dosyasındaki bozuk karakterleri temizle (Döngüyü bitiren ilk dikiş)
-          find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
-          
-          # 2. Döngü Hatasını (Recursive) koddun içinden kazı
-          sed -i '/config PCIE_QCOM_ECAM/,/help/d' drivers/pci/controller/Kconfig
-          find drivers/pci/ -name "Kconfig*" -exec sed -i 's/select PCIE_QCOM_ECAM//g' {} +
-
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          EOF
-          chmod +x scripts/check-local-export
-
-                    # WLAN Kconfig içindeki bozuk karakterleri temizle (Döngüyü bitirir)
-          find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
-          sed -i 's/default ni/default n/g' techpack/wlan/qcacld-3.0/Kconfig 2>/dev/null || true
+          # 1. Base config oluştur
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # 3. Base config oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
+          # 2. Merge config (Dosyaların orada olduğunu varsayıyoruz)
+          ./scripts/kconfig/merge_config.sh -O out out/.config \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/vendor/pineapple_gki_kiwi-v2_defconfig
             
           CONFIG_FILE="out/.config"
 
