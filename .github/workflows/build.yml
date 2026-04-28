@@ -46,7 +46,6 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
           
-          # Clang yolunu GitHub'ın ana PATH'ine kalıcı ekliyoruz ki sistem başka bir şey kullanmasın
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
           
@@ -125,15 +124,65 @@ jobs:
       - name: 5. Asya Yamaları ve WLAN Cerrahi Tamiri
         run: |
           cd common
-          # 1. WLAN Kconfig içindeki o döngüye sebep olan her şeyi temizle
-          # Multi-line strings ve ters slash hatalarını kökten siler
           find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
           find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/default ni/default n/g' {} +
           
-          # 2. Asya Yamaları (wifi.patch SİLİNDİ)
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+
+      - name: 5.1. WLAN Config Düzeltmesi (default_config.h Oluştur)
+        run: |
+          cd common
+          echo "🔧 WLAN config düzeltmeleri yapılıyor..."
           
+          # default_config.h oluştur - senin defconfig'ine yönlendirir
+          cat > techpack/wlan/qcacld-3.0/configs/default_config.h << 'EOF'
+          #include "pineapple_gki_kiwi-v2_defconfig"
+          EOF
+          echo "✅ default_config.h oluşturuldu!"
+          
+          # Config dosyasını WLAN configs klasörüne kopyala
+          mkdir -p techpack/wlan/qcacld-3.0/configs/
+          if [ -f "arch/arm64/configs/vendor/pineapple_gki_kiwi-v2_defconfig" ]; then
+            cp arch/arm64/configs/vendor/pineapple_gki_kiwi-v2_defconfig \
+               techpack/wlan/qcacld-3.0/configs/
+            echo "✅ Config dosyası kopyalandı!"
+          else
+            echo "⚠️ Config dosyası bulunamadı, repo'da olması lazım"
+          fi
+          
+          # Kbuild'a include path ekle
+          if [ -f "techpack/wlan/qcacld-3.0/Kbuild" ]; then
+            if ! grep -q "ccflags-y.*WLAN_ROOT.*configs" techpack/wlan/qcacld-3.0/Kbuild; then
+              sed -i '/WLAN_PROFILE :=/a\\nccflags-y += -I$(srctree)/$(WLAN_ROOT)/configs' techpack/wlan/qcacld-3.0/Kbuild
+            fi
+            echo "✅ Kbuild include path eklendi!"
+          fi
+
+      - name: 5.2. techpack Makefile Entegrasyonu
+        run: |
+          cd common
+          echo "🔧 techpack ana build sistemine entegre ediliyor..."
+          
+          # techpack'i ana Makefile'a ekle
+          if ! grep -q "techpack" Makefile; then
+            echo "core-y += techpack/" >> Makefile
+            echo "✅ techpack Makefile'a eklendi!"
+          else
+            echo "⚠️ techpack zaten Makefile'da var"
+          fi
+          
+          # techpack/Makefile oluştur
+          if [ ! -f "techpack/Makefile" ]; then
+            cat > techpack/Makefile << 'EOF'
+          # techpack ana Makefile
+          obj-y += wlan/qcacld-3.0/
+          EOF
+            echo "✅ techpack/Makefile oluşturuldu!"
+          else
+            echo "⚠️ techpack/Makefile zaten var"
+          fi
+
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
@@ -170,10 +219,8 @@ jobs:
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          # 1. Base config oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          # 2. Merge config (Dosyaların orada olduğunu varsayıyoruz)
           ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
@@ -181,7 +228,6 @@ jobs:
             
           CONFIG_FILE="out/.config"
 
-          # 4. Merge Config (Vendor klasöründeki dosyaları birleştiriyoruz)
           ./scripts/kconfig/merge_config.sh -O out out/.config \
             arch/arm64/configs/vendor/pineapple_GKI.config \
             arch/arm64/configs/vendor/houji_GKI.config \
@@ -264,7 +310,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           
-          # 5. 'yes' pipe ile soru sorma döngüsünü kırıyoruz
           yes "" | make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
