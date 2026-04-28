@@ -178,6 +178,10 @@ jobs:
           exit 0
           EOF
           chmod +x scripts/check-local-export
+
+                    # WLAN Kconfig içindeki bozuk karakterleri temizle (Döngüyü bitirir)
+          find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
+          sed -i 's/default ni/default n/g' techpack/wlan/qcacld-3.0/Kconfig 2>/dev/null || true
           
           # 3. Base config oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
