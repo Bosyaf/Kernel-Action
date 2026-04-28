@@ -160,29 +160,21 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
+          # 1. WLAN Kconfig dosyasındaki bozuk karakterleri temizle (Sonsuz döngüyü bitiren ilk dikiş)
           find techpack/wlan/qcacld-3.0/ -name "Kconfig*" -exec sed -i 's/\\//g' {} +
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+
+          # 2. Base config oluştur
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" gki_defconfig
           
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          touch .scmversion
-          
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          EOF
-          chmod +x scripts/check-local-export
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
+          # 3. KRİTİK: Senin elinle yüklediğin o 3 dosyayı birleştiriyoruz (Hazine burada!)
+          # Bu komut senin attığın o 'CHIP_VERSION=2' değerlerini ana sisteme mühürler.
+          ./scripts/kconfig/merge_config.sh -O out out/.config \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/vendor/pineapple_kiwi-v2_defconfig
             
           CONFIG_FILE="out/.config"
           
-          ./scripts/kconfig/merge_config.sh -O out out/.config \
-          arch/arm64/configs/vendor/pineapple_GKI.config \
-          arch/arm64/configs/vendor/houji_GKI.config \
-         
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -261,6 +253,8 @@ jobs:
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          # 6. Sistem sana soru sormasın, her şeyi otomatik cevapla (Son dikiş)
+          yes "" | make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="clang" olddefconfig
           sed -i 's/check_defconfig//' build.config.gki || true
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
