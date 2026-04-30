@@ -188,12 +188,11 @@ jobs:
           export BOARD_PLATFORM=pineapple
           # Sürücülerin kernelin dahili pinctrl ve regmap dosyalarına erişmesi için gereken köprüler
           # Makefile.am dosyasındaki orijinal mühendislik planına sadık kalıyoruz.
-          # Klasörleri hazırla
+          # Klasörleri aç
           mkdir -p techpack/audio-kernel/soc
           mkdir -p techpack/audio-kernel/include/soc/qcom
 
-          # Sadece eksik olan internal.h dosyasını kopyalıyoruz. 
-          # Hata vermemesi için sonuna || true ekledik.
+          # Sadece eksik olan internal.h dosyasını kopyala, hata verirse durma geç
           cp drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h || true
 
           REAL_SB_PATH=$(find . -name "secure_buffer.h" | head -n 1)
