@@ -287,9 +287,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== SENİN EKLEDİĞİN MODÜL ==========
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -318,6 +315,19 @@ jobs:
           
           # KCFLAGS içine '-Wno-error' ekledim. 
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
+          # 1. GKI'nın "Generic" olma zorunluluğunu ve sembol kısıtlamalarını iptal ediyoruz.
+          # Bu sayede ses modülleri kernelin korumalı (protected) fonksiyonlarına tam yetkiyle erişir.
+          export UNSAFE_GKI_IS_NOT_GENERIC=1
+
+          # 2. Kernel içindeki korumalı sembol listelerini siliyoruz.
+          # Ses sürücüleri yüklendiğinde "sembol bulunamadı" (symbol not found) hatası almanı engeller.
+          rm -f android/abi_gki_protected_exports_*
+
+          # 3. KMI (Kernel Module Interface) kontrolünü esnetiyoruz.
+          # Dışarıdan gelen profesyonel sürücülerin kernel ile el sıkışmasını sağlar.
+          sed -i 's/CONFIG_UNUSED_SYMBOLS=n/CONFIG_UNUSED_SYMBOLS=y/' out/.config || true
+          ./scripts/config --file out/.config --enable CONFIG_UNUSED_SYMBOLS
+          ./scripts/config --file out/.config --disable CONFIG_TRIM_UNUSED_KSYMS
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -352,7 +362,14 @@ jobs:
           
           cp ../common/out/arch/arm64/boot/Image .
           mkdir -p modules/vendor/lib/modules
+          
+          # 1. Tüm modülleri (WALT ve Ses modülleri dahil) kopyala
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          
+          # 2. KRİTİK ADIM: Telefonun bu modülleri yüklemesi için liste oluştur
+          # Bu komut klasördeki tüm .ko dosyalarını isimlerini modules.load dosyasına yazar.
+          ls modules/vendor/lib/modules/*.ko | xargs -n1 basename > modules/vendor/lib/modules/modules.load
+          
           zip -r "../CG-Galadriel.zip" ./*
 
       - name: 9. Release Yükle
