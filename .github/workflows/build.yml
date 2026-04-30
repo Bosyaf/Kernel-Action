@@ -122,9 +122,14 @@ jobs:
             fi
           fi
 
-      - name: 5. Asya Yamaları
+      - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+          rm -f wifi.patch
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
           
@@ -170,7 +175,27 @@ jobs:
           exit 0
           EOF
           chmod +x scripts/check-local-export
-          
+
+          # 1. Ana Kbuild dosyasına techpack dizinini ekle (Derleyici bu klasöre girsin)
+          echo "obj-y += techpack/audio-kernel/" >> Kbuild
+
+          # 2. asoc/Kbuild içindeki hatalı msm-5.4 yolunu temizle ve senin klasör yapına bağla
+          # Bu komut, sürücülerin kendi içindeki include yollarını bulmasını sağlar.
+          sed -i 's|$(shell pwd)/kernel/msm-5.4|$(srctree)/techpack/audio-kernel|g' techpack/audio-kernel/asoc/Kbuild
+
+          # 3. Mi 14 (pineapple) platformunu çevre değişkeni olarak tanımla
+          # audio-kernel içindeki Makefile'lar bu değişkeni kontrol ederek pineapple dosyalarını seçer.
+          export BOARD_PLATFORM=pineapple
+          # Sürücülerin kernelin dahili pinctrl ve regmap dosyalarına erişmesi için gereken köprüler
+          # Makefile.am dosyasındaki orijinal mühendislik planına sadık kalıyoruz.
+          mkdir -p techpack/audio-kernel/soc
+          mkdir -p techpack/audio-kernel/include/soc/qcom
+
+          ln -sf ../../../drivers/pinctrl/core.h techpack/audio-kernel/soc/core.h
+          ln -sf ../../../drivers/pinctrl/pinctrl-utils.h techpack/audio-kernel/soc/pinctrl-utils.h
+          ln -sf ../../../drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h
+          ln -sf ../../../include/soc/qcom/secure_buffer.h techpack/audio-kernel/include/soc/qcom/secure_buffer.h
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -180,6 +205,32 @@ jobs:
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+          # ========== MI 14 (HOUJI) AUDIO HARDWARE CONFIGS ==========
+          # 1. Ana Ses Kartı ve DSP Altyapısı
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_PINEAPPLE
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_QDSP6V2
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_MSM_QDSP6V2_INTF
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_QDSP6_SSR
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SPF_CORE
+
+          # 2. Mi 14 Efsane Stereo Hoparlör ve Amfi Sürücüleri (CS35L41 & WSA)
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_CS35L41
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WSA884X
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WSA883X
+
+          # 3. Bağlantı ve Kontrolcü Protokolleri (SoundWire & Bolero)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SOUNDWIRE_MSTR_CTRL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWRM_VER_2P0
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BOLERO_VER_2P6
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_SDCA_REGISTERS
+
+          # 4. Codec ve Diğer Donanımlar
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WCD938X
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WCD939X
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WCD9XXX_CODEC_CORE_V2
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_WCD_IRQ 
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_EXT_DISPLAY
+          # ==========================================================
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -236,10 +287,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== WLAN (WIFI 7) CONFIG'LERİ ==========
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCA_CLD_WLAN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS_KIWI_V2
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WALT_GET_CPU_TAKEN_SUPPORT
+          # ========== SENİN EKLEDİĞİN MODÜL ==========
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -314,4 +363,6 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+
           
