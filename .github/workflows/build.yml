@@ -188,13 +188,14 @@ jobs:
           export BOARD_PLATFORM=pineapple
           # Sürücülerin kernelin dahili pinctrl ve regmap dosyalarına erişmesi için gereken köprüler
           # Makefile.am dosyasındaki orijinal mühendislik planına sadık kalıyoruz.
+          # Klasörleri oluştur ve dosyaları kopyala (Link loop hatasını kökten çözer)
           mkdir -p techpack/audio-kernel/soc
           mkdir -p techpack/audio-kernel/include/soc/qcom
 
-          ln -sf ../../../drivers/pinctrl/core.h techpack/audio-kernel/soc/core.h
-          ln -sf ../../../drivers/pinctrl/pinctrl-utils.h techpack/audio-kernel/soc/pinctrl-utils.h
-          ln -sf ../../../drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h
-          ln -sf ../../../include/soc/qcom/secure_buffer.h techpack/audio-kernel/include/soc/qcom/secure_buffer.h
+          cp drivers/pinctrl/core.h techpack/audio-kernel/soc/core.h
+          cp drivers/pinctrl/pinctrl-utils.h techpack/audio-kernel/soc/pinctrl-utils.h
+          cp drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h
+          cp include/soc/qcom/secure_buffer.h techpack/audio-kernel/include/soc/qcom/secure_buffer.h
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -236,6 +237,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
