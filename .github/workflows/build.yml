@@ -192,12 +192,9 @@ jobs:
           mkdir -p techpack/audio-kernel/soc
           mkdir -p techpack/audio-kernel/include/soc/qcom
 
-          # internal.h techpack'te yoktu, onu kernelden çekip yerine koyuyoruz
-          cp drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h
-
-          # core.h ve pinctrl-utils.h techpack'te var demiştin, garanti olsun diye kopyalıyoruz
-          cp drivers/pinctrl/core.h techpack/audio-kernel/soc/core.h
-          cp drivers/pinctrl/pinctrl-utils.h techpack/audio-kernel/soc/pinctrl-utils.h
+          # Sadece eksik olan internal.h dosyasını kopyalıyoruz. 
+          # Hata vermemesi için sonuna || true ekledik.
+          cp drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h || true
 
           REAL_SB_PATH=$(find . -name "secure_buffer.h" | head -n 1)
           if [ -n "$REAL_SB_PATH" ]; then
