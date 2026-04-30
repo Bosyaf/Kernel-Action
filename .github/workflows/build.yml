@@ -192,18 +192,6 @@ jobs:
           mkdir -p techpack/audio-kernel/soc
           mkdir -p techpack/audio-kernel/include/soc/qcom
 
-          # Sadece eksik olan internal.h dosyasını kopyala, hata verirse durma geç
-          cp drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h || true
-
-          REAL_SB_PATH=$(find . -name "secure_buffer.h" | head -n 1)
-          if [ -n "$REAL_SB_PATH" ]; then
-              echo "✅ Dosya bulundu: $REAL_SB_PATH"
-              cp "$REAL_SB_PATH" techpack/audio-kernel/include/soc/qcom/secure_buffer.h
-          else
-              echo "❌ HATA: secure_buffer.h bulunamadı!"
-              exit 1
-          fi
-
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
