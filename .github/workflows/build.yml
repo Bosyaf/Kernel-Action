@@ -195,7 +195,15 @@ jobs:
           cp drivers/pinctrl/core.h techpack/audio-kernel/soc/core.h
           cp drivers/pinctrl/pinctrl-utils.h techpack/audio-kernel/soc/pinctrl-utils.h
           cp drivers/base/regmap/internal.h techpack/audio-kernel/include/soc/internal.h
-          cp include/soc/qcom/secure_buffer.h techpack/audio-kernel/include/soc/qcom/secure_buffer.h
+
+          REAL_SB_PATH=$(find . -name "secure_buffer.h" | head -n 1)
+          if [ -n "$REAL_SB_PATH" ]; then
+              echo "✅ Dosya bulundu: $REAL_SB_PATH"
+              cp "$REAL_SB_PATH" techpack/audio-kernel/include/soc/qcom/secure_buffer.h
+          else
+              echo "❌ HATA: secure_buffer.h bulunamadı!"
+              exit 1
+          fi
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
