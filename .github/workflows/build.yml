@@ -1,4 +1,4 @@
-name: CG+ Galadriel Mi 14 Hybrid (Hatasız KSU + Dünkü Modüller)
+name: CG+ Galadriel Mi 14 Hybrid (Google Clang 17)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve ZyC Clang Çekimi
+      - name: 1. Paketler ve Google Clang 17 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,57 +35,39 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
           
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "🚀 Google Clang 17.0.2 (r487747c) Kuruluyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-google
+          # Google'ın Android 14 release Clang paketini indiriyoruz
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
-          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-google
+          rm -f clang.tar.gz
+          
+          # PATH ayarları
+          echo "$GITHUB_WORKSPACE/clang-google/bin" >> $GITHUB_PATH
+          echo "✅ Google Clang PATH'e eklendi!"
 
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          # Vaisakh'ın dün güncellediği Mi 14 dosyaları
           git clone https://github.com/mvaisakh/android_device_houji-kernel.git -b 16 prebuilt --depth 1
 
-      - name: 3. KernelSU-Next & SUSFS Kurulumu + namespace.c Fix
+      - name: 3. KernelSU-Next & SUSFS Kurulumu
         run: |
           cd common
-          # KSU-Next Kurulumu
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-          
-          # SUSFS Kaynakları
           git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/
           cp -R susfs4ksu/kernel_patches/include/* ./include/
-          
-          # Ana SUSFS Yaması
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
           [ -n "$SUSFS_PATCH" ] && patch -p1 < "$SUSFS_PATCH" || true
 
-          # SENİN ÖZEL YAMAN VE KRİTİK HEADER FİX (20 hatayı bu satır çözer)
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch
-          patch -p1 < fs_namespace.patch || true
-          
-          # Clang 22 için eksik headerları zorla enjekte ediyoruz
-          sed -i '1i #include <linux/susfs.h>\n#include <linux/kernel_stat.h>' fs/namespace.c
-          echo "#include <linux/susfs.h>" >> include/linux/mount.h
-
-      - name: 4. Özel Performans Yamaları
+      - name: 4. Kernel Config Hazırlığı
         run: |
           cd common
-          PATCH_DIR="../patches"
-          if [ -d "$PATCH_DIR" ]; then
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              patch -p1 --forward < "$patch_file" || echo "❌ ATLANDI"
-            done
-          fi
-
-      - name: 5. Kernel Config & Hazırlık
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          touch .scmversion
+          export PATH="$GITHUB_WORKSPACE/clang-google/bin:$PATH"
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           CONFIG_FILE="out/.config"
@@ -98,50 +80,52 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 6. Kernel Derleme (Sadece Image ve KSU)
+      - name: 5. Kernel Derleme (Sadece Image)
         run: |
           cd common
-          # GKI kısıtlamalarını kaldır (Modüllerin uyması için)
+          export PATH="$GITHUB_WORKSPACE/clang-google/bin:$PATH"
+          
+          # GKI kısıtlamalarını hazır modüller için kaldırıyoruz
           export UNSAFE_GKI_IS_NOT_GENERIC=1
           rm -f android/abi_gki_protected_exports_*
           
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            KCFLAGS="-O2 -march=armv9.2-a+crypto -Wno-error" \
+            KCFLAGS="-O2 -Wno-error" \
             Image modules || exit 1
-          echo "BOOTHASH=Galadriel-Mi14-$(date +%s)" >> $GITHUB_ENV
+          
+          echo "BOOTHASH=Galadriel-G-Clang-$(date +%s)" >> $GITHUB_ENV
 
-      - name: 7. AnyKernel3 (Hibrit Paketleme)
+      - name: 6. AnyKernel3 (Hibrit Birleştirme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Mi 14 Hybrid/' anykernel.sh
           sed -i '/is_slot_device=0/c\is_slot_device=auto' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=xiaomi14' anykernel.sh
           
-          # 1. Kendi taze Image dosyan
+          # 1. Kendi derlediğin Image
           cp ../common/out/arch/arm64/boot/Image .
           
-          # 2. Vaisakh'ın dünkü taze donanım modülleri (GPU, Ses, Wifi vb.)
+          # 2. Vaisakh'ın dün güncellediği tüm profesyonel modüller
           mkdir -p modules/vendor/lib/modules
           find ../prebuilt -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # 3. Senin derlediğin WALT/KSU modülleri varsa ekle
+          # 3. Kendi derlediğin modüller (KSU vb.) varsa üzerine yaz
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # 4. Mi 14 Donanım Haritaları (DTBO)
+          # 4. Donanım haritaları (DTBO)
           find ../prebuilt -name "*.dtbo" -exec cp {} . \;
           
-          # 5. Modül yükleme listesini otomatik oluştur
+          # 5. Modül yükleme listesi
           ls modules/vendor/lib/modules/*.ko | xargs -n1 basename > modules/vendor/lib/modules/modules.load
           
           zip -r "../CG-Galadriel-Hybrid.zip" ./*
 
-      - name: 8. Release Yükle
+      - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel Mi 14 Hybrid (Latest Yesterday Update)"
+          name: "CG+ Galadriel Mi 14 Hybrid (Google Clang 17)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
