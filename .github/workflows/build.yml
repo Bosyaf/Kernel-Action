@@ -41,12 +41,15 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
 
-      - name: 2. Kaynakları ve Dünkü Taze Modülleri Çek
+      - name: 2. Kaynakları ve Vaisakh'ın Dünkü Modüllerini Çek
         run: |
+          # 1. AnyKernel3 (Paketleme için)
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Senin ana kernel kaynağın
+          
+          # 2. Galadriel Kernel Kaynağın
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-          # Vaisakh'ın dün güncellediği houji donanım hazinesi (Yesterday Update)
+          
+          # 3. Vaisakh'ın Dün Güncellediği Modül ve DTBO Deposu
           git clone https://github.com/mvaisakh/android_device_houji-kernel.git -b 16 prebuilt --depth 1
 
       - name: 3. KernelSU-Next & SUSFS Kurulumu
@@ -59,31 +62,25 @@ jobs:
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
           [ -n "$SUSFS_PATCH" ] && patch -p1 < "$SUSFS_PATCH" || true
 
-      - name: 4. Özel Performans Yamaları
-        run: |
-          cd common
-          PATCH_DIR="../patches"
-          [ -d "$PATCH_DIR" ] && for patch_file in "$PATCH_DIR"/*.patch; do patch -p1 --forward < "$patch_file" || echo "❌ ATLANDI"; done
-
-      - name: 5. Full Kernel Config (WALT Dahil)
+      - name: 4. Full Kernel Config (WALT Dahil)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           CONFIG_FILE="out/.config"
           
-          # WALT modülü ve standart Galadriel ayarları
+          # WALT ve Galadriel Temel Ayarları
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 6. Kernel Derleme (Sadece Image ve WALT)
+      - name: 5. Kernel Derleme (Senin Image Dosyan)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -91,38 +88,40 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             KCFLAGS="-O2 -march=armv9.2-a+crypto -Wno-error" \
             Image modules || exit 1
-          echo "BOOTHASH=Galadriel-Hybrid-$(date +%s)" >> $GITHUB_ENV
+          echo "BOOTHASH=Galadriel-Mi14-$(date +%s)" >> $GITHUB_ENV
 
-      - name: 7. AnyKernel3 (Hibrit Paketleme: Senin Image + Vaisakh'ın Dünkü Modülleri)
+      - name: 6. AnyKernel3 (Senin Kernelin + Vaisakh'ın Modülleri)
         run: |
           cd ./AnyKernel3
-          # Cihaz isimlerini houji olarak ayarla
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Mi 14 Hybrid/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=xiaomi14' anykernel.sh
           
-          # 1. Senin derlediğin Image dosyasını koy
+          # 1. Senin derlediğin Image dosyasını al
           cp ../common/out/arch/arm64/boot/Image .
           
-          # 2. Vaisakh'ın dün güncellediği TÜM modülleri (GPU, Ses, Wifi vb.) içine at
+          # 2. Klasörü hazırla
           mkdir -p modules/vendor/lib/modules
-          cp ../prebuilt/*.ko modules/vendor/lib/modules/
           
-          # 3. Senin derlediğin WALT modülünü Vaisakh'ınkinin üzerine yaz (Seninki daha güncel olsun)
+          # 3. Vaisakh'ın dünkü modüllerini (Audio, Gfx, Wifi vb.) kopyala
+          # Prebuilt reposunun her yerindeki .ko dosyalarını bulup topluyoruz
+          find ../prebuilt -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          
+          # 4. Senin derlediğin WALT modülünü Vaisakh'ınkinin üzerine yaz (Seninki kalsın)
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # 4. Donanım Haritalarını (DTBO) ekle (Mi 14 donanımı tanıması için ŞART)
-          cp ../prebuilt/dtbs/*.dtbo . || true
+          # 5. Mi 14 donanım haritalarını (DTBO) AnyKernel köküne kopyala
+          find ../prebuilt -name "*.dtbo" -exec cp {} . \;
           
-          # 5. Modül yükleme listesini oluştur
+          # 6. Modül yükleme listesini oluştur
           ls modules/vendor/lib/modules/*.ko | xargs -n1 basename > modules/vendor/lib/modules/modules.load
           
           zip -r "../CG-Galadriel-Hybrid.zip" ./*
 
-      - name: 8. Release Yükle
+      - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel Mi 14 Hybrid (Yesterday Prebuilts)"
+          name: "CG+ Galadriel Mi 14 (yesterday-update)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
