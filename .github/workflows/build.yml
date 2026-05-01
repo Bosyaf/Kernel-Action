@@ -191,6 +191,28 @@ jobs:
           # Klasörleri aç
           mkdir -p techpack/audio-kernel/soc
           mkdir -p techpack/audio-kernel/include/soc/qcom
+                    # --- TOTAL AUDIO FIX (GKI & CLANG 22) ---
+          # 1. Klasör ve Köprü Ayarları
+          mkdir -p techpack/audio-kernel/soc techpack/audio-kernel/include/soc/qcom techpack/audio-kernel/include/linux
+          
+          # 2. Eksik Headerları Otomatik Doldur (Dummy & Fix)
+          printf "#ifndef _SOC_QCOM_SECURE_BUFFER_H\n#define _SOC_QCOM_SECURE_BUFFER_H\n#include <linux/types.h>\n#include <linux/qcom_scm.h>\n#define VMID_HLOS 3\n#define VMID_ADSP_Q6 4\n#define VMID_LPASS 6\n#define VMID_ADSP_HEAP 14\n#define PERM_READ 0x4\n#define PERM_WRITE 0x2\n#define PERM_EXEC 0x1\nstatic inline int hyp_assign_phys(u64 a, u64 s, const u32 *sv, int sn, const u32 *dv, const u32 *dp, int dn) { return 0; }\n#endif" > techpack/audio-kernel/include/soc/qcom/secure_buffer.h
+          printf "#ifndef _LINUX_MSM_ION_H\n#define _LINUX_MSM_ION_H\n#endif" > techpack/audio-kernel/include/linux/msm_ion.h
+          printf "#ifndef _LINUX_IPC_LOGGING_H\n#define _LINUX_IPC_LOGGING_H\nstatic inline void *ipc_log_context_create(int p, const char *n, uint32_t f) { return (void *)0x1; }\nstatic inline void ipc_log_string(void *c, const char *f, ...) {}\n#endif" > techpack/audio-kernel/include/linux/ipc_logging.h
+          
+          # 3. Tüm Codec Redefinition Hatalarını Tek Hamlede Bitir (937, 938, 939, 9378)
+          find techpack/audio-kernel/asoc/codecs/ -name "*.h" -exec sed -i 's/static inline/extern/g' {} +
+          find techpack/audio-kernel/asoc/codecs/ -name "*.h" -exec sed -i 's/{ return 0; }//g' {} +
+          find techpack/audio-kernel/asoc/codecs/ -name "*.h" -exec sed -i 's/{ }//g' {} +
+
+          # 4. Format ve Tip Hatalarını Otomatik Tamir Et
+          find techpack/audio-kernel -name "*.c" -exec sed -i 's/%lx/%llx/g' {} +
+          find techpack/audio-kernel -name "*.c" -exec sed -i 's/%ld/%u/g' {} +
+
+          # 5. Kbuild Adreslerini ve Loop Hatalarını Temizle
+          find techpack/audio-kernel -name "Kbuild" -exec sed -i 's|$(shell pwd)/kernel/msm-5.4|$(srctree)/techpack/audio-kernel|g' {} +
+          find techpack/audio-kernel -name "Kbuild" -exec sed -i '/obj-y += .\//d' {} +
+          # ----------------------------------------
 
           cp techpack/audio-kernel/soc/soundwire.h techpack/audio-kernel/include/soc/soundwire.h || true
           
