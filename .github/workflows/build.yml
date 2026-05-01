@@ -165,98 +165,36 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
+          # --- GRAPHICS KERNEL LINKLEME ---
+          echo "obj-y += techpack/graphics-kernel/" >> Kbuild
+          sed -i 's|KDIR := .*|KDIR := $(srctree)|g' techpack/graphics-kernel/Kbuild
+          echo "BOARD_PLATFORM=pineapple" >> $GITHUB_ENV
+
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
-          EOF
-          chmod +x scripts/check-local-export
-
-          # 1. Ana Kbuild dosyasına techpack dizinini ekle (Derleyici bu klasöre girsin)
-          echo "obj-y += techpack/audio-kernel/" >> Kbuild
-
-          # 2. asoc/Kbuild içindeki hatalı msm-5.4 yolunu temizle ve senin klasör yapına bağla
-          # Bu komut, sürücülerin kendi içindeki include yollarını bulmasını sağlar.
-          sed -i 's|$(shell pwd)/kernel/msm-5.4|$(srctree)/techpack/audio-kernel|g' techpack/audio-kernel/asoc/Kbuild
-
-          # 3. Mi 14 (pineapple) platformunu çevre değişkeni olarak tanımla
-          # audio-kernel içindeki Makefile'lar bu değişkeni kontrol ederek pineapple dosyalarını seçer.
-          export BOARD_PLATFORM=pineapple
-          # Sürücülerin kernelin dahili pinctrl ve regmap dosyalarına erişmesi için gereken köprüler
-          # Makefile.am dosyasındaki orijinal mühendislik planına sadık kalıyoruz.
-          # Klasörleri aç
-          mkdir -p techpack/audio-kernel/soc
-          mkdir -p techpack/audio-kernel/include/soc/qcom
-                    # --- TOTAL AUDIO FIX (GKI & CLANG 22) ---
-          # 1. Klasör ve Köprü Ayarları
-          mkdir -p techpack/audio-kernel/soc techpack/audio-kernel/include/soc/qcom techpack/audio-kernel/include/linux
-          
-          # 2. Eksik Headerları Otomatik Doldur (Dummy & Fix)
-          printf "#ifndef _SOC_QCOM_SECURE_BUFFER_H\n#define _SOC_QCOM_SECURE_BUFFER_H\n#include <linux/types.h>\n#include <linux/qcom_scm.h>\n#define VMID_HLOS 3\n#define VMID_ADSP_Q6 4\n#define VMID_LPASS 6\n#define VMID_ADSP_HEAP 14\n#define PERM_READ 0x4\n#define PERM_WRITE 0x2\n#define PERM_EXEC 0x1\nstatic inline int hyp_assign_phys(u64 a, u64 s, const u32 *sv, int sn, const u32 *dv, const u32 *dp, int dn) { return 0; }\n#endif" > techpack/audio-kernel/include/soc/qcom/secure_buffer.h
-          printf "#ifndef _LINUX_MSM_ION_H\n#define _LINUX_MSM_ION_H\n#endif" > techpack/audio-kernel/include/linux/msm_ion.h
-          printf "#ifndef _LINUX_IPC_LOGGING_H\n#define _LINUX_IPC_LOGGING_H\nstatic inline void *ipc_log_context_create(int p, const char *n, uint32_t f) { return (void *)0x1; }\nstatic inline void ipc_log_string(void *c, const char *f, ...) {}\n#endif" > techpack/audio-kernel/include/linux/ipc_logging.h
-          
-          # 3. Tüm Codec Redefinition Hatalarını Tek Hamlede Bitir (937, 938, 939, 9378)
-          find techpack/audio-kernel/asoc/codecs/ -name "*.h" -exec sed -i 's/static inline/extern/g' {} +
-          find techpack/audio-kernel/asoc/codecs/ -name "*.h" -exec sed -i 's/{ return 0; }//g' {} +
-          find techpack/audio-kernel/asoc/codecs/ -name "*.h" -exec sed -i 's/{ }//g' {} +
-
-          # 4. Format ve Tip Hatalarını Otomatik Tamir Et
-          find techpack/audio-kernel -name "*.c" -exec sed -i 's/%lx/%llx/g' {} +
-          find techpack/audio-kernel -name "*.c" -exec sed -i 's/%ld/%u/g' {} +
-
-          # 5. Kbuild Adreslerini ve Loop Hatalarını Temizle
-          find techpack/audio-kernel -name "Kbuild" -exec sed -i 's|$(shell pwd)/kernel/msm-5.4|$(srctree)/techpack/audio-kernel|g' {} +
-          find techpack/audio-kernel -name "Kbuild" -exec sed -i '/obj-y += .\//d' {} +
-          # ----------------------------------------
-
-          cp techpack/audio-kernel/soc/soundwire.h techpack/audio-kernel/include/soc/soundwire.h || true
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-            
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           CONFIG_FILE="out/.config"
+          
+          # --- GPU CONFIG ENJEKSIYONU ---
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_KGSL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_QCOM_KGSL_IDLE_TIMEOUT 80
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_KGSL_SORT_POOL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_KGSL_CONTEXT_DEBUG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_KGSL_IOCOHERENCY_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_QCOM_ADRENO_DEFAULT_GOVERNOR "msm-adreno-tz"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QTI_HW_FENCE
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          # ========== MI 14 (HOUJI) AUDIO HARDWARE CONFIGS ==========
-          # 1. Ana Ses Kartı ve DSP Altyapısı
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_PINEAPPLE
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_QDSP6V2
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_MSM_QDSP6V2_INTF
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_QDSP6_SSR
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SPF_CORE
-
-          # 2. Mi 14 Efsane Stereo Hoparlör ve Amfi Sürücüleri (CS35L41 & WSA)
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_CS35L41
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WSA884X
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WSA883X
-
-          # 3. Bağlantı ve Kontrolcü Protokolleri (SoundWire & Bolero)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SOUNDWIRE_MSTR_CTRL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWRM_VER_2P0
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BOLERO_VER_2P6
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_SDCA_REGISTERS
-
-          # 4. Codec ve Diğer Donanımlar
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WCD938X
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SND_SOC_WCD939X
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WCD9XXX_CODEC_CORE_V2
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC_WCD_IRQ 
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_EXT_DISPLAY
-          # ==========================================================
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
@@ -308,6 +246,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
+          # ========== SENİN EKLEDİĞİN MODÜL ==========
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -332,32 +273,19 @@ jobs:
       - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          # KCFLAGS içine '-Wno-error' ekledim. 
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
-          # 1. GKI'nın "Generic" olma zorunluluğunu ve sembol kısıtlamalarını iptal ediyoruz.
-          # Bu sayede ses modülleri kernelin korumalı (protected) fonksiyonlarına tam yetkiyle erişir.
+          # GKI KISITLAMALARINI KALDIRMA
           export UNSAFE_GKI_IS_NOT_GENERIC=1
-
-          # 2. Kernel içindeki korumalı sembol listelerini siliyoruz.
-          # Ses sürücüleri yüklendiğinde "sembol bulunamadı" (symbol not found) hatası almanı engeller.
           rm -f android/abi_gki_protected_exports_*
-
-          # 3. KMI (Kernel Module Interface) kontrolünü esnetiyoruz.
-          # Dışarıdan gelen profesyonel sürücülerin kernel ile el sıkışmasını sağlar.
-          sed -i 's/CONFIG_UNUSED_SYMBOLS=n/CONFIG_UNUSED_SYMBOLS=y/' out/.config || true
-          ./scripts/config --file out/.config --enable CONFIG_UNUSED_SYMBOLS
-          ./scripts/config --file out/.config --disable CONFIG_TRIM_UNUSED_KSYMS
+          
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -I$(pwd)/techpack/audio-kernel \
-            -I$(pwd)/techpack/audio-kernel/include \
-            -I$(pwd)/techpack/audio-kernel/include/uapi/audio \
+            -I$(pwd)/techpack/graphics-kernel/include \
+            -I$(pwd)/techpack/graphics-kernel/include/uapi \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -falign-loops=32 \
             -fomit-frame-pointer \
@@ -386,14 +314,7 @@ jobs:
           
           cp ../common/out/arch/arm64/boot/Image .
           mkdir -p modules/vendor/lib/modules
-          
-          # 1. Tüm modülleri (WALT ve Ses modülleri dahil) kopyala
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          
-          # 2. KRİTİK ADIM: Telefonun bu modülleri yüklemesi için liste oluştur
-          # Bu komut klasördeki tüm .ko dosyalarını isimlerini modules.load dosyasına yazar.
-          ls modules/vendor/lib/modules/*.ko | xargs -n1 basename > modules/vendor/lib/modules/modules.load
-          
           zip -r "../CG-Galadriel.zip" ./*
 
       - name: 9. Release Yükle
