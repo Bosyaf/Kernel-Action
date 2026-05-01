@@ -286,6 +286,7 @@ jobs:
             KCFLAGS="-O2 \
             -I$(pwd)/techpack/graphics-kernel/include \
             -I$(pwd)/techpack/graphics-kernel/include/uapi \
+            -I$(pwd)/drivers/devfreq \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -falign-loops=32 \
             -fomit-frame-pointer \
