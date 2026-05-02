@@ -240,6 +240,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          
+          # ========== SENİN EKLEDİĞİN MODÜL ==========
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
