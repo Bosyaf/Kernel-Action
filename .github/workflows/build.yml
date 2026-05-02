@@ -1,4 +1,4 @@
-name: CG+ Galadriel Mi 14 (Stable Root)
+name: CG+ Galadriel Mi 14 Hybrid (yesterday-update)
 
 permissions:
   contents: write
@@ -28,7 +28,6 @@ jobs:
 
       - name: 1. Paketler ve Google Clang 17 Çekimi
         run: |
-          # Gereksiz servisleri ve beklemeleri devre dışı bırakıyoruz
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
@@ -36,34 +35,54 @@ jobs:
             python3 curl git zip unzip tar xz-utils libncurses-dev \
             rsync dwarves cpio wget pkg-config zstd
           
-          echo "🚀 Google Clang 17.0.2 (r487747c) indiriliyor..."
+          echo "🚀 Google Clang 17.0.2 (r487747c) Kuruluyor..."
           mkdir -p $GITHUB_WORKSPACE/clang-google
           CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "❌ İndirme başarısız!"; exit 1; }
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-google
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang-google/bin" >> $GITHUB_PATH
-          echo "✅ Paketler ve Clang hazır!"
 
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          # Vaisakh'ın dünkü taze modül ve DTBO deposu (DUMANI ÜSTÜNDE)
           git clone https://github.com/mvaisakh/android_device_houji-kernel.git -b 16 prebuilt --depth 1
 
       - name: 3. KernelSU-Next Kurulumu
         run: |
           cd common
-          # Sadece KernelSU-Next'in temel kodunu kuruyoruz (SUSFS yok)
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/master/kernel/setup.sh" | bash -
 
-      - name: 4. Kernel Config Hazırlığı
+      - name: 4. Kernel Config Hazırlığı (Qualcomm Altyapı Desteği)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-google/bin:$PATH"
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           CONFIG_FILE="out/.config"
           
+          # --- QUALCOMM ALTYAPI AYARLARI (453 MODÜLÜN ÇALIŞMASI İÇİN ŞART) ---
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MHI_BUS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QRTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QRTR_SMD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QRTR_MHI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_QMI_HELPERS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SMEM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SCM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_COMMAND_DB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INTERCONNECT_QCOM_PINEAPPLE
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCACLD_WLAN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCACLD_WLAN_KIWI_V2
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_CNSS2
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS2_KIWI_V2
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS2_QMI
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CNSS_PLAT_IPC_QMI_SVC
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_ICNSS2
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ICNSS2_KIWI_V2
+          
+          # Root ve Galadriel Ayarları
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel-Hybrid"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
@@ -83,38 +102,39 @@ jobs:
             KCFLAGS="-O2 -Wno-error" \
             Image modules || exit 1
           
-          echo "BOOTHASH=Galadriel-Root-$(date +%s)" >> $GITHUB_ENV
+          echo "BOOTHASH=Galadriel-Hybrid-$(date +%s)" >> $GITHUB_ENV
 
-      - name: 6. AnyKernel3 (Senin Kernelin + Vaisakh Modülleri)
+      - name: 6. AnyKernel3 (Beyin ve Kasların Evliliği)
         run: |
           cd ./AnyKernel3
+          # AnyKernel Ayarları
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Mi 14 Hybrid/' anykernel.sh
           sed -i '/is_slot_device=0/c\is_slot_device=auto' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=xiaomi14' anykernel.sh
           
-          # 1. Kendi derlediğin Image
+          # 1. Kendi derlediğin taze Image (Beyin)
           cp ../common/out/arch/arm64/boot/Image .
           
-          # 2. Vaisakh'ın profesyonel donanım modülleri
+          # 2. Vaisakh'ın dünkü 453 modülünü kopyala (Kaslar)
           mkdir -p modules/vendor/lib/modules
           find ../prebuilt -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # 3. Senin KSU modülünü (varsa) üzerine yaz
+          # 3. Senin derlediğin KSU modülünü de ekle
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           
-          # 4. Mi 14 donanım haritaları
+          # 4. Mi 14 Donanım Haritalarını kopyala (90 DTBO)
           find ../prebuilt -name "*.dtbo" -exec cp {} . \;
           
-          # 5. Modül yükleme listesi
+          # 5. Modül yükleme listesini Vaisakh'ın listesine göre güncelle
           ls modules/vendor/lib/modules/*.ko | xargs -n1 basename > modules/vendor/lib/modules/modules.load
           
-          zip -r "../CG-Galadriel-Stable.zip" ./*
+          zip -r "../CG-Galadriel-Hybrid-Stable.zip" ./*
 
       - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel Mi 14 (Stable Root)"
+          name: "CG+ Galadriel Mi 14 (Dünkü Güncel Modüller)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
