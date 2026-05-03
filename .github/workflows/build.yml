@@ -60,19 +60,21 @@ jobs:
         run: |
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git source --depth=1
 
-      - name: Integrate External Device Tree (Beyin Nakli)
+      - name: Force Integrate External Device Tree
         run: |
-          # 1. Harici repoyu geçici bir yere çek
+          # 1. Harici repoyu çek
           git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git dt_temp --depth=1
           
-          # 2. qcom klasörünü doğrudan dts içine taşı (Nesting sorununu çözmek için)
+          # 2. Kernel içindeki mevcut dts/qcom'u sil ve bizimkini koy
           rm -rf source/arch/arm64/boot/dts/qcom
           cp -r dt_temp/qcom source/arch/arm64/boot/dts/
           
-          # 3. Makefile'a qcom'u ekle (En başa ekliyoruz ki diğerleri ezmesin)
-          sed -i '1i subdir-y += qcom' source/arch/arm64/boot/dts/Makefile
+          # 3. RADİKAL ÇÖZÜM: arch/arm64/boot/dts/ içindeki Makefile'ı SIFIRLA.
+          # Sadece qcom klasörünü dahil et. Geri kalan Allwinner, Hisilicon vb. tamamen silindi.
+          echo 'subdir-y += qcom' > source/arch/arm64/boot/dts/Makefile
+          echo 'obj-$(CONFIG_OF_ALL_DTBS) += $(patsubst $(srctree)/$(src)/%.dts,%.dtb,$(wildcard $(srctree)/$(src)/*.dts))' >> source/arch/arm64/boot/dts/Makefile
           
-          echo "Device tree integrated directly into dts/qcom"
+          echo "Makefile has been wiped and forced to only see qcom directory."
 
       - name: Prepare Config
         run: |
@@ -99,20 +101,21 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/toolchain/clang-google/bin:$PATH"
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # DTC Include yollarını manuel olarak ekliyoruz (audio, camera, display için)
-          # Bu sayede .dts dosyaları içindeki #include "..." komutları çalışır
+          # Include yollarını dts/qcom altına yönlendiriyoruz
           export DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts/qcom \
                               -I$(pwd)/arch/arm64/boot/dts/qcom/audio \
                               -I$(pwd)/arch/arm64/boot/dts/qcom/camera \
                               -I$(pwd)/arch/arm64/boot/dts/qcom/display \
-                              -I$(pwd)/arch/arm64/boot/dts/qcom/video"
+                              -I$(pwd)/arch/arm64/boot/dts/qcom/video \
+                              -I$(pwd)/arch/arm64/boot/dts/qcom/wlan"
 
-          echo "Starting DTB Build..."
+          echo "Building DTBs (Only qcom)..."
+          # DTC_FLAGS ile uyarıları susturuyoruz ama hata almamak için tanınmayan bayrakları sildik
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-               DTC_FLAGS="${DTC_INCLUDE} -Wno-graph_child_address -Wno-graph_port -Wno-interrupt_provider" \
+               DTC_FLAGS="${DTC_INCLUDE} -Wno-interrupt_provider" \
                dtbs
 
-          echo "Starting Image Build..."
+          echo "Building Kernel Image..."
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
 
       - name: Build & Install Modules
@@ -134,22 +137,17 @@ jobs:
           MOD_DIR="$GITHUB_WORKSPACE/modules_temp"
           AK3_DIR="$GITHUB_WORKSPACE/AnyKernel3"
 
-          # 1. Image
           cp "${OUT_DIR}/arch/arm64/boot/Image" "$AK3_DIR/Image"
 
-          # 2. DTB ve DTBO
           mkdir -p "$AK3_DIR/dtb" "$AK3_DIR/dtbo"
-          # Artık dosyalar dts/qcom altında toplandı
           find "${OUT_DIR}/arch/arm64/boot/dts/qcom" -name "*.dtb" -exec cp {} "$AK3_DIR/dtb/" \; 2>/dev/null || true
           find "${OUT_DIR}/arch/arm64/boot/dts/qcom" -name "*.dtbo" -exec cp {} "$AK3_DIR/dtbo/" \; 2>/dev/null || true
 
-          # 3. Modüller
           if [ -d "${MOD_DIR}/lib/modules" ]; then
             mkdir -p "$AK3_DIR/modules/vendor/lib/modules"
             find "${MOD_DIR}/lib/modules" -name "*.ko" -exec cp {} "$AK3_DIR/modules/vendor/lib/modules/" \;
           fi
 
-          # Ayarlar
           cd "$AK3_DIR"
           sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME ($VARIANT)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
@@ -167,9 +165,9 @@ jobs:
           name: "Xiaomi 14 (Houji) ${{ env.VARIANT }} - $(date +%Y-%m-%d)"
           body: |
             ## Galadriel Pure Kernel
-            - **DTB Build:** Fixed! Integrated external tree into qcom/
-            - **Audio/Display/Camera:** Included in DTB compilation.
-            - **Modules:** Compressed and included.
+            - **Allwinner/Hisilicon:** Completely skipped (Fixed build error).
+            - **Device Tree:** Cleanly integrated into dts/qcom.
+            - **Modules:** All drivers included.
           files: "${{ env.ZIP_NAME }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
