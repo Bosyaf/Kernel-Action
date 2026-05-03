@@ -1,4 +1,4 @@
-name: Xiaomi 14 (Houji) Super Kernel Build
+name: Xiaomi 14 (Houji) Pure Kernel Build
 
 permissions:
   contents: write
@@ -23,89 +23,95 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Setup AnyKernel3 & Prebuilt Materials
+      - name: Install Dependencies & Toolchain
         run: |
-          # AnyKernel3 (Paketleyici)
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
-          # Prebuilt Repo (Senin verdiğin link - Malzemeler burada)
-          git clone -b 16 --depth=1 https://github.com/mvaisakh/android_device_houji-kernel.git materials
-
-      - name: Install Toolchain (Google Clang)
-        run: |
-          sudo apt update -qq && sudo apt install -y python3 git curl build-essential flex bison libssl-dev libelf-dev bc cpio zip
+          sudo apt update -qq && sudo apt install -y python3 git curl build-essential flex bison libssl-dev libelf-dev bc cpio zip device-tree-compiler
           mkdir -p $GITHUB_WORKSPACE/clang
           curl -fLSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz" | tar -xzf - -C $GITHUB_WORKSPACE/clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
-      - name: Clone Kernel Source (Gövde)
+      - name: Clone Kernel & DeviceTrees
         run: |
-          # Ana kodlar buradan geliyor (Vaisakh kplatform)
+          # 1. Kernel Gövdesi
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git source --depth=1
-
-      - name: Inject Materials (Hata Giderici)
-        run: |
-          # 1. Prebuilt repodaki kütüphaneleri (headers) kernele enjekte et
-          # Bu adım "bindings/...h bulunamadı" hatalarını çözer
-          cp -r materials/kernel-headers/* source/include/
           
-          # 2. Hazır .config dosyasını kullan (Tam Houji donanım ayarları buradadır)
-          cp materials/.config source/arch/arm64/configs/houji_defconfig
-          
-          # 3. Kernel ismini senin istediğin gibi yap (Ayarlarda Galadriel-Pure görünür)
-          sed -i "s/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-${{ github.event.inputs.kernel_name }}\"/" source/arch/arm64/configs/houji_defconfig
+          # 2. Cihaz Ağacı (Beyin) - Tam olarak dts/vendor içine klonluyoruz
+          # Önce mevcut olan link dosyasını siliyoruz
+          rm -f source/arch/arm64/boot/dts/vendor
+          git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git source/arch/arm64/boot/dts/vendor --depth=1
 
-      - name: Build Kernel Image & Modules
+      - name: Config Merge (Houji Tam Donanım)
         run: |
           cd source
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          # Sadece Image ve Modülleri derliyoruz (En güvenli yol)
-          make O=out ARCH=arm64 LLVM=1 houji_defconfig
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 Image modules
+          OUT_DIR=$GITHUB_WORKSPACE/out
+          mkdir -p $OUT_DIR
+          
+          # Config birleştirme sırası (Hiyerarşik)
+          # 1. Temel GKI
+          # 2. Pineapple GKI + Houji GKI
+          # 3. Consolidate (GKI kısıtlamalarını kaldıran parçalar)
+          scripts/kconfig/merge_config.sh -m -O $OUT_DIR \
+            arch/arm64/configs/gki_defconfig \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/consolidate.fragment \
+            arch/arm64/configs/vendor/pineapple_consolidate.config \
+            arch/arm64/configs/vendor/houji_consolidate.config
 
-      - name: Package with AnyKernel3 (Smart Merge)
+          # İsmi güncelle ve config'i kesinleştir
+          sed -i "s/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-${{ github.event.inputs.kernel_name }}\"/" $OUT_DIR/.config
+          make O=$OUT_DIR ARCH=arm64 LLVM=1 olddefconfig
+
+      - name: Build Kernel, DTBs & Modules
+        run: |
+          cd source
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          OUT_DIR=$GITHUB_WORKSPACE/out
+          
+          # DTB Include yollarını dts/vendor içine yönlendiriyoruz (Header hatalarını bu çözer)
+          # -I flagi bindings klasörünü bulmasını sağlar
+          export DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts/vendor -I$(pwd)/arch/arm64/boot/dts/vendor/qcom"
+
+          # 1. Image derle
+          make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
+          
+          # 2. DTB ve DTBO derle
+          make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+               DTC_FLAGS="${DTC_INCLUDE} -Wno-graph_child_address -Wno-interrupt_provider" \
+               dtbs
+
+          # 3. Modülleri derle
+          make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 modules
+
+      - name: Package with AnyKernel3
         run: |
           AK3=$GITHUB_WORKSPACE/AnyKernel3
-          OUT=$GITHUB_WORKSPACE/source/out
-          MAT=$GITHUB_WORKSPACE/materials
+          OUT=$GITHUB_WORKSPACE/out
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 $AK3
           
-          # 1. Kendi derlediğimiz Image ve Modülleri koy
+          # Dosyaları yerleştir
           cp $OUT/arch/arm64/boot/Image $AK3/
+          mkdir -p $AK3/dtb $AK3/dtbo
+          find $OUT/arch/arm64/boot/dts/vendor -name "*.dtb" -exec cp {} $AK3/dtb/ \;
+          find $OUT/arch/arm64/boot/dts/vendor -name "*.dtbo" -exec cp {} $AK3/dtbo/ \;
+          
+          # Modülleri yerleştir
           mkdir -p $AK3/modules/vendor/lib/modules
           find $OUT -name "*.ko" -exec cp {} $AK3/modules/vendor/lib/modules/ \;
-          
-          # 2. Donanım dosyalarını (DTB/DTBO) Prebuilt repodan HAZIR al
-          # Xiaomi 14'te bunlar derleme hatası verdiği için en sağlıklısı budur.
-          mkdir -p $AK3/dtb $AK3/dtbo
-          find $MAT/dtbs $MAT/kp-dtbs -name "*.dtb" -exec cp {} $AK3/dtb/ \; 2>/dev/null || true
-          find $MAT/dtbs $MAT/kp-dtbs -name "*.dtbo" -exec cp {} $AK3/dtbo/ \; 2>/dev/null || true
-          
-          # 3. Hazır img dosyaları varsa onları da dahil et
-          [ -f $MAT/dtb.img ] && cp $MAT/dtb.img $AK3/dtb/dtb.img || true
-          [ -f $MAT/dtbo.img ] && cp $MAT/dtbo.img $AK3/dtbo/dtbo.img || true
 
-          # 4. AnyKernel ayarlarını yap
+          # AnyKernel Ayarları
           cd $AK3
           sed -i "s/kernel.string=.*/kernel.string=${{ github.event.inputs.kernel_name }}/" anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          # Xiaomi 14/14 Pro cihaz kodlarını ekle
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=xiaomi14' anykernel.sh
+          
+          zip -r "../Houji-Kernel.zip" ./*
 
-          ZIP_NAME="Galadriel-Pure-Houji-$(date +%Y%m%d-%H%M).zip"
-          zip -r "../${ZIP_NAME}" ./*
-          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "TAG=Houji-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
-
-      - name: Create GitHub Release
+      - name: Upload
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG }}
+          tag_name: Houji-${{ github.run_id }}
           name: "Xiaomi 14 (Houji) ${{ github.event.inputs.kernel_name }}"
-          body: |
-            ## Galadriel Pure Kernel - Houji
-            - **Image:** Kendi üretimimiz (Sıfırdan derlendi).
-            - **Donanım (DTB/DTBO):** Prebuilt (Tam uyumluluk garantisi).
-            - **GKI:** Kısıtlamasız, tam donanım desteği.
-            - **Toolchain:** Google Clang r487747c.
-          files: "${{ env.ZIP_NAME }}"
+          files: "Houji-Kernel.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
