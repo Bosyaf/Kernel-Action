@@ -23,34 +23,42 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Install Dependencies & Toolchain
+      - name: Install Dependencies & Pahole (For BTF)
         run: |
-          sudo apt update -qq && sudo apt install -y python3 git curl build-essential flex bison libssl-dev libelf-dev bc cpio zip device-tree-compiler
+          sudo apt update -qq
+          # dwarves paketi pahole aracını içerir (BTF için şart)
+          sudo apt install -y --no-install-recommends \
+            python3 git curl build-essential flex bison libssl-dev libelf-dev bc cpio zip \
+            device-tree-compiler dwarves lz4 tar
+
           mkdir -p $GITHUB_WORKSPACE/clang
           curl -fLSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz" | tar -xzf - -C $GITHUB_WORKSPACE/clang
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
-      - name: Clone Kernel & DeviceTrees
+      - name: Clone Source & DeviceTree (Proper Structure)
         run: |
           # 1. Kernel Gövdesi
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git source --depth=1
           
-          # 2. Cihaz Ağacı (Beyin) - Tam olarak dts/vendor içine klonluyoruz
-          # Önce mevcut olan link dosyasını siliyoruz
-          rm -f source/arch/arm64/boot/dts/vendor
-          git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git source/arch/arm64/boot/dts/vendor --depth=1
+          # 2. Cihaz Ağacı (Beyin)
+          # Senin attığın linkte dts/vendor -> ../../../../../sm8650-devicetrees yolunu gösteriyordu
+          # Bu yüzden dts-tree'yi kernel klasörünün yanına klonlamalıyız
+          git clone -b kplatform https://github.com/mvaisakh/xiaomi14-devicetrees.git sm8650-devicetrees --depth=1
+          
+          # 3. Kernel içindeki hatalı linki temizleyip gerçek klasörü oraya linkle
+          cd source/arch/arm64/boot/dts
+          rm -rf vendor
+          ln -s ../../../../../sm8650-devicetrees vendor
+          echo "Device Tree link structure fixed."
 
-      - name: Config Merge (Houji Tam Donanım)
+      - name: Config Merge (Houji Consolidated)
         run: |
           cd source
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           OUT_DIR=$GITHUB_WORKSPACE/out
           mkdir -p $OUT_DIR
           
-          # Config birleştirme sırası (Hiyerarşik)
-          # 1. Temel GKI
-          # 2. Pineapple GKI + Houji GKI
-          # 3. Consolidate (GKI kısıtlamalarını kaldıran parçalar)
+          # Sıralı config birleştirme
           scripts/kconfig/merge_config.sh -m -O $OUT_DIR \
             arch/arm64/configs/gki_defconfig \
             arch/arm64/configs/vendor/pineapple_GKI.config \
@@ -59,29 +67,30 @@ jobs:
             arch/arm64/configs/vendor/pineapple_consolidate.config \
             arch/arm64/configs/vendor/houji_consolidate.config
 
-          # İsmi güncelle ve config'i kesinleştir
+          # İsim ve BTF kontrolü
+          # BTF'yi kapatmıyoruz, çünkü cihaz açılmaz!
           sed -i "s/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-${{ github.event.inputs.kernel_name }}\"/" $OUT_DIR/.config
           make O=$OUT_DIR ARCH=arm64 LLVM=1 olddefconfig
 
-      - name: Build Kernel, DTBs & Modules
+      - name: Build Kernel Image (vmlinux first)
         run: |
           cd source
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           OUT_DIR=$GITHUB_WORKSPACE/out
           
-          # DTB Include yollarını dts/vendor içine yönlendiriyoruz (Header hatalarını bu çözer)
-          # -I flagi bindings klasörünü bulmasını sağlar
-          export DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts/vendor -I$(pwd)/arch/arm64/boot/dts/vendor/qcom"
+          # DTC Include yollarını tanımla (DTS hatalarını çözer)
+          DTS_BASE="$(pwd)/arch/arm64/boot/dts/vendor"
+          export DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts -I$(pwd)/include -I$DTS_BASE -I$DTS_BASE/qcom"
 
-          # 1. Image derle
+          # 1. Image ve vmlinux (Artık pahole var, BTF hatası vermeyecek)
           make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
           
-          # 2. DTB ve DTBO derle
+          # 2. DTBs
           make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-               DTC_FLAGS="${DTC_INCLUDE} -Wno-graph_child_address -Wno-interrupt_provider" \
+               DTC_FLAGS="${DTC_INCLUDE} -Wno-graph_child_address" \
                dtbs
-
-          # 3. Modülleri derle
+          
+          # 3. Modules (Image bittikten sonra başlar)
           make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 modules
 
       - name: Package with AnyKernel3
@@ -90,28 +99,25 @@ jobs:
           OUT=$GITHUB_WORKSPACE/out
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 $AK3
           
-          # Dosyaları yerleştir
           cp $OUT/arch/arm64/boot/Image $AK3/
           mkdir -p $AK3/dtb $AK3/dtbo
           find $OUT/arch/arm64/boot/dts/vendor -name "*.dtb" -exec cp {} $AK3/dtb/ \;
           find $OUT/arch/arm64/boot/dts/vendor -name "*.dtbo" -exec cp {} $AK3/dtbo/ \;
           
-          # Modülleri yerleştir
           mkdir -p $AK3/modules/vendor/lib/modules
           find $OUT -name "*.ko" -exec cp {} $AK3/modules/vendor/lib/modules/ \;
 
-          # AnyKernel Ayarları
           cd $AK3
           sed -i "s/kernel.string=.*/kernel.string=${{ github.event.inputs.kernel_name }}/" anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=xiaomi14' anykernel.sh
           
-          zip -r "../Houji-Kernel.zip" ./*
+          zip -r "../Houji-Kernel-Pure.zip" ./*
 
-      - name: Upload
+      - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-${{ github.run_id }}
-          name: "Xiaomi 14 (Houji) ${{ github.event.inputs.kernel_name }}"
-          files: "Houji-Kernel.zip"
+          name: "Xiaomi 14 Pure Kernel"
+          files: "Houji-Kernel-Pure.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
