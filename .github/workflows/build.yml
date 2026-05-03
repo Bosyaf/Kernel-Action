@@ -60,21 +60,22 @@ jobs:
         run: |
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git source --depth=1
 
-      - name: Force Integrate External Device Tree
+      - name: Selective Device Tree Integration (Gereksizleri Temizle)
         run: |
-          # 1. Harici repoyu çek
-          git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git dt_temp --depth=1
+          cd source
+          # 1. dts içindeki her şeyi temizle (allwinner, amlogic vb. hepsi gidiyor)
+          rm -rf arch/arm64/boot/dts/*
           
-          # 2. Kernel içindeki mevcut dts/qcom'u sil ve bizimkini koy
-          rm -rf source/arch/arm64/boot/dts/qcom
-          cp -r dt_temp/qcom source/arch/arm64/boot/dts/
+          # 2. Harici repoyu çek ve sadece qcom klasörünü içeri al
+          git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ../dt_temp --depth=1
+          mkdir -p arch/arm64/boot/dts/vendor
+          cp -r ../dt_temp/qcom arch/arm64/boot/dts/vendor/
           
-          # 3. RADİKAL ÇÖZÜM: arch/arm64/boot/dts/ içindeki Makefile'ı SIFIRLA.
-          # Sadece qcom klasörünü dahil et. Geri kalan Allwinner, Hisilicon vb. tamamen silindi.
-          echo 'subdir-y += qcom' > source/arch/arm64/boot/dts/Makefile
-          echo 'obj-$(CONFIG_OF_ALL_DTBS) += $(patsubst $(srctree)/$(src)/%.dts,%.dtb,$(wildcard $(srctree)/$(src)/*.dts))' >> source/arch/arm64/boot/dts/Makefile
+          # 3. Yeni Makefile hiyerarşisini oluştur (Sadece bizimkileri görecek)
+          echo 'subdir-y += vendor' > arch/arm64/boot/dts/Makefile
+          echo 'subdir-y += qcom' > arch/arm64/boot/dts/vendor/Makefile
           
-          echo "Makefile has been wiped and forced to only see qcom directory."
+          echo "Cleanup complete. Only vendor/qcom trees exist now."
 
       - name: Prepare Config
         run: |
@@ -101,21 +102,16 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/toolchain/clang-google/bin:$PATH"
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # Include yollarını dts/qcom altına yönlendiriyoruz
-          export DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts/qcom \
-                              -I$(pwd)/arch/arm64/boot/dts/qcom/audio \
-                              -I$(pwd)/arch/arm64/boot/dts/qcom/camera \
-                              -I$(pwd)/arch/arm64/boot/dts/qcom/display \
-                              -I$(pwd)/arch/arm64/boot/dts/qcom/video \
-                              -I$(pwd)/arch/arm64/boot/dts/qcom/wlan"
+          # Audio, Display, Camera klasörlerini tanıt
+          DTS_PATH="$(pwd)/arch/arm64/boot/dts/vendor/qcom"
+          export DTC_INCLUDE="-I$DTS_PATH -I$DTS_PATH/audio -I$DTS_PATH/camera -I$DTS_PATH/display -I$DTS_PATH/video -I$DTS_PATH/wlan"
 
-          echo "Building DTBs (Only qcom)..."
-          # DTC_FLAGS ile uyarıları susturuyoruz ama hata almamak için tanınmayan bayrakları sildik
+          echo "Derleme başlıyor: Sadece Xiaomi DTB'leri..."
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
                DTC_FLAGS="${DTC_INCLUDE} -Wno-interrupt_provider" \
                dtbs
 
-          echo "Building Kernel Image..."
+          echo "Derleme başlıyor: Kernel Image..."
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
 
       - name: Build & Install Modules
@@ -140,8 +136,9 @@ jobs:
           cp "${OUT_DIR}/arch/arm64/boot/Image" "$AK3_DIR/Image"
 
           mkdir -p "$AK3_DIR/dtb" "$AK3_DIR/dtbo"
-          find "${OUT_DIR}/arch/arm64/boot/dts/qcom" -name "*.dtb" -exec cp {} "$AK3_DIR/dtb/" \; 2>/dev/null || true
-          find "${OUT_DIR}/arch/arm64/boot/dts/qcom" -name "*.dtbo" -exec cp {} "$AK3_DIR/dtbo/" \; 2>/dev/null || true
+          # Sadece vendor/qcom altındaki çıktıları al
+          find "${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom" -name "*.dtb" -exec cp {} "$AK3_DIR/dtb/" \; 2>/dev/null || true
+          find "${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom" -name "*.dtbo" -exec cp {} "$AK3_DIR/dtbo/" \; 2>/dev/null || true
 
           if [ -d "${MOD_DIR}/lib/modules" ]; then
             mkdir -p "$AK3_DIR/modules/vendor/lib/modules"
@@ -165,9 +162,9 @@ jobs:
           name: "Xiaomi 14 (Houji) ${{ env.VARIANT }} - $(date +%Y-%m-%d)"
           body: |
             ## Galadriel Pure Kernel
-            - **Allwinner/Hisilicon:** Completely skipped (Fixed build error).
-            - **Device Tree:** Cleanly integrated into dts/qcom.
-            - **Modules:** All drivers included.
+            - **DTB Fix:** Removed all non-Xiaomi dts directories to prevent DTC errors.
+            - **Trees:** Using Bosyaf's updated pineapple/houji trees.
+            - **Modules:** Fully included and stripped.
           files: "${{ env.ZIP_NAME }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
