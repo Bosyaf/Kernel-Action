@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       variant:
-        description: "Build variant (consolidate = tam moduller, gki = sadece GKI)"
+        description: "Build variant"
         required: true
         default: "consolidate"
         type: choice
@@ -20,7 +20,7 @@ on:
         required: false
         default: "Galadriel-Pure"
       include_modules:
-        description: "Modulleri derle (consolidate icin onerilir)"
+        description: "Modulleri derle"
         required: false
         default: true
         type: boolean
@@ -59,11 +59,14 @@ jobs:
             libxml2-utils rsync unzip dwarves bc cpio wget \
             xz-utils make gcc-aarch64-linux-gnu pkg-config zstd
 
-          echo "🔥 Downloading ZyC Clang 22 (September 2025)"
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          mkdir -p $GITHUB_WORKSPACE/toolchain/clang-zyc
-          curl -fLSs "$CLANG_URL" | tar -xzf - -C $GITHUB_WORKSPACE/toolchain/clang-zyc
-          echo "$GITHUB_WORKSPACE/toolchain/clang-zyc/bin" >> $GITHUB_PATH
+          echo "🔥 Downloading Google Clang 17.0.2 (android14 r487747c)"
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz"
+          mkdir -p $GITHUB_WORKSPACE/toolchain/clang-google
+          curl -fLSs "$CLANG_URL" | tar -xzf - -C $GITHUB_WORKSPACE/toolchain/clang-google
+          echo "$GITHUB_WORKSPACE/toolchain/clang-google/bin" >> $GITHUB_PATH
+
+          echo "📋 Clang version:"
+          $GITHUB_WORKSPACE/toolchain/clang-google/bin/clang --version
 
       - name: Clone Kernel Source
         run: |
@@ -79,7 +82,7 @@ jobs:
       - name: Prepare & Merge Kernel Config
         run: |
           cd source
-          export PATH="$GITHUB_WORKSPACE/toolchain/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/toolchain/clang-google/bin:$PATH"
 
           OUT_DIR="$GITHUB_WORKSPACE/out"
           mkdir -p "$OUT_DIR"
@@ -95,15 +98,15 @@ jobs:
           echo "📋 Step 1: Applying gki_defconfig (base)"
           make O="$OUT_DIR" ARCH=arm64 LLVM=1 gki_defconfig
 
-          # Step 2: SoC GKI fragment
-          echo "📋 Step 2: Merging pineapple_GKI.config (SoC GKI)"
+          # Step 2: SoC GKI fragment (SM8650 Pineapple)
+          echo "📋 Step 2: Merging pineapple_GKI.config"
           scripts/kconfig/merge_config.sh -m \
             -O "$OUT_DIR" \
             "$OUT_DIR/.config" \
             arch/arm64/configs/vendor/pineapple_GKI.config || true
 
-          # Step 3: Cihaz GKI fragment
-          echo "📋 Step 3: Merging houji_GKI.config (device GKI)"
+          # Step 3: Cihaz GKI fragment (Xiaomi 14 houji)
+          echo "📋 Step 3: Merging houji_GKI.config"
           scripts/kconfig/merge_config.sh -m \
             -O "$OUT_DIR" \
             "$OUT_DIR/.config" \
@@ -124,7 +127,21 @@ jobs:
               arch/arm64/configs/vendor/pineapple_consolidate.config || true
           fi
 
-          # Custom localversion ayarla
+          # ── SADECE QCOM: Gereksiz mimarileri kapat ──
+          # gki_defconfig tum mimarileri aciyor (sunxi, bcm, hisi, tegra)
+          # Bunlarin DTB'leri derlenirken hata veriyor
+          # Biz sadece QCOM/Pineapple istiyoruz
+          echo "📋 Removing non-QCOM architectures from config"
+          sed -i 's/CONFIG_ARCH_SUNXI=y/# CONFIG_ARCH_SUNXI is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_ARCH_BCM=y/# CONFIG_ARCH_BCM is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_ARCH_BRCMSTB=y/# CONFIG_ARCH_BRCMSTB is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_ARCH_HISI=y/# CONFIG_ARCH_HISI is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_ARCH_TEGRA=y/# CONFIG_ARCH_TEGRA is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_ARM_SCPI_CPUFREQ=y/# CONFIG_ARM_SCPI_CPUFREQ is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_ARM_SCMI_CPUFREQ=y/# CONFIG_ARM_SCMI_CPUFREQ is not set/' "$OUT_DIR/.config"
+          sed -i 's/CONFIG_PCIE_DW=y/# CONFIG_PCIE_DW is not set/' "$OUT_DIR/.config" || true
+
+          # Custom localversion
           echo "🏷️ Setting LOCALVERSION to -$KERNEL_NAME"
           sed -i "s/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-$KERNEL_NAME\"/" \
             "$OUT_DIR/.config" || true
@@ -140,11 +157,11 @@ jobs:
       - name: Build Kernel
         run: |
           cd source
-          export PATH="$GITHUB_WORKSPACE/toolchain/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/toolchain/clang-google/bin:$PATH"
 
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          echo "🔨 Building kernel Image..."
+          echo "🔨 Building kernel Image + houji DTBs..."
           make -j$(nproc --all) \
             O="$OUT_DIR" \
             ARCH=arm64 \
@@ -153,7 +170,7 @@ jobs:
             Image \
             dtbs
 
-          echo "✅ Kernel Image built successfully!"
+          echo "✅ Kernel Image + DTBs built successfully!"
 
           # Consolidate icin modulleri de derle
           if [ "$VARIANT" = "consolidate" ] && [ "$INCLUDE_MODULES" = "true" ]; then
@@ -177,11 +194,16 @@ jobs:
             echo "📊 Kernel Image size: $IMAGE_SIZE"
           fi
 
+          # Houji DTB'leri goster
+          echo "📋 Houji/Pineapple DTBs:"
+          find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtb" 2>/dev/null | grep -iE "pineapple|houji" || \
+          find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtb" 2>/dev/null | head -20
+
       - name: Package with AnyKernel3
         run: |
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # Kernel Image
+          # ── Kernel Image ──
           IMAGE_PATH=$(find "$OUT_DIR" -name "Image" -type f | head -n 1)
           if [ -z "$IMAGE_PATH" ]; then
             echo "❌ ERROR: Kernel Image not found!"
@@ -190,21 +212,25 @@ jobs:
           echo "✅ Found kernel Image: $IMAGE_PATH"
           cp "$IMAGE_PATH" ./AnyKernel3/
 
-          # DTB dosyalari
+          # ── QCOM DTB dosyalari ──
           mkdir -p ./AnyKernel3/dtb
-          find "$OUT_DIR/arch/arm64/boot/dts" -name "*.dtb" \
-            -exec cp {} ./AnyKernel3/dtb/ \; 2>/dev/null || true
-          DTB_COUNT=$(find ./AnyKernel3/dtb -name "*.dtb" | wc -l)
-          echo "✅ Copied $DTB_COUNT DTB files"
+          if [ -d "$OUT_DIR/arch/arm64/boot/dts/qcom" ]; then
+            find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtb" \
+              -exec cp {} ./AnyKernel3/dtb/ \; 2>/dev/null || true
+            DTB_COUNT=$(find ./AnyKernel3/dtb -name "*.dtb" | wc -l)
+            echo "✅ Copied $DTB_COUNT QCOM DTB files"
+          else
+            echo "⚠️ QCOM DTB directory not found"
+          fi
 
-          # DTBO overlay dosyalari
+          # ── DTBO overlay dosyalari ──
           mkdir -p ./AnyKernel3/dtbo
-          find "$OUT_DIR/arch/arm64/boot/dts" -name "*.dtbo" \
+          find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtbo" \
             -exec cp {} ./AnyKernel3/dtbo/ \; 2>/dev/null || true
           DTBO_COUNT=$(find ./AnyKernel3/dtbo -name "*.dtbo" | wc -l)
           echo "✅ Copied $DTBO_COUNT DTBO files"
 
-          # AnyKernel3 ayarlari
+          # ── AnyKernel3 ayarlari ──
           cd ./AnyKernel3
           sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME ($VARIANT)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
@@ -219,6 +245,9 @@ jobs:
           zip -r "../$ZIP_NAME" ./*
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           echo "✅ Created $ZIP_NAME"
+          echo "📊 ZIP size: $(du -h ../$ZIP_NAME | cut -f1)"
+          echo "📦 ZIP contents:"
+          unzip -l "../$ZIP_NAME" | tail -5
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
@@ -231,7 +260,7 @@ jobs:
             **Variant:** ${{ env.KERNEL_VARIANT }}
             **Kernel Version:** 6.1.166 (kplatform)
             **Source:** [mvaisakh/xiaomi14 (kplatform)](https://github.com/mvaisakh/xiaomi14/tree/kplatform)
-            **Toolchain:** ZyC Clang 22 (2025-09-28)
+            **Toolchain:** Google Clang 17.0.2 (r487747c)
             **Build Date:** ${{ env.BUILD_DATE }}
 
             ### 📱 Supported Devices
@@ -244,6 +273,11 @@ jobs:
             3. `houji_GKI.config` (device GKI)
             4. `consolidate.fragment` (consolidate only)
             5. `pineapple_consolidate.config` (consolidate only)
+
+            ### 📦 Contents
+            - Kernel Image (houji-specific)
+            - QCOM/Pineapple DTBs
+            - DTBO overlays (if available)
 
             ### ⚠️ Flash at your own risk!
           files: "${{ env.ZIP_NAME }}"
