@@ -7,23 +7,10 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
-      variant:
-        description: "Build variant"
-        required: true
-        default: "consolidate"
-        type: choice
-        options:
-          - consolidate
-          - gki
       kernel_name:
         description: "Kernel isim soneki"
         required: false
         default: "Galadriel-Pure"
-      include_modules:
-        description: "Modulleri derle"
-        required: false
-        default: true
-        type: boolean
 
 jobs:
   build-kernel:
@@ -32,9 +19,7 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
-      VARIANT: ${{ github.event.inputs.variant || 'consolidate' }}
       KERNEL_NAME: ${{ github.event.inputs.kernel_name || 'Galadriel-Pure' }}
-      INCLUDE_MODULES: ${{ github.event.inputs.include_modules || 'true' }}
 
     steps:
       - name: Maximize Build Space
@@ -65,8 +50,16 @@ jobs:
           curl -fLSs "$CLANG_URL" | tar -xzf - -C $GITHUB_WORKSPACE/toolchain/clang-google
           echo "$GITHUB_WORKSPACE/toolchain/clang-google/bin" >> $GITHUB_PATH
 
-          echo "📋 Clang version:"
+          # Google rust toolchain (pKVM icin gerekli)
+          echo "🔥 Downloading Google Rust toolchain"
+          RUST_URL="https://android.googlesource.com/platform/prebuilts/rust/linux-x86/+archive/refs/heads/android14-release/latest.tar.gz"
+          mkdir -p $GITHUB_WORKSPACE/toolchain/rust-google
+          curl -fLSs "$RUST_URL" | tar -xzf - -C $GITHUB_WORKSPACE/toolchain/rust-google
+          echo "$GITHUB_WORKSPACE/toolchain/rust-google/bin" >> $GITHUB_PATH
+
+          echo "📋 Toolchain versions:"
           $GITHUB_WORKSPACE/toolchain/clang-google/bin/clang --version
+          rustc --version 2>/dev/null || echo "Rust not found (non-critical)"
 
       - name: Clone Kernel Source
         run: |
@@ -90,42 +83,37 @@ jobs:
           echo "=============================================="
           echo "📱 Device: Xiaomi 14 (houji)"
           echo "🔧 SoC: Snapdragon 8 Gen 3 (pineapple/SM8650)"
-          echo "📦 Variant: $VARIANT"
+          echo "📦 Variant: gki (vendor module uyumlu)"
           echo "🏷️  Kernel Name: $KERNEL_NAME"
           echo "=============================================="
 
-          # Step 1: gki_defconfig temel config
+          # Step 1: gki_defconfig - TEMEL config
           echo "📋 Step 1: Applying gki_defconfig (base)"
           make O="$OUT_DIR" ARCH=arm64 LLVM=1 gki_defconfig
 
-          # Step 2: SoC GKI fragment
+          # Step 2: SM8650 SoC GKI fragment
           echo "📋 Step 2: Merging pineapple_GKI.config"
           scripts/kconfig/merge_config.sh -m \
             -O "$OUT_DIR" \
             "$OUT_DIR/.config" \
             arch/arm64/configs/vendor/pineapple_GKI.config || true
 
-          # Step 3: Cihaz GKI fragment
+          # Step 3: Xiaomi 14 houji GKI fragment
           echo "📋 Step 3: Merging houji_GKI.config"
           scripts/kconfig/merge_config.sh -m \
             -O "$OUT_DIR" \
             "$OUT_DIR/.config" \
             arch/arm64/configs/vendor/houji_GKI.config || true
 
-          # Step 4-5: Consolidate only
-          if [ "$VARIANT" = "consolidate" ]; then
-            echo "📋 Step 4: Merging consolidate.fragment"
-            scripts/kconfig/merge_config.sh -m \
-              -O "$OUT_DIR" \
-              "$OUT_DIR/.config" \
-              arch/arm64/configs/consolidate.fragment || true
+          # ── BTF'yi aktif et (module loading icin kritik) ──
+          echo "📋 Enabling BTF and critical boot configs"
+          sed -i 's/# CONFIG_DEBUG_INFO_BTF is not set/CONFIG_DEBUG_INFO_BTF=y/' "$OUT_DIR/.config" || true
+          grep -q "CONFIG_DEBUG_INFO_BTF=y" "$OUT_DIR/.config" || \
+            echo "CONFIG_DEBUG_INFO_BTF=y" >> "$OUT_DIR/.config"
 
-            echo "📋 Step 5: Merging pineapple_consolidate.config"
-            scripts/kconfig/merge_config.sh -m \
-              -O "$OUT_DIR" \
-              "$OUT_DIR/.config" \
-              arch/arm64/configs/vendor/pineapple_consolidate.config || true
-          fi
+          # PAHOLE gerekiyor BTF icin
+          grep -q "CONFIG_DEBUG_INFO=y" "$OUT_DIR/.config" || \
+            echo "CONFIG_DEBUG_INFO=y" >> "$OUT_DIR/.config"
 
           # Custom localversion
           echo "🏷️ Setting LOCALVERSION to -$KERNEL_NAME"
@@ -137,6 +125,12 @@ jobs:
           # Bagimliklari coz
           echo "📋 Resolving config dependencies (olddefconfig)"
           make O="$OUT_DIR" ARCH=arm64 LLVM=1 olddefconfig
+
+          # Onemli config'leri dogrula
+          echo "=============================================="
+          echo "📋 Critical config check:"
+          grep -E "CONFIG_DEBUG_INFO_BTF=|CONFIG_KVM=|CONFIG_MODULE_SIG=|CONFIG_MODULES=|CONFIG_RANDOMIZE_BASE=" "$OUT_DIR/.config" || true
+          echo "=============================================="
 
           echo "✅ Config preparation complete!"
 
@@ -155,46 +149,60 @@ jobs:
             LLVM_IAS=1 \
             Image
 
-          echo "✅ Kernel Image built successfully!"
+          echo "✅ Kernel Image built!"
 
-          # Consolidate icin modulleri de derle
-          if [ "$VARIANT" = "consolidate" ] && [ "$INCLUDE_MODULES" = "true" ]; then
-            echo "📦 Building kernel modules..."
-            make -j$(nproc --all) \
-              O="$OUT_DIR" \
-              ARCH=arm64 \
-              LLVM=1 \
-              LLVM_IAS=1 \
-              modules || echo "⚠️ Module build had issues (non-fatal)"
-          fi
+          echo "📦 Building kernel modules..."
+          make -j$(nproc --all) \
+            O="$OUT_DIR" \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            modules || echo "⚠️ Some modules failed (non-fatal)"
 
-          # Build sonucunu kaydet
+          # Build sonuclari
           echo "BOOTHASH=Pure-Houji-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +%Y-%m-%d_%H-%M)" >> $GITHUB_ENV
-          echo "KERNEL_VARIANT=$VARIANT" >> $GITHUB_ENV
 
           IMAGE_PATH=$(find "$OUT_DIR" -name "Image" -type f | head -n 1)
           if [ -n "$IMAGE_PATH" ]; then
-            IMAGE_SIZE=$(du -h "$IMAGE_PATH" | cut -f1)
-            echo "📊 Kernel Image size: $IMAGE_SIZE"
+            echo "📊 Kernel Image size: $(du -h $IMAGE_PATH | cut -f1)"
           fi
+
+          # Kac modul derlendi say
+          MODULE_COUNT=$(find "$OUT_DIR" -name "*.ko" | wc -l)
+          echo "📦 Built $MODULE_COUNT kernel modules"
 
       - name: Package with AnyKernel3
         run: |
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # Kernel Image
+          # ── Kernel Image ──
           IMAGE_PATH=$(find "$OUT_DIR" -name "Image" -type f | head -n 1)
           if [ -z "$IMAGE_PATH" ]; then
             echo "❌ ERROR: Kernel Image not found!"
             exit 1
           fi
-          echo "✅ Found kernel Image: $IMAGE_PATH"
           cp "$IMAGE_PATH" ./AnyKernel3/
+          echo "✅ Kernel Image: $(du -h $IMAGE_PATH | cut -f1)"
 
-          # AnyKernel3 ayarlari
+          # ── Modulleri AnyKernel3'e kopyala ──
+          # Bu moduller vendor_dlkm'ye yuklenecek
+          # Stock moduller yerine bunlar kullanilacak
+          mkdir -p ./AnyKernel3/modules
+          MOD_DIR="$GITHUB_WORKSPACE/out/lib/modules"
+
+          if [ -d "$MOD_DIR" ]; then
+            # Tum .ko dosyalarini bul ve kopyala
+            find "$MOD_DIR" -name "*.ko" -exec cp {} ./AnyKernel3/modules/ \; 2>/dev/null || true
+            KO_COUNT=$(find ./AnyKernel3/modules -name "*.ko" | wc -l)
+            echo "✅ Copied $KO_COUNT kernel modules"
+          else
+            echo "⚠️ No modules directory found"
+          fi
+
+          # ── AnyKernel3 ayarlari ──
           cd ./AnyKernel3
-          sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME ($VARIANT)/" anykernel.sh
+          sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME (gki)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
 
           sed -i '/is_slot_device=auto/a \
@@ -203,21 +211,23 @@ jobs:
           device.name3=xiaomi14' anykernel.sh
 
           # Flashable zip olustur
-          ZIP_NAME="Houji-PureKernel-$VARIANT-$BUILD_DATE.zip"
+          ZIP_NAME="Houji-PureKernel-gki-$BUILD_DATE.zip"
           zip -r "../$ZIP_NAME" ./*
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           echo "✅ Created $ZIP_NAME"
           echo "📊 ZIP size: $(du -h ../$ZIP_NAME | cut -f1)"
+          echo "📦 ZIP contents:"
+          unzip -l "../$ZIP_NAME" | tail -5
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 (Houji) ${{ env.KERNEL_VARIANT }} - ${{ env.BUILD_DATE }}"
+          name: "Xiaomi 14 (Houji) GKI - ${{ env.BUILD_DATE }}"
           body: |
             ## 🔥 Galadriel Pure Kernel - Xiaomi 14 (Houji)
 
-            **Variant:** ${{ env.KERNEL_VARIANT }}
+            **Variant:** GKI (vendor module compatible)
             **Kernel Version:** 6.1.166 (kplatform)
             **Source:** [mvaisakh/xiaomi14](https://github.com/mvaisakh/xiaomi14/tree/kplatform)
             **Toolchain:** Google Clang 17.0.2 (r487747c)
@@ -227,12 +237,11 @@ jobs:
             - Xiaomi 14 (houji)
             - Xiaomi 14 Pro (shennong)
 
-            ### 📋 Config Merge Order
+            ### 📋 Config
             1. `gki_defconfig` (base)
             2. `pineapple_GKI.config` (SoC)
             3. `houji_GKI.config` (device)
-            4. `consolidate.fragment` (consolidate only)
-            5. `pineapple_consolidate.config` (consolidate only)
+            4. `CONFIG_DEBUG_INFO_BTF=y` (BTF support)
 
             ### ⚠️ Flash at your own risk!
           files: "${{ env.ZIP_NAME }}"
