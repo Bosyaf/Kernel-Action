@@ -38,7 +38,12 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Install Dependencies & Google Toolchain
+      - name: Cleanup and Checkout AnyKernel3
+        run: |
+          rm -rf AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
+
+      - name: Install Dependencies & Toolchain
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -51,18 +56,23 @@ jobs:
           curl -fLSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz" | tar -xzf - -C $GITHUB_WORKSPACE/toolchain/clang-google
           echo "$GITHUB_WORKSPACE/toolchain/clang-google/bin" >> $GITHUB_PATH
 
-      - name: Clone Kernel Source (Gövde)
+      - name: Clone Kernel Source
         run: |
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git source --depth=1
 
-      - name: Clone External Device Tree (Beyin)
+      - name: Integrate External Device Tree (Beyin Nakli)
         run: |
-          # Mevcut vendor klasörünü ve içeriğini tamamen sil (Link veya dosya olsa bile)
-          rm -rf source/arch/arm64/boot/dts/vendor
+          # 1. Harici repoyu geçici bir yere çek
+          git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git dt_temp --depth=1
           
-          # Yeni device tree reposunu tam o konuma klonla
-          # Bu repo içindeki audio, display, camera vb. klasörler otomatik dahil edilecek
-          git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git source/arch/arm64/boot/dts/vendor --depth=1
+          # 2. qcom klasörünü doğrudan dts içine taşı (Nesting sorununu çözmek için)
+          rm -rf source/arch/arm64/boot/dts/qcom
+          cp -r dt_temp/qcom source/arch/arm64/boot/dts/
+          
+          # 3. Makefile'a qcom'u ekle (En başa ekliyoruz ki diğerleri ezmesin)
+          sed -i '1i subdir-y += qcom' source/arch/arm64/boot/dts/Makefile
+          
+          echo "Device tree integrated directly into dts/qcom"
 
       - name: Prepare Config
         run: |
@@ -72,8 +82,6 @@ jobs:
           mkdir -p "${OUT_DIR}"
 
           make O="${OUT_DIR}" ARCH=arm64 LLVM=1 gki_defconfig
-          
-          # Config birleştirme
           scripts/kconfig/merge_config.sh -m -O "${OUT_DIR}" "${OUT_DIR}/.config" arch/arm64/configs/vendor/pineapple_GKI.config || true
           scripts/kconfig/merge_config.sh -m -O "${OUT_DIR}" "${OUT_DIR}/.config" arch/arm64/configs/vendor/houji_GKI.config || true
           
@@ -91,15 +99,21 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/toolchain/clang-google/bin:$PATH"
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # 1. Image Derle
-          make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
+          # DTC Include yollarını manuel olarak ekliyoruz (audio, camera, display için)
+          # Bu sayede .dts dosyaları içindeki #include "..." komutları çalışır
+          export DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts/qcom \
+                              -I$(pwd)/arch/arm64/boot/dts/qcom/audio \
+                              -I$(pwd)/arch/arm64/boot/dts/qcom/camera \
+                              -I$(pwd)/arch/arm64/boot/dts/qcom/display \
+                              -I$(pwd)/arch/arm64/boot/dts/qcom/video"
 
-          # 2. DTB ve DTBO Derle
-          # Sadece bizim eklediğimiz vendor ağacını derlemesi için DTC_FLAGS ile susturuyoruz
-          # Makefile içindeki alt klasörlere (audio, camera vs.) girmesi için dtbs komutunu veriyoruz
+          echo "Starting DTB Build..."
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-               DTC_FLAGS="-Wno-graph_child_address -Wno-graph_port -Wno-interrupt_provider" \
-               dtbs || echo "DTB derlemesinde bazı uyarılar var ama devam ediyoruz..."
+               DTC_FLAGS="${DTC_INCLUDE} -Wno-graph_child_address -Wno-graph_port -Wno-interrupt_provider" \
+               dtbs
+
+          echo "Starting Image Build..."
+          make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
 
       - name: Build & Install Modules
         if: github.event.inputs.variant == 'consolidate'
@@ -112,35 +126,33 @@ jobs:
 
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 modules
           make O="${OUT_DIR}" ARCH=arm64 LLVM=1 INSTALL_MOD_PATH="${MOD_DIR}" modules_install
-          
-          # Modülleri küçült (Boyut tasarrufu ve hız için)
           find "${MOD_DIR}" -name "*.ko" -exec llvm-strip --strip-debug {} \;
 
       - name: Package with AnyKernel3
         run: |
           OUT_DIR="$GITHUB_WORKSPACE/out"
           MOD_DIR="$GITHUB_WORKSPACE/modules_temp"
-          
-          # Image
-          cp "${OUT_DIR}/arch/arm64/boot/Image" ./AnyKernel3/
+          AK3_DIR="$GITHUB_WORKSPACE/AnyKernel3"
 
-          # DTB/DTBO (Vendor altındaki tüm alt klasörlerden -audio/display/bt dahil- oluşan dosyaları topla)
-          mkdir -p ./AnyKernel3/dtb ./AnyKernel3/dtbo
-          find "${OUT_DIR}/arch/arm64/boot/dts/vendor" -name "*.dtb" -exec cp {} ./AnyKernel3/dtb/ \; 2>/dev/null || true
-          find "${OUT_DIR}/arch/arm64/boot/dts/vendor" -name "*.dtbo" -exec cp {} ./AnyKernel3/dtbo/ \; 2>/dev/null || true
+          # 1. Image
+          cp "${OUT_DIR}/arch/arm64/boot/Image" "$AK3_DIR/Image"
 
-          # Modülleri topla
+          # 2. DTB ve DTBO
+          mkdir -p "$AK3_DIR/dtb" "$AK3_DIR/dtbo"
+          # Artık dosyalar dts/qcom altında toplandı
+          find "${OUT_DIR}/arch/arm64/boot/dts/qcom" -name "*.dtb" -exec cp {} "$AK3_DIR/dtb/" \; 2>/dev/null || true
+          find "${OUT_DIR}/arch/arm64/boot/dts/qcom" -name "*.dtbo" -exec cp {} "$AK3_DIR/dtbo/" \; 2>/dev/null || true
+
+          # 3. Modüller
           if [ -d "${MOD_DIR}/lib/modules" ]; then
-            mkdir -p ./AnyKernel3/modules/vendor/lib/modules
-            find "${MOD_DIR}/lib/modules" -name "*.ko" -exec cp {} ./AnyKernel3/modules/vendor/lib/modules/ \;
+            mkdir -p "$AK3_DIR/modules/vendor/lib/modules"
+            find "${MOD_DIR}/lib/modules" -name "*.ko" -exec cp {} "$AK3_DIR/modules/vendor/lib/modules/" \;
           fi
 
-          # AnyKernel3 Script Düzenleme
-          cd ./AnyKernel3
+          # Ayarlar
+          cd "$AK3_DIR"
           sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME ($VARIANT)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          
-          # Cihaz isimleri ekle
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=xiaomi14' anykernel.sh
 
           ZIP_NAME="Houji-PureKernel-${VARIANT}-$(date +%Y%m%d-%H%M).zip"
@@ -154,10 +166,10 @@ jobs:
           tag_name: ${{ env.BOOTHASH }}
           name: "Xiaomi 14 (Houji) ${{ env.VARIANT }} - $(date +%Y-%m-%d)"
           body: |
-            ## Galadriel Pure Kernel - Houji
-            - **Kernel Body:** mvaisakh (6.1-kplatform)
-            - **Hardware Tree:** Bosyaf (audio, camera, display, bt included)
-            - **Toolchain:** Google Clang r487747c
+            ## Galadriel Pure Kernel
+            - **DTB Build:** Fixed! Integrated external tree into qcom/
+            - **Audio/Display/Camera:** Included in DTB compilation.
+            - **Modules:** Compressed and included.
           files: "${{ env.ZIP_NAME }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
