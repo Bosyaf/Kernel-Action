@@ -60,22 +60,29 @@ jobs:
         run: |
           git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git source --depth=1
 
-      - name: Selective Device Tree Integration (Gereksizleri Temizle)
+      - name: Fix and Integrate Device Tree Headers
         run: |
-          cd source
-          # 1. dts içindeki her şeyi temizle (allwinner, amlogic vb. hepsi gidiyor)
-          rm -rf arch/arm64/boot/dts/*
+          # 1. Harici repoyu çek
+          git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git dt_temp --depth=1
           
-          # 2. Harici repoyu çek ve sadece qcom klasörünü içeri al
-          git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git ../dt_temp --depth=1
-          mkdir -p arch/arm64/boot/dts/vendor
-          cp -r ../dt_temp/qcom arch/arm64/boot/dts/vendor/
+          # 2. qcom klasörünü yerleştir
+          mkdir -p source/arch/arm64/boot/dts/vendor
+          cp -r dt_temp/qcom source/arch/arm64/boot/dts/vendor/
           
-          # 3. Yeni Makefile hiyerarşisini oluştur (Sadece bizimkileri görecek)
-          echo 'subdir-y += vendor' > arch/arm64/boot/dts/Makefile
-          echo 'subdir-y += qcom' > arch/arm64/boot/dts/vendor/Makefile
+          # 3. !!! KRİTİK ADIM !!! Eksik Header'ları (dosyaları) kernelin içine aktar
+          # Hata aldığımız 'bindings' dosyalarını kernelin ana include yoluna taşıyoruz
+          cp -r dt_temp/bindings/* source/include/dt-bindings/
           
-          echo "Cleanup complete. Only vendor/qcom trees exist now."
+          # DTS klasörü içinde de bir kopyasını bulunduralım (Bazı dts'ler göreli yol kullanır)
+          mkdir -p source/arch/arm64/boot/dts/vendor/qcom/bindings
+          cp -r dt_temp/bindings/* source/arch/arm64/boot/dts/vendor/qcom/bindings/
+          
+          # 4. Makefile Düzenle (Sadece bizim vendor'u ekle)
+          # 'allwinner' hatasından kurtulmak için dts/Makefile'ı temizleyip sadece vendor ekliyoruz
+          echo 'subdir-y += vendor' > source/arch/arm64/boot/dts/Makefile
+          echo 'subdir-y += qcom' > source/arch/arm64/boot/dts/vendor/Makefile
+          
+          echo "Headers and Device Tree integrated successfully."
 
       - name: Prepare Config
         run: |
@@ -102,16 +109,17 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/toolchain/clang-google/bin:$PATH"
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # Audio, Display, Camera klasörlerini tanıt
-          DTS_PATH="$(pwd)/arch/arm64/boot/dts/vendor/qcom"
-          export DTC_INCLUDE="-I$DTS_PATH -I$DTS_PATH/audio -I$DTS_PATH/camera -I$DTS_PATH/display -I$DTS_PATH/video -I$DTS_PATH/wlan"
+          # DTC (Device Tree Compiler) için include yollarını tanımla
+          # -I flagleri her zaman klasörü işaret etmeli
+          DTS_BASE="arch/arm64/boot/dts/vendor/qcom"
+          DTC_INCLUDE="-I$(pwd)/arch/arm64/boot/dts -I$(pwd)/include -I$(pwd)/$DTS_BASE -I$(pwd)/$DTS_BASE/audio -I$(pwd)/$DTS_BASE/camera -I$(pwd)/$DTS_BASE/display -I$(pwd)/$DTS_BASE/video -I$(pwd)/$DTS_BASE/bindings"
 
-          echo "Derleme başlıyor: Sadece Xiaomi DTB'leri..."
+          echo "Building DTBs..."
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-               DTC_FLAGS="${DTC_INCLUDE} -Wno-interrupt_provider" \
+               DTC_FLAGS="${DTC_INCLUDE} -Wno-graph_child_address -Wno-interrupt_provider" \
                dtbs
 
-          echo "Derleme başlıyor: Kernel Image..."
+          echo "Building Kernel Image..."
           make -j$(nproc --all) O="${OUT_DIR}" ARCH=arm64 LLVM=1 LLVM_IAS=1 Image
 
       - name: Build & Install Modules
@@ -133,10 +141,9 @@ jobs:
           MOD_DIR="$GITHUB_WORKSPACE/modules_temp"
           AK3_DIR="$GITHUB_WORKSPACE/AnyKernel3"
 
+          # Dosyaları topla
           cp "${OUT_DIR}/arch/arm64/boot/Image" "$AK3_DIR/Image"
-
           mkdir -p "$AK3_DIR/dtb" "$AK3_DIR/dtbo"
-          # Sadece vendor/qcom altındaki çıktıları al
           find "${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom" -name "*.dtb" -exec cp {} "$AK3_DIR/dtb/" \; 2>/dev/null || true
           find "${OUT_DIR}/arch/arm64/boot/dts/vendor/qcom" -name "*.dtbo" -exec cp {} "$AK3_DIR/dtbo/" \; 2>/dev/null || true
 
@@ -145,6 +152,7 @@ jobs:
             find "${MOD_DIR}/lib/modules" -name "*.ko" -exec cp {} "$AK3_DIR/modules/vendor/lib/modules/" \;
           fi
 
+          # AnyKernel3 Ayarları
           cd "$AK3_DIR"
           sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME ($VARIANT)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
@@ -162,9 +170,9 @@ jobs:
           name: "Xiaomi 14 (Houji) ${{ env.VARIANT }} - $(date +%Y-%m-%d)"
           body: |
             ## Galadriel Pure Kernel
-            - **DTB Fix:** Removed all non-Xiaomi dts directories to prevent DTC errors.
-            - **Trees:** Using Bosyaf's updated pineapple/houji trees.
-            - **Modules:** Fully included and stripped.
+            - **Header Fix:** Audio and Camera headers integrated into include/dt-bindings.
+            - **DTC Fix:** Cleaned include paths for vendor tree.
+            - **Modules:** All included.
           files: "${{ env.ZIP_NAME }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
