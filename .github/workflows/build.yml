@@ -98,14 +98,14 @@ jobs:
           echo "📋 Step 1: Applying gki_defconfig (base)"
           make O="$OUT_DIR" ARCH=arm64 LLVM=1 gki_defconfig
 
-          # Step 2: SoC GKI fragment (SM8650 Pineapple)
+          # Step 2: SoC GKI fragment
           echo "📋 Step 2: Merging pineapple_GKI.config"
           scripts/kconfig/merge_config.sh -m \
             -O "$OUT_DIR" \
             "$OUT_DIR/.config" \
             arch/arm64/configs/vendor/pineapple_GKI.config || true
 
-          # Step 3: Cihaz GKI fragment (Xiaomi 14 houji)
+          # Step 3: Cihaz GKI fragment
           echo "📋 Step 3: Merging houji_GKI.config"
           scripts/kconfig/merge_config.sh -m \
             -O "$OUT_DIR" \
@@ -127,20 +127,6 @@ jobs:
               arch/arm64/configs/vendor/pineapple_consolidate.config || true
           fi
 
-          # ── SADECE QCOM: Gereksiz mimarileri kapat ──
-          # gki_defconfig tum mimarileri aciyor (sunxi, bcm, hisi, tegra)
-          # Bunlarin DTB'leri derlenirken hata veriyor
-          # Biz sadece QCOM/Pineapple istiyoruz
-          echo "📋 Removing non-QCOM architectures from config"
-          sed -i 's/CONFIG_ARCH_SUNXI=y/# CONFIG_ARCH_SUNXI is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_ARCH_BCM=y/# CONFIG_ARCH_BCM is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_ARCH_BRCMSTB=y/# CONFIG_ARCH_BRCMSTB is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_ARCH_HISI=y/# CONFIG_ARCH_HISI is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_ARCH_TEGRA=y/# CONFIG_ARCH_TEGRA is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_ARM_SCPI_CPUFREQ=y/# CONFIG_ARM_SCPI_CPUFREQ is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_ARM_SCMI_CPUFREQ=y/# CONFIG_ARM_SCMI_CPUFREQ is not set/' "$OUT_DIR/.config"
-          sed -i 's/CONFIG_PCIE_DW=y/# CONFIG_PCIE_DW is not set/' "$OUT_DIR/.config" || true
-
           # Custom localversion
           echo "🏷️ Setting LOCALVERSION to -$KERNEL_NAME"
           sed -i "s/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-$KERNEL_NAME\"/" \
@@ -161,16 +147,15 @@ jobs:
 
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          echo "🔨 Building kernel Image + houji DTBs..."
+          echo "🔨 Building houji kernel Image..."
           make -j$(nproc --all) \
             O="$OUT_DIR" \
             ARCH=arm64 \
             LLVM=1 \
             LLVM_IAS=1 \
-            Image \
-            dtbs
+            Image
 
-          echo "✅ Kernel Image + DTBs built successfully!"
+          echo "✅ Kernel Image built successfully!"
 
           # Consolidate icin modulleri de derle
           if [ "$VARIANT" = "consolidate" ] && [ "$INCLUDE_MODULES" = "true" ]; then
@@ -194,16 +179,11 @@ jobs:
             echo "📊 Kernel Image size: $IMAGE_SIZE"
           fi
 
-          # Houji DTB'leri goster
-          echo "📋 Houji/Pineapple DTBs:"
-          find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtb" 2>/dev/null | grep -iE "pineapple|houji" || \
-          find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtb" 2>/dev/null | head -20
-
       - name: Package with AnyKernel3
         run: |
           OUT_DIR="$GITHUB_WORKSPACE/out"
 
-          # ── Kernel Image ──
+          # Kernel Image
           IMAGE_PATH=$(find "$OUT_DIR" -name "Image" -type f | head -n 1)
           if [ -z "$IMAGE_PATH" ]; then
             echo "❌ ERROR: Kernel Image not found!"
@@ -212,25 +192,7 @@ jobs:
           echo "✅ Found kernel Image: $IMAGE_PATH"
           cp "$IMAGE_PATH" ./AnyKernel3/
 
-          # ── QCOM DTB dosyalari ──
-          mkdir -p ./AnyKernel3/dtb
-          if [ -d "$OUT_DIR/arch/arm64/boot/dts/qcom" ]; then
-            find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtb" \
-              -exec cp {} ./AnyKernel3/dtb/ \; 2>/dev/null || true
-            DTB_COUNT=$(find ./AnyKernel3/dtb -name "*.dtb" | wc -l)
-            echo "✅ Copied $DTB_COUNT QCOM DTB files"
-          else
-            echo "⚠️ QCOM DTB directory not found"
-          fi
-
-          # ── DTBO overlay dosyalari ──
-          mkdir -p ./AnyKernel3/dtbo
-          find "$OUT_DIR/arch/arm64/boot/dts/qcom" -name "*.dtbo" \
-            -exec cp {} ./AnyKernel3/dtbo/ \; 2>/dev/null || true
-          DTBO_COUNT=$(find ./AnyKernel3/dtbo -name "*.dtbo" | wc -l)
-          echo "✅ Copied $DTBO_COUNT DTBO files"
-
-          # ── AnyKernel3 ayarlari ──
+          # AnyKernel3 ayarlari
           cd ./AnyKernel3
           sed -i "s/kernel.string=.*/kernel.string=CG+ $KERNEL_NAME ($VARIANT)/" anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
@@ -246,8 +208,6 @@ jobs:
           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           echo "✅ Created $ZIP_NAME"
           echo "📊 ZIP size: $(du -h ../$ZIP_NAME | cut -f1)"
-          echo "📦 ZIP contents:"
-          unzip -l "../$ZIP_NAME" | tail -5
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
@@ -259,7 +219,7 @@ jobs:
 
             **Variant:** ${{ env.KERNEL_VARIANT }}
             **Kernel Version:** 6.1.166 (kplatform)
-            **Source:** [mvaisakh/xiaomi14 (kplatform)](https://github.com/mvaisakh/xiaomi14/tree/kplatform)
+            **Source:** [mvaisakh/xiaomi14](https://github.com/mvaisakh/xiaomi14/tree/kplatform)
             **Toolchain:** Google Clang 17.0.2 (r487747c)
             **Build Date:** ${{ env.BUILD_DATE }}
 
@@ -269,15 +229,10 @@ jobs:
 
             ### 📋 Config Merge Order
             1. `gki_defconfig` (base)
-            2. `pineapple_GKI.config` (SoC GKI)
-            3. `houji_GKI.config` (device GKI)
+            2. `pineapple_GKI.config` (SoC)
+            3. `houji_GKI.config` (device)
             4. `consolidate.fragment` (consolidate only)
             5. `pineapple_consolidate.config` (consolidate only)
-
-            ### 📦 Contents
-            - Kernel Image (houji-specific)
-            - QCOM/Pineapple DTBs
-            - DTBO overlays (if available)
 
             ### ⚠️ Flash at your own risk!
           files: "${{ env.ZIP_NAME }}"
