@@ -1,4 +1,4 @@
-name: Xiaomi 14 (Houji) Pure Hybrid Build
+name: Xiaomi 14 (Houji) Pure Hybrid Fix
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: 1. Bağımlılıklar ve ZyC Clang 22
+      - name: 1. Bağımlılıklar (Pahole/BTF Dahil)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,26 +35,28 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd device-tree-compiler lz4 tar
             
+          # ZyC Clang 22
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           mkdir -p $GITHUB_WORKSPACE/clang-zyc
           curl -fLSs "$CLANG_URL" | tar -xzf - -C $GITHUB_WORKSPACE/clang-zyc
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
 
-      - name: 2. Kaynak Kodu Çek (Tek Source)
+      - name: 2. Kaynak Kodu Çek (TERTEMİZ)
         run: |
-          # Sadece senin belirttiğin common reposunu çekiyoruz
+          # Kernel Gövdesi (Üzerine hiçbir şey kopyalamıyoruz, kütüphaneler orijinal kalacak)
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 source
-          # AnyKernel3 (Paketleme için)
+          # AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
 
-      - name: 3. Config Birleştirme (Consolidated)
+      - name: 3. Config Merge (Houji Consolidated)
         run: |
           cd source
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           OUT_DIR=$GITHUB_WORKSPACE/out
           mkdir -p $OUT_DIR
           
-          # Senin yüklediğin 6 dosyayı birleştiriyoruz
+          # Senin yüklediğin o 6 config parçasını birleştiriyoruz
+          # Eğer bu dosyalar repoda arch/arm64/configs/ altında duruyorsa:
           scripts/kconfig/merge_config.sh -m -O $OUT_DIR \
             arch/arm64/configs/gki_defconfig \
             arch/arm64/configs/vendor/pineapple_GKI.config \
@@ -63,41 +65,41 @@ jobs:
             arch/arm64/configs/vendor/pineapple_consolidate.config \
             arch/arm64/configs/vendor/houji_consolidate.config
 
-          # Kernel İsmini Ayarla
+          # İsmi ayarla ve config'i kesinleştir
           sed -i "s/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-${{ github.event.inputs.kernel_name }}\"/" $OUT_DIR/.config
           
-          # Config'i kesinleştir
+          # BTF Hatasını önlemek için (Pahole zaten yüklü ama garantiye alalım)
+          scripts/config --file $OUT_DIR/.config --enable CONFIG_DEBUG_INFO_BTF
+          
           make O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 4. Derleme (Image & Modüller)
+      - name: 4. Derleme (Sadece Image & Modüller)
         run: |
           cd source
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           OUT_DIR=$GITHUB_WORKSPACE/out
           
-          # Sadece Image ve Modülleri derliyoruz. 
-          # BTF hatası almamak için dwarves/pahole sistemde yüklü.
+          # vmlinux ve Image derliyoruz. BTF hatası almamak için sistemde 'pahole' var.
           make -j$(nproc --all) O=$OUT_DIR ARCH=arm64 LLVM=1 LLVM_IAS=1 Image modules
 
-      - name: 5. Paketleme (AnyKernel3 + Hazır DTB/DTBO)
+      - name: 5. Paketleme (Hibrit Paketleme)
         run: |
           AK3=$GITHUB_WORKSPACE/AnyKernel3
           OUT=$GITHUB_WORKSPACE/out
           SRC=$GITHUB_WORKSPACE/source
           
-          # Kendi derlediğimiz Image'ı al
+          # 1. Kendi derlediğimiz Image ve Modülleri al
           cp $OUT/arch/arm64/boot/Image $AK3/
-          
-          # Kendi derlediğimiz modülleri (.ko) al
           mkdir -p $AK3/modules/vendor/lib/modules
           find $OUT -name "*.ko" -exec cp {} $AK3/modules/vendor/lib/modules/ \;
           
-          # Senin yüklediğin 'houji_prebuilts' klasöründeki hazır donanım dosyalarını al
+          # 2. Senin o klasöre attığın HAZIR donanım haritalarını al (Hata riski 0)
           mkdir -p $AK3/dtb $AK3/dtbo
+          # Klasör adını senin verdiğin gibi 'houji_prebuilts' olarak arıyoruz
           find $SRC/houji_prebuilts -name "*.dtb" -exec cp {} $AK3/dtb/ \; 2>/dev/null || true
           find $SRC/houji_prebuilts -name "*.dtbo" -exec cp {} $AK3/dtbo/ \; 2>/dev/null || true
           
-          # Eğer img dosyaları varsa onları da al
+          # img dosyaları varsa onları da al
           [ -f $SRC/houji_prebuilts/dtb.img ] && cp $SRC/houji_prebuilts/dtb.img $AK3/dtb/dtb.img || true
           [ -f $SRC/houji_prebuilts/dtbo.img ] && cp $SRC/houji_prebuilts/dtbo.img $AK3/dtbo/dtbo.img || true
 
@@ -107,22 +109,15 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=xiaomi14' anykernel.sh
 
-          ZIP_NAME="Houji-Pure-Kernel-$(date +%Y%m%d-%H%M).zip"
+          ZIP_NAME="Houji-Pure-Fixed-$(date +%Y%m%d-%H%M).zip"
           zip -r "../${ZIP_NAME}" ./*
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "TAG=Pure-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
       - name: 6. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG }}
-          name: "Xiaomi 14 Pure Kernel - Houji"
-          body: |
-            ## Galadriel Pure Kernel
-            - **Source:** android_kernel_common-6.1 (staging)
-            - **Structure:** Hybrid (Built Image + Prebuilt DTBs)
-            - **Config:** Consolidated (Full Hardware Support)
-            - **Toolchain:** ZyC Clang 22
+          tag_name: Houji-${{ github.run_id }}
+          name: "Xiaomi 14 Pure Kernel"
           files: "${{ env.ZIP_NAME }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
