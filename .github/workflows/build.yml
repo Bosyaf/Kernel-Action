@@ -243,6 +243,31 @@ jobs:
           
           # ========== SENİN EKLEDİĞİN MODÜL ==========
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_QCOM_CPUFREQ_HW
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_COMMON_CLK_QCOM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_MMC_SDHCI_MSM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_BAM_DMA
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_RPMH
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_MFD_SPMI_PMIC
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SPMI_MSM_PMIC_ARB
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_AOSS_QMP
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_PDC
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_NVMEM_SPMI_SDAM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_PINCTRL_QCOM_SPMI_PMIC
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_SMMU_V3
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_LLCC
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_SMEM           ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_IPCC
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_COMMAND_DB
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QRTR
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_RPMSG_QCOM_GLINK_RPM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_PINCTRL_MSM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_CFG80211
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_HWSPINLOCK_QCOM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_SYSMON
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SLIMBUS
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_NVMEM_QCOM_QFPROM
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_HWMON
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
