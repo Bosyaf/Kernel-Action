@@ -241,33 +241,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== SENİN EKLEDİĞİN MODÜL ==========
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_QCOM_CPUFREQ_HW
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_COMMON_CLK_QCOM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCSI_UFS_QCOM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_MMC_SDHCI_MSM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_BAM_DMA
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_RPMH
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_MFD_SPMI_PMIC
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SPMI_MSM_PMIC_ARB
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_AOSS_QMP
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_PDC
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_NVMEM_SPMI_SDAM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_PINCTRL_QCOM_SPMI_PMIC
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_SMMU_V3
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_LLCC
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_SMEM           ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_IPCC
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_COMMAND_DB
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QRTR
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_RPMSG_QCOM_GLINK_RPM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_PINCTRL_MSM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_CFG80211
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_HWSPINLOCK_QCOM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_QCOM_SYSMON
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SLIMBUS
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_NVMEM_QCOM_QFPROM
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_HWMON
+          # ========== SENİN EKLEDİĞİN MODÜL LİSTESİ ==========
+          for mod in SCHED_WALT ARM_QCOM_CPUFREQ_HW COMMON_CLK_QCOM SCSI_UFS_QCOM \
+                     MMC_SDHCI_MSM QCOM_BAM_DMA QCOM_RPMH MFD_SPMI_PMIC \
+                     SPMI_MSM_PMIC_ARB QCOM_AOSS_QMP QCOM_PDC NVMEM_SPMI_SDAM \
+                     PINCTRL_QCOM_SPMI_PMIC ARM_SMMU_V3 QCOM_LLCC QCOM_SMEM \
+                     QCOM_IPCC QCOM_COMMAND_DB QRTR RPMSG_QCOM_GLINK_RPM \
+                     PINCTRL_MSM CFG80211 HWSPINLOCK_QCOM QCOM_SYSMON \
+                     SLIMBUS NVMEM_QCOM_QFPROM HWMON; do
+            ./scripts/config --file $CONFIG_FILE -m "$mod"
+          done
+          # ========== MODÜL LİSTESİ BİTİŞ ==========
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -294,9 +278,6 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
-          
-          # KCFLAGS içine '-Wno-error' ekledim. 
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -342,4 +323,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
