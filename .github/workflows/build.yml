@@ -381,7 +381,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_HISI
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_TEGRA
           # BORE zamanlayıcısını kapat
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_BORE
+          
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TICK_CPU_ACCOUNTING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_VIRT_CPU_ACCOUNTING_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASK_DELAY_ACCT
