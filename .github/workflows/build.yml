@@ -260,10 +260,97 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
-          
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TICK_CPU_ACCOUNTING
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_VIRT_CPU_ACCOUNTING_GEN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASK_DELAY_ACCT
+
+          # Kullanmadığın platformlar
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MFD_ACT8945A
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PINCTRL_SINGLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PINCTRL_TEGRA_XUSB
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_GPIO_PL061
+
+          # Başka SoC serial sürücüleri
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SERIAL_SAMSUNG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SERIAL_TEGRA_TCU
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SERIAL_SPRD
+
+           # Başka platform RNG sürücüleri
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HW_RANDOM_IPROC_RNG200
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HW_RANDOM_HISI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HW_RANDOM_CN10K
+
+          .# Kullanılmayan inputlar
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_INPUT_VIVALDIFMAP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KEYBOARD_ATKBD
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_INPUT_MOUSE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_INPUT_JOYSTICK
+
+          # Gereksiz debug
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_BT_DEBUGFS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFG80211_CRDA_SUPPORT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CMA_DEBUGFS
+
+          # Kullanılmayan ağ protokolleri
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TIPC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_L2TP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LLC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_6LOWPAN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IEEE802154
+
+          # Eski tünel protokolleri
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_IPIP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_IPGRE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IPV6_SIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IPV6_GRE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IPV6_MIP6
+
+          # Gereksiz conntrack helperları
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_AMANDA
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_FTP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_H323
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_IRC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_NETBIOS_NS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_PPTP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_SANE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_CONNTRACK_TFTP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_NAT_AMANDA
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_NAT_FTP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_NAT_IRC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NF_NAT_TFTP
+
+          # Android telefonda gereksiz
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_BINFMT_MISC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MEMORY_BALLOON
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MEMORY_RELINQUISH
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HIBERNATION
+
+          # Gereksiz memory monitor
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DAMON
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DAMON_VADDR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DAMON_SYSFS
+
+          # Eski ARM compatibility
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARMV8_DEPRECATED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SWP_EMULATION
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CP15_BARRIER_EMULATION
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SETEND_EMULATION
+
+          # Başka vendor/SoC errataları
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_22375
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_23154
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_27456
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_30115
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_TX2_ERRATUM_219
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FUJITSU_ERRATUM_010001
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HISILICON_ERRATUM_161600802
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NVIDIA_CARMEL_CNP_ERRATUM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOCIONEXT_SYNQUACER_PREITS
+
+          # Kullanmadığın platformlar
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_SUNXI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_BCM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_BRCMSTB
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_HISI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_TEGRA
+
           # ========== YENİ EKLENEN KODLAR BİTİŞ ==========
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
