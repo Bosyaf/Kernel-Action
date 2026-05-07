@@ -261,23 +261,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
-          # ARM Errata Temizliği
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_22375
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_23154
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_27456
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_ERRATUM_30115
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CAVIUM_TX2_ERRATUM_219
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FUJITSU_ERRATUM_010001
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HISILICON_ERRATUM_161600802
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NVIDIA_CARMEL_CNP_ERRATUM
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOCIONEXT_SYNQUACER_PREITS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_SUNXI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_BCM
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_BRCMSTB
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_HISI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_TEGRA
-          # BORE zamanlayıcısını kapat
-          
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TICK_CPU_ACCOUNTING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_VIRT_CPU_ACCOUNTING_GEN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TASK_DELAY_ACCT
