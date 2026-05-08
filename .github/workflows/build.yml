@@ -1,4 +1,4 @@
-name: CG+ Galadriel (Full Hardware Build)
+name: CG+ Galadriel (Pure Hardware Build)
 
 permissions:
   contents: write
@@ -39,27 +39,27 @@ jobs:
           curl -fLSs "$CLANG_URL" -o clang.tar.zst
           mkdir -p $GITHUB_WORKSPACE/clang-yuki
           tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/clang-yuki
+          rm -f clang.tar.zst
           echo "$GITHUB_WORKSPACE/clang-yuki/bin" >> $GITHUB_PATH
 
-      - name: 2. Kaynakları Çek (Kernel + Full Donanım)
+      - name: 2. Kaynakları Çek (Kernel + Senin Donanım Repon)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Ana Kernel (6.1 GKI)
+          # Ana Kernel
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-          # SENİN DONANIM REPOSU (Kplatform Branch)
-          # Bu repo vendor/qcom/opensource/ altına klonlanacak
+          # Senin verdiğin Donanım Reposu (kplatform branch)
           mkdir -p vendor/qcom/opensource
           git clone -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git vendor/qcom/opensource
 
-      - name: 3. Donanım ve DTS Entegrasyonu
+      - name: 3. DTS ve Altyapı Hazırlığı
         run: |
           cd common
-          # Repodaki tüm DTS/DTSI dosyalarını kernel ağacına taşıyoruz
+          # Repondaki tüm DTS/DTSI dosyalarını kernel ağacına kopyalıyoruz
           mkdir -p arch/arm64/boot/dts/vendor/qcom/pineapple
           find ../vendor/qcom/opensource -name "*.dts" -o -name "*.dtsi" -exec cp {} arch/arm64/boot/dts/vendor/qcom/pineapple/ \;
           
-          # Mi 14 (houji) için DTS kaydı
-          echo "dtbo-y += houji-sm8650-audio.dtbo" >> arch/arm64/boot/dts/vendor/qcom/pineapple/Makefile
+          # Mi 14 (houji) Ses DTBO kaydı
+          [ -f arch/arm64/boot/dts/vendor/qcom/pineapple/Makefile ] && echo "dtbo-y += houji-sm8650-audio.dtbo" >> arch/arm64/boot/dts/vendor/qcom/pineapple/Makefile
           
           touch .scmversion
 
@@ -70,24 +70,23 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           CONFIG_FILE="out/.config"
           
-          # DONANIM REPOSUNDAKİ MODÜLLERİN DERLENMESİ İÇİN GEREKLİ KRİTİK AYARLAR
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_QCOM_CPUFREQ_HW
+          # Donanım sürücüleri için gerekli GKI kancalarını aktif et
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SND_SOC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_VIDEO_V4L2
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFG80211
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_QCOM_CPUFREQ_HW
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_COMMON_CLK_QCOM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCSI_UFS_QCOM
           
-          # Versiyon
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel-Full-HW"
+          # Versiyon ismi
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel-HW"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 5. Kernel ve DTBO Derleme
+      - name: 5. Ana Kernel ve DTBS Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
@@ -98,56 +97,52 @@ jobs:
             KCFLAGS="-Wno-error" \
             Image modules dtbs
 
-      - name: 6. TÜM DONANIM MODÜLLERİNİ DERLE (Repo İçindeki Her Şey)
+      - name: 6. REPODAKİ TÜM DONANIMLARI DERLE (Sırasıyla)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           KERNEL_OUT="$GITHUB_WORKSPACE/common/out"
-          
-          # Repodaki her klasörü sırayla derle (Makefile olanlar)
-          # Audio, Camera, Display, WLAN, BT, Video, Sync vb.
           HW_ROOT="$GITHUB_WORKSPACE/vendor/qcom/opensource"
           
-          # Derlenecek klasörlerin listesi
-          HW_DIRS="audio-kernel camera-kernel display-drivers bt-kernel data-kernel eva-kernel mmrm-kernel mm-sys-kernel nfc-kernel synx-kernel video-kernel wlan/qcacld-3.0"
+          # Senin repondaki tüm klasörlerin listesi
+          HW_DIRS="audio bt camera data display dsp eSE eva fingerprint graphics mm mm-sys mmrm nfc synx video wlan"
           
           for dir in $HW_DIRS; do
             if [ -d "$HW_ROOT/$dir" ]; then
               echo "🛠️  Derleniyor: $dir ..."
-              make -j$(nproc --all) -C $HW_ROOT/$dir \
-                O=$KERNEL_OUT \
-                ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-                KERNEL_SRC=$GITHUB_WORKSPACE/common \
-                KBUILD_EXTRA_SYMBOLS=$KERNEL_OUT/Module.symvers \
-                M=$HW_ROOT/$dir || echo "⚠️ $dir klasöründe Makefile hatası veya eksik yapılandırma, atlanıyor."
+              # Klasörün içinde Makefile veya Kbuild var mı?
+              if [ -f "$HW_ROOT/$dir/Makefile" ] || [ -f "$HW_ROOT/$dir/Kbuild" ]; then
+                make -j$(nproc --all) -C $HW_ROOT/$dir \
+                  O=$KERNEL_OUT ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+                  KERNEL_SRC=$GITHUB_WORKSPACE/common \
+                  KBUILD_EXTRA_SYMBOLS=$KERNEL_OUT/Module.symvers \
+                  M=$HW_ROOT/$dir || echo "⚠️  $dir başarısız, atlanıyor."
+              fi
             fi
           done
 
-      - name: 7. Paketleme (AnyKernel3)
+      - name: 7. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          # Kernel İmajı
           cp ../common/out/arch/arm64/boot/Image .
-          # Tüm DTBO'ları kopyala
+          # Tüm DTBO'ları topla
           find ../common/out/arch/arm64/boot/dts/ -name "*.dtbo" -exec cp {} . \;
           
-          # TÜM MODÜLLERİ TOPLA (92+ Modül)
+          # Tüm modülleri topla (.ko)
           mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          find ../common/out -name "*.ko" -exec cp -v {} modules/vendor/lib/modules/ \;
           
-          # AnyKernel Ayarları
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Full Hardware Build/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Mi 14 HW/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=xiaomi14' anykernel.sh
           
-          zip -r "../CG-Galadriel-houji-HW.zip" ./*
+          zip -r "../CG-Galadriel-HW.zip" ./*
 
-      - name: 8. Release Yükle
+      - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: HW-BUILD-${{ github.run_id }}
-          name: "CG+ Galadriel Mi 14 (Full Hardware Build)"
+          name: "CG+ Galadriel Mi 14 Full Hardware Build"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
