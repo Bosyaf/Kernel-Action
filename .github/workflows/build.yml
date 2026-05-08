@@ -301,7 +301,7 @@ jobs:
            -Wl,--icf=safe \
            -Wl,-O2 \
            -Wl,--hash-style=gnu \
-           -Wl,--lto-O3 \
+           -Wl,--lto-O3" \
            KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
