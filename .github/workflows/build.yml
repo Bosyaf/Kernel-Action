@@ -287,7 +287,6 @@ jobs:
            -fno-math-errno \
            -fno-unwind-tables \
            -fno-asynchronous-unwind-tables \
-           -fipa-pta \
            -fstrict-aliasing \
            -fslp-vectorize \
            -Wno-error \
