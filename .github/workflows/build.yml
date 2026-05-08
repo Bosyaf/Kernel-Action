@@ -278,21 +278,32 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -falign-loops=32 \
-            -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
-            -Wno-error \
-            -Wno-format \
-            -Wno-format-extra-args \
-            -Wno-constant-logical-operand" \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+           -falign-loops=32 \
+           -falign-functions=32 \
+           -fomit-frame-pointer \
+           -ffunction-sections \
+           -fdata-sections \
+           -fno-math-errno \
+           -fno-unwind-tables \
+           -fno-asynchronous-unwind-tables \
+           -fipa-pta \
+           -fstrict-aliasing \
+           -fslp-vectorize \
+           -Wno-error \
+           -Wno-format \
+           -Wno-format-extra-args \
+           -Wno-constant-logical-operand \
+           -Wno-strict-aliasing" \
             KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-O2" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+           -Wl,--as-needed \
+           -Wl,--strip-debug \
+           -Wl,--icf=safe \
+           -Wl,-O2 \
+           -Wl,--hash-style=gnu \
+           -Wl,--lto-O3 \
+           KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
+           Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
