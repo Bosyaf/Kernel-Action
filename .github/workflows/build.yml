@@ -253,7 +253,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ancalagon"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -270,9 +270,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+rcpc+dotprod+lse+i8mm+bf16 \
-            -falign-loops=32 \
-            -falign-functions=32 \
+            -march=armv9.2-a+crypto+crc+rcpc+lse \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -281,12 +279,11 @@ jobs:
             -Wno-format-extra-args \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--hash-style=gnu \
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            KAFLAGS="-march=armv9.2-a+crypto+crc+rcpc+dotprod+lse+i8mm+bf16" \
+            KAFLAGS="-march=armv9.2-a+crypto+crc+rcpc+lse" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -311,6 +308,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-          
