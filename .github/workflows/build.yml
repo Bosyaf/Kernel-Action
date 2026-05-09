@@ -12,144 +12,207 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-    - name: Checkout Kernel Source
-      uses: actions/checkout@v4
-      with:
-        repository: Bosyaf/xiaomi14
-        ref: kplatform
-        path: kernel
-        
-    - name: Checkout Device Trees
-      uses: actions/checkout@v4
-      with:
-        repository: Bosyaf/xiaomi14-devicetrees
-        path: devicetrees
-        
-    - name: Setup Build Environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          bc bison build-essential ccache curl flex \
-          g++-multilib gcc-multilib git gnupg gperf \
-          imagemagick lib32ncurses5-dev lib32readline-dev \
-          lib32z1-dev libelf-dev liblz4-tool \
-          libncurses5 libncurses5-dev libsdl1.2-dev \
-          libssl-dev libxml2 libxml2-utils lzop \
-          pngcrush rsync schedtool squashfs-tools xsltproc \
-          zip zlib1g-dev python3 python-is-python3
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          repository: Bosyaf/xiaomi14
+          ref: kplatform
+          path: kernel
           
-    - name: Download Clang Toolchain
-      run: |
-        mkdir -p ~/toolchains
-        cd ~/toolchains
-        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz
-        mkdir -p clang-r487747c
-        tar -xzf clang-r487747c.tar.gz -C clang-r487747c
-        rm clang-r487747c.tar.gz
-        
-    - name: Link Device Trees to Kernel Source
-      run: |
-        rm -rf kernel/arch/arm64/boot/dts/vendor
-        ln -sf $GITHUB_WORKSPACE/devicetrees kernel/arch/arm64/boot/dts/vendor
-        
-    - name: Build Kernel
-      run: |
-        cd kernel
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export CLANG_PATH=~/toolchains/clang-r487747c/bin
-        export PATH=$CLANG_PATH:$PATH
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-        export CC=clang
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-        export LLVM=1
-        export LLVM_IAS=1
-        
-        # Houji için uygun defconfig'i bul ve kullan
-        # Önce vendor/pineapple_consolidate defconfig'i dene
-        if [ -f "arch/arm64/configs/vendor/pineapple_consolidate_defconfig" ]; then
-          DEFCONFIG="vendor/pineapple_consolidate_defconfig"
-        elif [ -f "arch/arm64/configs/vendor/houji_consolidate_defconfig" ]; then
-          DEFCONFIG="vendor/houji_consolidate_defconfig"
-        elif [ -f "arch/arm64/configs/vendor/pineapple_defconfig" ]; then
-          DEFCONFIG="vendor/pineapple_defconfig"
-        elif [ -f "arch/arm64/configs/vendor/houji_defconfig" ]; then
-          DEFCONFIG="vendor/houji_defconfig"
-        else
-          echo "Uygun defconfig bulunamadı!"
-          ls -la arch/arm64/configs/vendor/
-          exit 1
-        fi
-        
-        echo "Kullanılan defconfig: $DEFCONFIG"
-        
-        # Temizlik
-        make mrproper
-        
-        # Config oluştur
-        make O=out ARCH=arm64 $DEFCONFIG
-        
-        # Kernel derle
-        make -j$(nproc --all) \
-          O=out \
-          ARCH=arm64 \
-          CC=clang \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-          LLVM=1 \
+      - name: Checkout Device Trees
+        uses: actions/checkout@v4
+        with:
+          repository: Bosyaf/xiaomi14-devicetrees
+          path: devicetrees
+          
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex \
+            g++-multilib gcc-multilib git gnupg gperf \
+            imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev libelf-dev liblz4-tool \
+            libncurses5 libncurses5-dev libsdl1.2-dev \
+            libssl-dev libxml2 libxml2-utils lzop \
+            pngcrush rsync schedtool squashfs-tools xsltproc \
+            zip zlib1g-dev python3 python-is-python3 \
+            libncurses-dev gawk cpio wget unzip
+            
+      - name: Install Bazel
+        run: |
+          wget https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64
+          chmod +x bazelisk-linux-amd64
+          sudo mv bazelisk-linux-amd64 /usr/local/bin/bazel
+          
+      - name: Download Clang Toolchain
+        run: |
+          mkdir -p prebuilts/clang/host/linux-x86
+          cd prebuilts/clang/host/linux-x86
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz
+          mkdir -p clang-r487747c
+          tar -xzf clang-r487747c.tar.gz -C clang-r487747c
+          rm clang-r487747c.tar.gz
+          
+      - name: Link Device Trees to Kernel Source
+        run: |
+          rm -rf kernel/arch/arm64/boot/dts/vendor
+          ln -sf $GITHUB_WORKSPACE/devicetrees kernel/arch/arm64/boot/dts/vendor
+          
+      - name: Setup Build Config
+        run: |
+          cd kernel
+          
+          if [ -f "build.config.msm.pineapple" ]; then
+            BUILD_CONFIG="build.config.msm.pineapple"
+          elif [ -f "build.config.pineapple" ]; then
+            BUILD_CONFIG="build.config.pineapple"
+          elif [ -f "build.config.msm.waipio" ]; then
+            BUILD_CONFIG="build.config.msm.waipio"
+          else
+            echo "Ana build.config dosyaları:"
+            ls -la build.config* 2>/dev/null || echo "build.config bulunamadı"
+            
+            cat > build.config.houji <<'BUILDEOF'
+          ARCH=arm64
+          BRANCH=android14-6.1
+          CLANG_PREBUILT_BIN=prebuilts/clang/host/linux-x86/clang-r487747c/bin
+          CROSS_COMPILE=aarch64-linux-gnu-
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          BUILDTOOLS_PREBUILT_BIN=build/build-tools/path/linux-x86
+          CC=clang
+          LD=ld.lld
+          NM=llvm-nm
+          OBJCOPY=llvm-objcopy
+          LLVM=1
           LLVM_IAS=1
+          DEFCONFIG=gki_defconfig
+          STOP_SHIP_TRACEPRINTK=1
+          IN_KERNEL_MODULES=1
+          DO_NOT_STRIP_MODULES=0
+          LTO=thin
+          KMI_SYMBOL_LIST_STRICT_MODE=0
+          BUILDEOF
+            
+            cat >> build.config.houji <<'CMDEOF'
+          PRE_DEFCONFIG_CMDS="KCONFIG_CONFIG=${OUT_DIR}/.config ${KERNEL_DIR}/scripts/kconfig/merge_config.sh -m -r ${KERNEL_DIR}/arch/arm64/configs/gki_defconfig ${KERNEL_DIR}/arch/arm64/configs/vendor/pineapple_consolidate.config ${KERNEL_DIR}/arch/arm64/configs/vendor/houji_consolidate.config"
+          CMDEOF
+            
+            cat >> build.config.houji <<'FILESEOF'
+          FILES="
+          arch/arm64/boot/Image
+          arch/arm64/boot/Image.gz
+          vmlinux
+          System.map
+          "
+          FILESEOF
+            
+            BUILD_CONFIG="build.config.houji"
+          fi
           
-    - name: Prepare Kernel Artifacts
-      run: |
-        mkdir -p upload
-        
-        # Kernel Image
-        if [ -f kernel/out/arch/arm64/boot/Image ]; then
-          cp kernel/out/arch/arm64/boot/Image upload/
-        fi
-        
-        if [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
-          cp kernel/out/arch/arm64/boot/Image.gz upload/
-        fi
-        
-        # DTB ve DTBO
-        if [ -f kernel/out/arch/arm64/boot/dtb ]; then
-          cp kernel/out/arch/arm64/boot/dtb upload/
-        fi
-        
-        if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
-          cp kernel/out/arch/arm64/boot/dtbo.img upload/
-        fi
-        
-        # DTB dosyalarını topla
-        find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} upload/ \;
-        
-        # Kernel modülleri varsa
-        if [ -d kernel/out/lib/modules ]; then
+          echo "BUILD_CONFIG=$BUILD_CONFIG" >> $GITHUB_ENV
+          
+      - name: Build Kernel with build.sh
+        run: |
+          cd kernel
+          
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export DTC_EXT=dtc
+          export CLANG_PATH=$GITHUB_WORKSPACE/prebuilts/clang/host/linux-x86/clang-r487747c/bin
+          export PATH=$CLANG_PATH:$PATH
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export CC=clang
+          export LD=ld.lld
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export LLVM=1
+          export LLVM_IAS=1
+          export KBUILD_BUILD_USER=bosyaf
+          export KBUILD_BUILD_HOST=github-actions
+          
+          if [ -f "build.sh" ]; then
+            echo "build.sh kullanılıyor..."
+            BUILD_CONFIG=$BUILD_CONFIG bash build.sh
+          else
+            echo "Manuel build yapılıyor..."
+            
+            mkdir -p out
+            
+            make O=out ARCH=arm64 gki_defconfig
+            
+            scripts/kconfig/merge_config.sh -m -r -O out \
+              arch/arm64/configs/gki_defconfig \
+              arch/arm64/configs/vendor/pineapple_consolidate.config \
+              arch/arm64/configs/vendor/houji_consolidate.config
+            
+            make O=out ARCH=arm64 olddefconfig
+            
+            make -j$(nproc --all) \
+              O=out \
+              ARCH=arm64 \
+              CC=clang \
+              LD=ld.lld \
+              CLANG_TRIPLE=aarch64-linux-gnu- \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+              LLVM=1 \
+              LLVM_IAS=1 \
+              Image Image.gz dtbs dtbo.img
+          fi
+            
+      - name: Prepare Kernel Artifacts
+        run: |
+          mkdir -p upload
+          
+          if [ -d "kernel/out" ]; then
+            OUT_DIR="kernel/out"
+          elif [ -d "kernel/out/msm-kernel/dist" ]; then
+            OUT_DIR="kernel/out/msm-kernel/dist"
+          elif [ -d "kernel/dist" ]; then
+            OUT_DIR="kernel/dist"
+          else
+            OUT_DIR="kernel/out"
+          fi
+          
+          echo "Çıktı dizini: $OUT_DIR"
+          
+          find $OUT_DIR -name "Image" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "Image.gz" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "dtb" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "dtbo.img" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "*.dtb" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "vmlinux" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "System.map" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          
           mkdir -p upload/modules
-          find kernel/out -name "*.ko" -exec cp {} upload/modules/ \;
-        fi
-        
-        # Build bilgilerini kaydet
-        echo "Build Date: $(date)" > upload/build_info.txt
-        echo "Kernel Version: $(cat kernel/out/include/config/kernel.release 2>/dev/null || echo 'Unknown')" >> upload/build_info.txt
-        echo "Compiler: Clang r487747c" >> upload/build_info.txt
-        
-    - name: Upload Kernel Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: xiaomi-mi14-houji-kernel-${{ github.run_number }}
-        path: upload/*
-        retention-days: 30
-        
-    - name: Create Release (Optional)
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: kernel-${{ github.run_number }}
-        name: Xiaomi Mi 14 Kernel Build ${{ github.run_number }}
-        files: upload/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          find $OUT_DIR -name "*.ko" -type f -exec cp {} upload/modules/ \; 2>/dev/null || true
+          rmdir upload/modules 2>/dev/null || true
+          
+          echo "Build Date: $(date)" > upload/build_info.txt
+          echo "Device: Xiaomi Mi 14 (houji)" >> upload/build_info.txt
+          echo "Platform: Pineapple/SM8650" >> upload/build_info.txt
+          echo "Compiler: Clang r487747c" >> upload/build_info.txt
+          echo "Build Config: $BUILD_CONFIG" >> upload/build_info.txt
+          echo "" >> upload/build_info.txt
+          echo "=== Oluşturulan dosyalar ===" >> upload/build_info.txt
+          ls -lah upload/ >> upload/build_info.txt
+          
+          cat upload/build_info.txt
+          
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-mi14-houji-kernel-${{ github.run_number }}
+          path: upload/*
+          retention-days: 30
+          
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: kernel-${{ github.run_number }}
+          name: Xiaomi Mi 14 Kernel Build ${{ github.run_number }}
+          files: upload/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
