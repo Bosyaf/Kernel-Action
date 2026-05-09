@@ -21,9 +21,7 @@ jobs:
             binutils-aarch64-linux-gnu \
             gcc-aarch64-linux-gnu
 
-      # ──────────────────────────────────────────────
       # 1) Kernel source
-      # ──────────────────────────────────────────────
       - name: Clone kernel source
         run: |
           git clone --depth=1 \
@@ -31,199 +29,117 @@ jobs:
             https://github.com/Bosyaf/xiaomi14.git \
             kernel_src
 
-      # ──────────────────────────────────────────────
-      # 2) Device trees  →  yerleştir: arch/arm64/boot/dts/vendor
-      #    (kernel içi symlink: ../../../../../sm8650-devicetrees
-      #     bu symlink çalışmayacak çünkü hedef yok;
-      #     bu yüzden symlink'i silip gerçek klonu oraya koyuyoruz)
-      # ──────────────────────────────────────────────
+      # 2) Device trees & Audio Bindings Fix
       - name: Clone device trees
         run: |
           git clone --depth=1 \
             https://github.com/Bosyaf/xiaomi14-devicetrees.git \
             sm8650-devicetrees
 
-          # Klon içindeki 'qcom' alt dizinini
-          # kernel'in beklediği yere (vendor/) koy
+          # Vendor dizinini temizle ve hazırla
           cd kernel_src/arch/arm64/boot/dts
-
-          # Eğer vendor bir symlink ya da klasörse kaldır
-          if [ -L vendor ] || [ -d vendor ]; then
-            rm -rf vendor
-          fi
-
-          # devicetrees reposunu 'vendor' adıyla koy
-          # (repo kökü zaten qcom/ ve diğer DTS dosyalarını içeriyor)
+          rm -rf vendor
           cp -a "$GITHUB_WORKSPACE/sm8650-devicetrees" vendor
 
-      # ──────────────────────────────────────────────
-      # 3) Clang toolchain indir ve kur
-      #    android14-release / clang-r487747c
-      # ──────────────────────────────────────────────
-      - name: Download Clang r487747c (android14-release)
+          # --- AUDIO BINDINGS FIX ---
+          # Hata: 'bindings/qcom,audio-ext-clk.h' bulunamıyordu.
+          # Çözüm: Include dizinini 'bindings' adıyla linkliyoruz.
+          if [ -d "vendor/qcom/audio" ]; then
+            cd vendor/qcom/audio
+            mkdir -p bindings
+            # İçerideki tüm dt-bindings dosyalarını bindings klasörüne linkle veya direkt klasörü linkle
+            ln -sf include/dt-bindings/* bindings/
+            echo "Audio bindings fix applied."
+            cd ../../../../../
+          fi
+
+      # 3) Clang toolchain
+      - name: Download Clang r487747c
         run: |
           mkdir -p "$GITHUB_WORKSPACE/clang-r487747c"
           wget -q \
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz" \
             -O clang.tar.gz
           tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-r487747c"
-          echo "Clang version:"
-          "$GITHUB_WORKSPACE/clang-r487747c/bin/clang" --version
 
-      # ──────────────────────────────────────────────
-      # 4) Binutils (aarch64 GNU linker/assembler)
-      #    Clang ile kullanılacak
-      # ──────────────────────────────────────────────
-      - name: Setup GCC cross toolchain (binutils)
+      # 4) Setup Path
+      - name: Setup Path
         run: |
-          # aarch64-linux-gnu binutils zaten apt ile kuruldu
-          # PATH'e ekle
-          echo "/usr/aarch64-linux-gnu/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/clang-r487747c/bin" >> $GITHUB_PATH
+          echo "/usr/aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
-      # ──────────────────────────────────────────────
-      # 5) Kconfig hazırla:
-      #    gki_defconfig  +  pineapple_GKI  +  houji_GKI
-      #    consolidate.fragment  +  pineapple_consolidate  +  houji_consolidate
-      # ──────────────────────────────────────────────
+      # 5) Kconfig hazırla
       - name: Prepare kernel config
         working-directory: kernel_src
         run: |
           export ARCH=arm64
-          export SUBARCH=arm64
-          export CLANG_DIR="$GITHUB_WORKSPACE/clang-r487747c"
-          export PATH="$CLANG_DIR/bin:$PATH"
-
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           export CC=clang
-          export LD=ld.lld
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export OBJCOPY=llvm-objcopy
-          export OBJDUMP=llvm-objdump
-          export STRIP=llvm-strip
+          export LLVM=1
+          export LLVM_IAS=1
 
           # Temel GKI defconfig
-          make O=out \
-            ARCH=$ARCH \
-            CC=$CC \
-            CROSS_COMPILE=$CROSS_COMPILE \
-            LLVM=1 LLVM_IAS=1 \
-            gki_defconfig
+          make O=out ARCH=$ARCH CC=$CC CROSS_COMPILE=$CROSS_COMPILE LLVM=1 LLVM_IAS=1 gki_defconfig
 
-          # pineapple platform konfig katmanı
-          ./scripts/kconfig/merge_config.sh \
-            -m -O out \
-            out/.config \
-            arch/arm64/configs/vendor/pineapple_GKI.config
+          # Merge configs
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_GKI.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/houji_GKI.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/consolidate.fragment
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_consolidate.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/houji_consolidate.config
 
-          # houji cihaz konfig katmanı
-          ./scripts/kconfig/merge_config.sh \
-            -m -O out \
-            out/.config \
-            arch/arm64/configs/vendor/houji_GKI.config
+          make O=out ARCH=$ARCH CC=$CC CROSS_COMPILE=$CROSS_COMPILE LLVM=1 LLVM_IAS=1 olddefconfig
 
-          # consolidate.fragment (genel)
-          ./scripts/kconfig/merge_config.sh \
-            -m -O out \
-            out/.config \
-            arch/arm64/configs/consolidate.fragment
-
-          # pineapple consolidate katmanı
-          ./scripts/kconfig/merge_config.sh \
-            -m -O out \
-            out/.config \
-            arch/arm64/configs/vendor/pineapple_consolidate.config
-
-          # houji consolidate katmanı
-          ./scripts/kconfig/merge_config.sh \
-            -m -O out \
-            out/.config \
-            arch/arm64/configs/vendor/houji_consolidate.config
-
-          # Tüm sorulmadan varsayılan yap
-          make O=out \
-            ARCH=$ARCH \
-            CC=$CC \
-            CROSS_COMPILE=$CROSS_COMPILE \
-            LLVM=1 LLVM_IAS=1 \
-            olddefconfig
-
-      # ──────────────────────────────────────────────
-      # 6) Kernel derle
-      # ──────────────────────────────────────────────
+      # 6) Kernel derle (DTC Include yolları eklendi)
       - name: Build kernel
         working-directory: kernel_src
         run: |
           export ARCH=arm64
-          export SUBARCH=arm64
-          export CLANG_DIR="$GITHUB_WORKSPACE/clang-r487747c"
-          export PATH="$CLANG_DIR/bin:$PATH"
-
           export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           export CC=clang
-          export LD=ld.lld
-          export AR=llvm-ar
           export NM=llvm-nm
           export OBJCOPY=llvm-objcopy
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
+          export LD=ld.lld
+          export AR=llvm-ar
 
+          # DTC_EXT_FLAGS: Derleyiciye eksik header dosyalarının yerini gösteriyoruz
           make -j$(nproc) \
             O=out \
             ARCH=$ARCH \
             CC=$CC \
             CROSS_COMPILE=$CROSS_COMPILE \
             LLVM=1 LLVM_IAS=1 \
+            DTC_EXT_FLAGS="-i $(pwd)/arch/arm64/boot/dts/vendor/qcom/audio/include" \
+            KCFLAGS="-I$(pwd)/arch/arm64/boot/dts/vendor/qcom/audio/include" \
             Image.gz \
             dtbs \
             modules \
             2>&1 | tee build.log
 
-      # ──────────────────────────────────────────────
       # 7) Artifacts topla
-      # ──────────────────────────────────────────────
       - name: Collect output artifacts
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output"
 
-          # Kernel image
-          cp kernel_src/out/arch/arm64/boot/Image.gz \
-             "$GITHUB_WORKSPACE/output/" || true
+          # Kernel image (Hata almamak için kontrol ekledik)
+          if [ -f kernel_src/out/arch/arm64/boot/Image.gz ]; then
+            cp kernel_src/out/arch/arm64/boot/Image.gz "$GITHUB_WORKSPACE/output/"
+          fi
 
           # DTB / DTBO
-          find kernel_src/out/arch/arm64/boot/dts \
-            -name "*.dtb" -o -name "*.dtbo" \
-            | while read f; do
-                cp "$f" "$GITHUB_WORKSPACE/output/"
-              done || true
-
-          # Özellikle houji DTB'leri
-          find kernel_src/out/arch/arm64/boot/dts \
-            -name "*houji*" \
-            | while read f; do
-                cp "$f" "$GITHUB_WORKSPACE/output/"
-              done || true
+          find kernel_src/out/arch/arm64/boot/dts -name "*.dtb" -o -name "*.dtbo" -exec cp {} "$GITHUB_WORKSPACE/output/" \;
 
           # Modüller
-          mkdir -p "$GITHUB_WORKSPACE/output/modules"
-          make -C kernel_src \
-            O=out \
-            ARCH=arm64 \
-            INSTALL_MOD_PATH="$GITHUB_WORKSPACE/output/modules" \
-            INSTALL_MOD_STRIP=1 \
-            modules_install || true
+          if [ -d kernel_src/out/lib/modules ]; then
+            mkdir -p "$GITHUB_WORKSPACE/output/modules"
+            make -C kernel_src O=out ARCH=arm64 INSTALL_MOD_PATH="$GITHUB_WORKSPACE/output/modules" INSTALL_MOD_STRIP=1 modules_install || true
+          fi
 
-          # Build log
           cp kernel_src/build.log "$GITHUB_WORKSPACE/output/" || true
 
-          echo "=== Output contents ==="
-          ls -lh "$GITHUB_WORKSPACE/output/"
-
-      # ──────────────────────────────────────────────
       # 8) Upload artifacts
-      # ──────────────────────────────────────────────
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
