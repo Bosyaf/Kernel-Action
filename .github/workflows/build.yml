@@ -59,19 +59,33 @@ jobs:
           rm -rf kernel/arch/arm64/boot/dts/vendor
           ln -sf $GITHUB_WORKSPACE/devicetrees kernel/arch/arm64/boot/dts/vendor
           
+      - name: Check Build System
+        run: |
+          cd kernel
+          echo "=== Build scripts ==="
+          ls -la build.sh build*.sh 2>/dev/null || echo "build.sh yok"
+          echo ""
+          echo "=== Build config dosyaları ==="
+          ls -la build.config* 2>/dev/null || echo "build.config yok"
+          echo ""
+          echo "=== Bazel BUILD dosyası ==="
+          ls -la BUILD.bazel BUILD 2>/dev/null || echo "Bazel BUILD dosyası yok"
+          
       - name: Setup Build Config
         run: |
           cd kernel
           
           if [ -f "build.config.msm.pineapple" ]; then
             BUILD_CONFIG="build.config.msm.pineapple"
+            echo "Kullanılacak config: build.config.msm.pineapple"
           elif [ -f "build.config.pineapple" ]; then
             BUILD_CONFIG="build.config.pineapple"
+            echo "Kullanılacak config: build.config.pineapple"
           elif [ -f "build.config.msm.waipio" ]; then
             BUILD_CONFIG="build.config.msm.waipio"
+            echo "Kullanılacak config: build.config.msm.waipio"
           else
-            echo "Ana build.config dosyaları:"
-            ls -la build.config* 2>/dev/null || echo "build.config bulunamadı"
+            echo "Özel build.config.houji oluşturuluyor..."
             
             cat > build.config.houji <<'BUILDEOF'
           ARCH=arm64
@@ -112,7 +126,7 @@ jobs:
           
           echo "BUILD_CONFIG=$BUILD_CONFIG" >> $GITHUB_ENV
           
-      - name: Build Kernel with build.sh
+      - name: Build Kernel
         run: |
           cd kernel
           
@@ -132,13 +146,19 @@ jobs:
           export KBUILD_BUILD_HOST=github-actions
           
           if [ -f "build.sh" ]; then
-            echo "build.sh kullanılıyor..."
+            echo "=== build.sh ile derleme yapılıyor ==="
             BUILD_CONFIG=$BUILD_CONFIG bash build.sh
+          elif [ -f "BUILD.bazel" ]; then
+            echo "=== Bazel ile derleme yapılıyor ==="
+            bazel build --config=fast --config=stamp //private/devices/xiaomi/houji:kernel_aarch64_dist || \
+            bazel build --config=fast //msm-kernel:kernel_aarch64_dist || \
+            bazel build //msm-kernel:kernel_aarch64_dist
           else
-            echo "Manuel build yapılıyor..."
+            echo "=== Manuel make ile derleme yapılıyor ==="
             
             mkdir -p out
             
+            echo "Config birleştiriliyor..."
             make O=out ARCH=arm64 gki_defconfig
             
             scripts/kconfig/merge_config.sh -m -r -O out \
@@ -148,6 +168,7 @@ jobs:
             
             make O=out ARCH=arm64 olddefconfig
             
+            echo "Kernel derleniyor..."
             make -j$(nproc --all) \
               O=out \
               ARCH=arm64 \
@@ -158,7 +179,10 @@ jobs:
               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
               LLVM=1 \
               LLVM_IAS=1 \
-              Image Image.gz dtbs dtbo.img
+              Image Image.gz dtbs
+            
+            echo "DTB dosyaları birleştiriliyor..."
+            find out/arch/arm64/boot/dts/vendor/qcom -name "*.dtb" -exec cat {} + > out/arch/arm64/boot/dtb 2>/dev/null || true
           fi
             
       - name: Prepare Kernel Artifacts
@@ -171,17 +195,24 @@ jobs:
             OUT_DIR="kernel/out/msm-kernel/dist"
           elif [ -d "kernel/dist" ]; then
             OUT_DIR="kernel/dist"
+          elif [ -d "kernel/bazel-bin" ]; then
+            OUT_DIR="kernel/bazel-bin"
           else
             OUT_DIR="kernel/out"
           fi
           
           echo "Çıktı dizini: $OUT_DIR"
+          echo "Tüm dizin yapısı:"
+          find $OUT_DIR -type f -name "Image*" -o -name "*.dtb" -o -name "dtb" -o -name "vmlinux" 2>/dev/null || true
           
           find $OUT_DIR -name "Image" -type f -exec cp {} upload/ \; 2>/dev/null || true
           find $OUT_DIR -name "Image.gz" -type f -exec cp {} upload/ \; 2>/dev/null || true
-          find $OUT_DIR -name "dtb" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "Image.lz4" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          find $OUT_DIR -name "dtb" -type f -exec cp {} upload/dtb \; 2>/dev/null || true
           find $OUT_DIR -name "dtbo.img" -type f -exec cp {} upload/ \; 2>/dev/null || true
-          find $OUT_DIR -name "*.dtb" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          
+          find $OUT_DIR -path "*/dts/vendor/qcom/*.dtb" -type f -exec cp {} upload/ \; 2>/dev/null || true
+          
           find $OUT_DIR -name "vmlinux" -type f -exec cp {} upload/ \; 2>/dev/null || true
           find $OUT_DIR -name "System.map" -type f -exec cp {} upload/ \; 2>/dev/null || true
           
