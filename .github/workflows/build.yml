@@ -292,11 +292,10 @@ jobs:
           echo "🚀 Yuki-BOLT Optimizasyonu uygulanıyor..."
           $GITHUB_WORKSPACE/clang-yuki/bin/llvm-bolt out/vmlinux -o out/vmlinux.bolt \
             --reorder-blocks=ext-tsp \
-            --reorder-functions=hfsort+ \
+            --reorder-functions=cdsort \
             --split-functions \
             --split-all-cold \
-            --dyno-stats \
-            --strip-all
+            --dyno-stats
 
           # 3. Optimize edilmiş vmlinux'u Image formatına çevirme
           echo "📦 BOLT'lu Image dosyası oluşturuluyor..."
