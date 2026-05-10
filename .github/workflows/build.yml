@@ -236,10 +236,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
-          # ========== SENİN EKLEDİĞİN MODÜL LİSTESİ ==========
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          # ========== MODÜL LİSTESİ BİTİŞ ==========
-          
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -260,49 +256,34 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-      - name: 7. Kernel Derleme + BOLT Optimizasyonu
+      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
-          # 1. Ham vmlinux derleme (BOLT için -Wl,-q şarttır)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+rcpc+lse \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -falign-functions=32 \
-            -Wno-error" \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--emit-relocs \
             -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
             -Wl,-O2" \
-            KAFLAGS="-march=armv9.2-a+crypto+crc+rcpc+lse" \
-            LDFLAGS_vmlinux="--emit-relocs" \
-            vmlinux modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          # 2. BOLT Uygulama (Sihir burada)
-          echo "🚀 Yuki-BOLT Optimizasyonu uygulanıyor..."
-          $GITHUB_WORKSPACE/clang-yuki/bin/llvm-bolt out/vmlinux -o out/vmlinux.bolt \
-            --relocs \
-            --reorder-blocks=ext-tsp \
-            --reorder-functions=cdsort \
-            --split-functions \
-            --split-all-cold \
-            --dyno-stats
-
-          # 3. Optimize edilmiş vmlinux'u Image formatına çevirme
-          echo "📦 BOLT'lu Image dosyası oluşturuluyor..."
-          $GITHUB_WORKSPACE/clang-yuki/bin/llvm-objcopy -O binary out/vmlinux.bolt out/arch/arm64/boot/Image
-          
-          # Image.gz oluştur
-          gzip -n -k -f -9 out/arch/arm64/boot/Image > out/arch/arm64/boot/Image.gz
-          
-          echo "BOOTHASH=Galadriel-BOLT-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
       - name: 8. AnyKernel3
         run: |
@@ -324,3 +305,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
