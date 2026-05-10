@@ -275,15 +275,11 @@ jobs:
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -Wno-error \
-            -Wno-format \
-            -Wno-format-extra-args \
-            -Wno-constant-logical-operand" \
+            -falign-functions=32 \
+            -Wno-error" \
             KLDFLAGS="-Wl,--gc-sections \
-            -Wl,-q \
+            -Wl,--emit-relocs \
             -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
             -Wl,-O2" \
             KAFLAGS="-march=armv9.2-a+crypto+crc+rcpc+lse" \
             vmlinux modules || { echo "❌ Derleme HATASI!"; exit 1; }
@@ -291,6 +287,7 @@ jobs:
           # 2. BOLT Uygulama (Sihir burada)
           echo "🚀 Yuki-BOLT Optimizasyonu uygulanıyor..."
           $GITHUB_WORKSPACE/clang-yuki/bin/llvm-bolt out/vmlinux -o out/vmlinux.bolt \
+            --relocs \
             --reorder-blocks=ext-tsp \
             --reorder-functions=cdsort \
             --split-functions \
