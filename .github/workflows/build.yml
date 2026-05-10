@@ -282,6 +282,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,-O2" \
             KAFLAGS="-march=armv9.2-a+crypto+crc+rcpc+lse" \
+            LDFLAGS_vmlinux="--emit-relocs" \
             vmlinux modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           # 2. BOLT Uygulama (Sihir burada)
