@@ -260,11 +260,12 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
+      - name: 7. Kernel Derleme + BOLT Optimizasyonu
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-yuki/bin:$PATH"
           
+          # 1. Ham vmlinux derleme (BOLT için -Wl,-q şarttır)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -279,14 +280,32 @@ jobs:
             -Wno-format-extra-args \
             -Wno-constant-logical-operand" \
             KLDFLAGS="-Wl,--gc-sections \
+            -Wl,-q \
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
             KAFLAGS="-march=armv9.2-a+crypto+crc+rcpc+lse" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            vmlinux modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
-          echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          # 2. BOLT Uygulama (Sihir burada)
+          echo "🚀 Yuki-BOLT Optimizasyonu uygulanıyor..."
+          $GITHUB_WORKSPACE/clang-yuki/bin/llvm-bolt out/vmlinux -o out/vmlinux.bolt \
+            --reorder-blocks=ext-tsp \
+            --reorder-functions=hfsort+ \
+            --split-functions \
+            --split-all-cold \
+            --dyno-stats \
+            --strip-all
+
+          # 3. Optimize edilmiş vmlinux'u Image formatına çevirme
+          echo "📦 BOLT'lu Image dosyası oluşturuluyor..."
+          $GITHUB_WORKSPACE/clang-yuki/bin/llvm-objcopy -O binary out/vmlinux.bolt out/arch/arm64/boot/Image
+          
+          # Image.gz oluştur
+          gzip -n -k -f -9 out/arch/arm64/boot/Image > out/arch/arm64/boot/Image.gz
+          
+          echo "BOOTHASH=Galadriel-BOLT-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
       - name: 8. AnyKernel3
         run: |
