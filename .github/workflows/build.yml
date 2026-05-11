@@ -1,4 +1,4 @@
-name: CG+ Galadriel (Neutron Clang Full LTO)
+name: CG+ Galadriel (AOSP Clang 17 Full LTO)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Neutron Clang Çekimi
+      - name: 1. Paketler ve AOSP Clang 22 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -36,15 +36,86 @@ jobs:
             rsync unzip dwarves bc cpio xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
 
-          echo "🔥 Neutron Toolchains (Antman) indiriliyor ve kuruluyor..."
-          mkdir -p "$HOME/toolchains/neutron-clang"
-          cd "$HOME/toolchains/neutron-clang"
-          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
-          chmod +x antman
-          ./antman -S
-          
-          echo "$HOME/toolchains/neutron-clang/bin" >> $GITHUB_PATH
-          echo "✅ Neutron Clang başarıyla kuruldu ve PATH'e eklendi!"
+          echo "🔥 Google AOSP Clang 22 (android14-release) indiriliyor..."
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/99218495c5f95748502c31959d3dc85b71ce9d5d/clang-r596125.tar.gz"
+
+          mkdir -p $GITHUB_WORKSPACE/clang-aosp
+
+          # ======================================================
+          # Saglam indirme: wget + retry + butunluk kontrolu
+          # ======================================================
+          MAX_RETRIES=5
+          DOWNLOADED=0
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "📥 İndirme denemesi $i/$MAX_RETRIES..."
+            rm -f clang.tar.gz
+
+            wget -q --show-progress \
+              --retry-connrefused \
+              --waitretry=10 \
+              --read-timeout=600 \
+              --timeout=120 \
+              --tries=3 \
+              -O clang.tar.gz "$CLANG_URL" || true
+
+            if [ -f clang.tar.gz ] && [ -s clang.tar.gz ]; then
+              echo "📦 İndirilen boyut: $(du -h clang.tar.gz | cut -f1)"
+
+              if gzip -t clang.tar.gz 2>/dev/null; then
+                echo "✅ Dosya bütünlüğü doğrulandı!"
+                DOWNLOADED=1
+                break
+              else
+                echo "⚠️ Dosya bozuk, tekrar denenecek..."
+                rm -f clang.tar.gz
+              fi
+            else
+              echo "⚠️ İndirme başarısız veya dosya boş."
+            fi
+
+            echo "⏳ 15 saniye bekleniyor..."
+            sleep 15
+          done
+
+          # ======================================================
+          # Fallback: curl ile tekrar dene
+          # ======================================================
+          if [ "$DOWNLOADED" -ne 1 ]; then
+            echo "🔄 wget başarısız, curl ile deneniyor..."
+            for i in $(seq 1 3); do
+              echo "📥 curl denemesi $i/3..."
+              rm -f clang.tar.gz
+              curl -fLSs --retry 5 --retry-delay 10 --max-time 1200 \
+                "$CLANG_URL" -o clang.tar.gz || true
+
+              if [ -f clang.tar.gz ] && [ -s clang.tar.gz ]; then
+                echo "📦 İndirilen boyut: $(du -h clang.tar.gz | cut -f1)"
+                if gzip -t clang.tar.gz 2>/dev/null; then
+                  echo "✅ curl ile dosya bütünlüğü doğrulandı!"
+                  DOWNLOADED=1
+                  break
+                else
+                  echo "⚠️ curl dosyası da bozuk..."
+                  rm -f clang.tar.gz
+                fi
+              fi
+              sleep 15
+            done
+          fi
+
+          if [ "$DOWNLOADED" -ne 1 ]; then
+            echo "❌ HATA: Clang tüm denemeler sonrasında indirilemedi!"
+            exit 1
+          fi
+
+          echo "Arşiv Çıkarılıyor..."
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-aosp
+          rm -f clang.tar.gz
+
+          echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
+          echo "✅ Clang 17 İndirildi ve PATH'e eklendi!"
+          ls -la $GITHUB_WORKSPACE/clang-aosp/bin/clang*
 
       - name: 2. Kaynakları Çek
         run: |
@@ -183,7 +254,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
 
           # ======================================================
           # OOM koruma: Swap ve VM ayarları ÖNCE yapılsın
@@ -302,7 +373,7 @@ jobs:
       - name: 7. Kernel Derleme (Full LTO - Bellek Güvenli)
         run: |
           cd common
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
 
           # Sonkez bellek kontrolu
           echo "📊 Derleme öncesi bellek durumu:"
@@ -323,6 +394,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -397,7 +469,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (Neutron Clang Full LTO)"
+          name: "CG+ Galadriel (AOSP Clang 17 Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
