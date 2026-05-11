@@ -1,4 +1,4 @@
-name: CG+ Galadriel (AOSP Clang 17 Full LTO)
+name: CG+ Galadriel (ZyC Clang 22 Full LTO)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve AOSP Clang 17 Çekimi
+      - name: 1. Paketler ve ZyC Clang 22 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -36,8 +36,8 @@ jobs:
             rsync unzip dwarves bc cpio xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
 
-          echo "🔥 Google AOSP Clang 17 (android14-release) indiriliyor..."
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz"
+          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
 
           mkdir -p $GITHUB_WORKSPACE/clang-aosp
 
@@ -114,7 +114,7 @@ jobs:
           rm -f clang.tar.gz
 
           echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
-          echo "✅ Clang 17 İndirildi ve PATH'e eklendi!"
+          echo "✅ ZyC Clang 22 İndirildi ve PATH'e eklendi!"
           ls -la $GITHUB_WORKSPACE/clang-aosp/bin/clang*
 
       - name: 2. Kaynakları Çek
@@ -371,6 +371,8 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -402,6 +404,8 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -444,7 +448,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (AOSP Clang 17 Full LTO)"
+          name: "CG+ Galadriel (ZyC Clang 22 Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
