@@ -276,6 +276,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -fno-split-lto-unit \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -288,7 +289,10 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2 \
-            -Wl,--threads=1" \
+            -Wl,--threads=1 \
+            -Wl,--defsym=__kcfi_typeid_idmap_cpu_replace_ttbr1=0 \
+            -Wl,--defsym=__kcfi_typeid_cpu_do_resume=0 \
+            -Wl,--defsym=__kcfi_typeid_idmap_kpti_install_ng_canonical=0" \
             KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
