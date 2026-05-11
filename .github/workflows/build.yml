@@ -194,52 +194,26 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+          
+          # ========== LTO & CFI UYUMU ==========
+          # LTO'yu Full yapıyoruz, CFI açık kalıyor! (Boot için şart)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
+          # =====================================
+
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -262,21 +236,37 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
+      - name: 7. Kernel Derleme (GEMINI LTO+CFI HACK & BOOTLOOP FIX)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          # KCFLAGS içine '-Wno-error' ekledim. 
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
+          echo "🔥 Clang Full LTO + KCFI Missing Symbol hilesi uygulanıyor..."
+          # Bu kod parçası Clang'i kandırarak eksik güvenlik imzalarını üretmesini sağlar.
+          cat << 'EOF' >> arch/arm64/kernel/setup.c
+
+          /* GEMINI HACK: FORCE CLANG TO EMIT KCFI TAGS FOR LTO */
+          #ifdef CONFIG_CFI_CLANG
+          #include <linux/types.h>
+          void idmap_cpu_replace_ttbr1(phys_addr_t ttbr1);
+          void cpu_do_resume(void);
+          void idmap_kpti_install_ng_canonical(void);
+
+          __attribute__((used)) void *__kcfi_force_gen_1 = (void *)&idmap_cpu_replace_ttbr1;
+          __attribute__((used)) void *__kcfi_force_gen_2 = (void *)&cpu_do_resume;
+          __attribute__((used)) void *__kcfi_force_gen_3 = (void *)&idmap_kpti_install_ng_canonical;
+          #endif
+          EOF
+          
+          echo "🔥 Temiz KCFLAGS ile Derleme Başlıyor (Bootloop Engelleyici Düzenleme)..."
+          # DİKKAT: -march=armv9.2... kernel alanında bootloop yaptığı için kaldırıldı! 
+          # -fno-split-lto-unit LTO'yu bozduğu için kaldırıldı.
           
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -fno-split-lto-unit \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -284,19 +274,10 @@ jobs:
             -Wno-format \
             -Wno-format-extra-args \
             -Wno-constant-logical-operand" \
-            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe \
-            -Wl,-O2 \
-            -Wl,--threads=1 \
-            -Wl,--defsym=__kcfi_typeid_idmap_cpu_replace_ttbr1=0 \
-            -Wl,--defsym=__kcfi_typeid_cpu_do_resume=0 \
-            -Wl,--defsym=__kcfi_typeid_idmap_kpti_install_ng_canonical=0" \
-            KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+      
           
       - name: 8. AnyKernel3
         run: |
