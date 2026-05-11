@@ -219,6 +219,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
+          echo "🔥 GitHub Runner OOM Killer Koruması Aktif Ediliyor..."
+          # 1. Bellek yetersizliği paniğini kapatır (Overcommit limiti)
+           sudo sysctl -w vm.overcommit_memory=1
+
+          # 2. Fiziksel RAM dolmadan Swap alanına agressif şekilde yüklenmesini sağlar
+           sudo sysctl -w vm.swappiness=100
+
+          # 3. LLD'nin RAM'i tüketip öldürülmesini engellemek için cache temizliğini agresifleştirir
+          sudo sysctl -w vm.vfs_cache_pressure=500
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -235,8 +244,6 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -fno-split-lto-unit \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -250,7 +257,6 @@ jobs:
             -Wl,--icf=safe \
             -Wl,-O2 \
             -Wl,--threads=1" \
-            KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
