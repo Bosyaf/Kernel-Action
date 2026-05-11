@@ -1,4 +1,4 @@
-name: CG+ Galadriel (AOSP Clang 17 Full LTO)
+name: CG+ Galadriel (ZyC Clang 22 Full LTO)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve AOSP Clang 22 Çekimi
+      - name: 1. Paketler ve ZyC Clang 22 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,22 +35,17 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-
-          echo "🔥 Google AOSP Clang 22 (android14-release) indiriliyor..."
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/99218495c5f95748502c31959d3dc85b71ce9d5d/clang-r596125.tar.gz"
-
+          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           mkdir -p $GITHUB_WORKSPACE/clang-aosp
-
           # ======================================================
           # Saglam indirme: wget + retry + butunluk kontrolu
           # ======================================================
           MAX_RETRIES=5
           DOWNLOADED=0
-
           for i in $(seq 1 $MAX_RETRIES); do
             echo "📥 İndirme denemesi $i/$MAX_RETRIES..."
             rm -f clang.tar.gz
-
             wget -q --show-progress \
               --retry-connrefused \
               --waitretry=10 \
@@ -58,10 +53,8 @@ jobs:
               --timeout=120 \
               --tries=3 \
               -O clang.tar.gz "$CLANG_URL" || true
-
             if [ -f clang.tar.gz ] && [ -s clang.tar.gz ]; then
               echo "📦 İndirilen boyut: $(du -h clang.tar.gz | cut -f1)"
-
               if gzip -t clang.tar.gz 2>/dev/null; then
                 echo "✅ Dosya bütünlüğü doğrulandı!"
                 DOWNLOADED=1
@@ -73,11 +66,9 @@ jobs:
             else
               echo "⚠️ İndirme başarısız veya dosya boş."
             fi
-
             echo "⏳ 15 saniye bekleniyor..."
             sleep 15
           done
-
           # ======================================================
           # Fallback: curl ile tekrar dene
           # ======================================================
@@ -88,7 +79,6 @@ jobs:
               rm -f clang.tar.gz
               curl -fLSs --retry 5 --retry-delay 10 --max-time 1200 \
                 "$CLANG_URL" -o clang.tar.gz || true
-
               if [ -f clang.tar.gz ] && [ -s clang.tar.gz ]; then
                 echo "📦 İndirilen boyut: $(du -h clang.tar.gz | cut -f1)"
                 if gzip -t clang.tar.gz 2>/dev/null; then
@@ -103,32 +93,26 @@ jobs:
               sleep 15
             done
           fi
-
           if [ "$DOWNLOADED" -ne 1 ]; then
             echo "❌ HATA: Clang tüm denemeler sonrasında indirilemedi!"
             exit 1
           fi
-
           echo "Arşiv Çıkarılıyor..."
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-aosp
           rm -f clang.tar.gz
-
           echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
-          echo "✅ Clang 17 İndirildi ve PATH'e eklendi!"
+          echo "✅ ZyC Clang 22 İndirildi ve PATH'e eklendi!"
           ls -la $GITHUB_WORKSPACE/clang-aosp/bin/clang*
-
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
           echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs --retry 5 --retry-delay 10 \
             "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-
       - name: 3.5. Multi-Manager Desteği
         run: |
           cd common/KernelSU-Next
@@ -139,20 +123,16 @@ jobs:
             echo "⚠️ Multi-manager patch dosyası bulunamadı, atlanıyor..."
           fi
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği kontrol edildi!"
-
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
           echo "📦 SUSFS4KSU kuruluyor..."
           git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-
           echo "📦 SUSFS dosyaları kopyalanıyor..."
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/ || true
           cp -R susfs4ksu/kernel_patches/include/* ./include/ || true
-
           echo "📦 Patch dosyaları listesi:"
           ls -la susfs4ksu/kernel_patches/*.patch || true
-
           echo "📦 SUSFS patch uygulanıyor..."
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
           if [ -n "$SUSFS_PATCH" ]; then
@@ -161,7 +141,6 @@ jobs:
           else
             echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
-
           echo "📦 namespace.c SUSFS patch uygulanıyor..."
           wget -q --tries=3 --timeout=30 \
             "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" \
@@ -169,7 +148,6 @@ jobs:
           curl -LSs --retry 3 \
             "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" \
             -o fs_namespace.patch 2>/dev/null || true
-
           if [ -f fs_namespace.patch ] && [ -s fs_namespace.patch ]; then
             patch -p1 < fs_namespace.patch || true
             echo "  ✅ Uygulandı"
@@ -178,7 +156,6 @@ jobs:
           fi
           rm -f fs_namespace.patch
           find . -name "*.rej" -delete 2>/dev/null || true
-
       - name: 4.5. KernelSU-Next Multi Manager Patch
         run: |
           cd common
@@ -186,12 +163,10 @@ jobs:
           if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
             patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
           fi
-
           echo "📦 SUSFS symbol fix uygulanıyor..."
           if [ -f "drivers/kernelsu/supercalls.c" ]; then
             sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ DISABLED to fix build \*\//' drivers/kernelsu/supercalls.c || true
           fi
-
           echo "📦 AVC spoof fix uygulanıyor..."
           if [ -f "drivers/kernelsu/extras.c" ]; then
             if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
@@ -200,7 +175,6 @@ jobs:
               fi
             fi
           fi
-
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
@@ -209,19 +183,15 @@ jobs:
             patch -p1 --forward < wifi.patch || true
           fi
           rm -f wifi.patch
-
           wget -q --tries=3 --timeout=30 -O setup_bb.sh \
             https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null || \
           curl -fLSs --retry 3 -o setup_bb.sh \
             https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null || true
-
           if [ -f setup_bb.sh ] && [ -s setup_bb.sh ]; then
             bash setup_bb.sh || true
             rm -f setup_bb.sh
           fi
-
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
@@ -250,12 +220,10 @@ jobs:
             echo "----------------------------------------------------"
             echo "📊 Patch raporu: $PATCH_OK/$PATCH_COUNT başarılı, $PATCH_FAIL atlandı"
           fi
-
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
-
           # ======================================================
           # OOM koruma: Swap ve VM ayarları ÖNCE yapılsın
           # ======================================================
@@ -269,21 +237,18 @@ jobs:
           free -h
           echo "📊 Disk durumu:"
           df -h / $GITHUB_WORKSPACE
-
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-
+            
           CONFIG_FILE="out/.config"
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
@@ -359,32 +324,39 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
+          # CFI açık (cihaz boot için gerekli)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
+          # KCFI KAPALI - ZyC Clang 22 kernel 6.1 assembly fonksiyonlarda
+          # __kcfi_typeid_* undefined sembol hatası veriyor. KCFI=yeni nesil,
+          # CFI_CLANG=eski nesil. Cihaz CFI_CLANG istiyor, KCFI'ye ihtiyacı yok.
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_HAS_KCFI
+          # olddefconfig sonrası KCFI geri açılabilir, garantiye al
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_HAS_KCFI
 
+          echo "📊 CFI ve KCFI durumu:"
+          grep -E "CONFIG_CFI_CLANG|CONFIG_KCFI|CONFIG_CC_HAS_KCFI" $CONFIG_FILE || true
+          
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
-
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
       - name: 7. Kernel Derleme (Full LTO - Bellek Güvenli)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
-
           # Sonkez bellek kontrolu
           echo "📊 Derleme öncesi bellek durumu:"
           free -h
           echo "📊 Swap durumu:"
           swapon --show
-
           BUILD_START=$(date +%s)
-
           echo "🔥 Full LTO kernel derlemesi başlıyor (NCPU=$NCPU)..."
-
           # ======================================================
           # Önce Image (vmlinux) derle - bu en RAM yoğun adım
           # Tek seferde, düşük paralellik ile
@@ -395,6 +367,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -409,13 +382,10 @@ jobs:
             -Wl,-O2 \
             -Wl,--threads=1" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
-
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
-
           echo "📊 Image sonrası bellek durumu:"
           free -h
-
           # ======================================================
           # Sonra modüller - Image'den sonra daha hafif
           # Biraz daha paralel olabilir
@@ -427,6 +397,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -441,15 +412,11 @@ jobs:
             -Wl,-O2 \
             -Wl,--threads=1" \
             modules || { echo "❌ Modül derleme HATASI!"; exit 1; }
-
           MODULE_TIME=$(($(date +%s) - MODULE_START))
           echo "✅ Modül derleme süresi: $((MODULE_TIME/60)) dakika $((MODULE_TIME%60)) saniye"
-
           TOTAL_TIME=$(($(date +%s) - BUILD_START))
           echo "🎉 TOPLAM derleme süresi: $((TOTAL_TIME/60)) dakika $((TOTAL_TIME%60)) saniye"
-
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
@@ -457,19 +424,16 @@ jobs:
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-
           cp ../common/out/arch/arm64/boot/Image .
           mkdir -p modules/vendor/lib/modules
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           zip -r "../CG-Galadriel.zip" ./*
-
           echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (AOSP Clang 17 Full LTO)"
+          name: "CG+ Galadriel (ZyC Clang 22 Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
