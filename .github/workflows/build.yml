@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Yuki Clang (+BOLT) Çekimi
+      - name: 1. Paketler ve Yuki Clang (+BOLT) Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -38,32 +38,33 @@ jobs:
 
           echo "🔥 Yuki Clang (+BOLT) indiriliyor..."
           YUKI_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          
+          mkdir -p $GITHUB_WORKSPACE/yuki-toolchain
+          curl -fLSs --retry 5 --retry-delay 10 "$YUKI_URL" -o yuki.tar.zst
 
-          mkdir -p "$HOME/toolchains"
-          cd "$HOME/toolchains"
+          echo "📦 Arşiv zstd ile çıkarılıyor..."
+          # Önce zstd ile açıp sonra tar ile ayıklıyoruz (en güvenli yol)
+          zstd -d yuki.tar.zst -o yuki.tar
+          tar -xf yuki.tar -C $GITHUB_WORKSPACE/yuki-toolchain
+          rm -f yuki.tar yuki.tar.zst
 
-          curl -fLO --retry 5 --retry-delay 10 --max-time 1800 "$YUKI_URL"
-
-          echo "📦 Arşiv çıkarılıyor..."
-          tar --zstd -xf yuki-clang-+bolt-20260124.tar.zst
-          rm -f yuki-clang-+bolt-20260124.tar.zst
-
-          echo "📂 Clang bin dizini tespit ediliyor..."
-          YUKI_BIN=$(find "$HOME/toolchains" -maxdepth 3 -name "clang" -path "*/bin/clang" 2>/dev/null | head -1 | xargs dirname)
-          if [ -z "$YUKI_BIN" ]; then
+          echo "📂 Clang bin dizini taranıyor..."
+          # İç içe klasör olsa bile bin/clang'i bulur
+          CLANG_PATH=$(find $GITHUB_WORKSPACE/yuki-toolchain -type f -name "clang" -path "*/bin/clang" | head -n 1)
+          if [ -z "$CLANG_PATH" ]; then
             echo "❌ HATA: Clang binary bulunamadı!"
-            find "$HOME/toolchains" -maxdepth 2 -type d
             exit 1
           fi
-
+          
+          YUKI_BIN=$(dirname "$CLANG_PATH")
           echo "✅ Clang bulundu: $YUKI_BIN"
-          ls -la "$YUKI_BIN/clang"*
-          "$YUKI_BIN/clang" --version
-
+          
+          # GitHub Environment'a ekle
           echo "$YUKI_BIN" >> $GITHUB_PATH
           echo "YUKI_BIN=$YUKI_BIN" >> $GITHUB_ENV
-          echo "✅ Yuki Clang (+BOLT) başarıyla kuruldu ve PATH'e eklendi!"
-
+          
+          echo "--- Versiyon Kontrol ---"
+          "$YUKI_BIN/clang" --version
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
