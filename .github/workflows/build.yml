@@ -37,7 +37,7 @@ jobs:
             pkg-config zstd
 
           echo "🔥 Yuki Clang (+BOLT) indiriliyor..."
-          YUKI_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          YUKI_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           
           mkdir -p $GITHUB_WORKSPACE/yuki-toolchain
           curl -fLSs --retry 5 --retry-delay 10 "$YUKI_URL" -o yuki.tar.zst
