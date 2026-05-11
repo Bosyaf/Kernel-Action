@@ -37,7 +37,7 @@ jobs:
             pkg-config zstd
             
           echo "🔥 Özel Clang: Yuki Clang (Bolt Optimizasyonlu)"
-          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+          CLANG_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20251211.tar.zst"
           echo "Yuki Clang indiriliyor: $CLANG_URL"
           
           curl -fLSs "$CLANG_URL" -o clang.tar.zst || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
