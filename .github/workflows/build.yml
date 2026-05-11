@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 22 Full LTO)
+name: CG+ Galadriel (Yuki Clang +BOLT Full LTO)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve ZyC Clang 22 Çekimi
+      - name: 1. Paketler ve Yuki Clang (+BOLT) Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,68 +35,34 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          mkdir -p $GITHUB_WORKSPACE/clang-aosp
-          MAX_RETRIES=5
-          DOWNLOADED=0
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "📥 İndirme denemesi $i/$MAX_RETRIES..."
-            rm -f clang.tar.gz
-            wget -q --show-progress \
-              --retry-connrefused \
-              --waitretry=10 \
-              --read-timeout=600 \
-              --timeout=120 \
-              --tries=3 \
-              -O clang.tar.gz "$CLANG_URL" || true
-            if [ -f clang.tar.gz ] && [ -s clang.tar.gz ]; then
-              echo "📦 İndirilen boyut: $(du -h clang.tar.gz | cut -f1)"
-              if gzip -t clang.tar.gz 2>/dev/null; then
-                echo "✅ Dosya bütünlüğü doğrulandı!"
-                DOWNLOADED=1
-                break
-              else
-                echo "⚠️ Dosya bozuk, tekrar denenecek..."
-                rm -f clang.tar.gz
-              fi
-            else
-              echo "⚠️ İndirme başarısız veya dosya boş."
-            fi
-            echo "⏳ 15 saniye bekleniyor..."
-            sleep 15
-          done
-          if [ "$DOWNLOADED" -ne 1 ]; then
-            echo "🔄 wget başarısız, curl ile deneniyor..."
-            for i in $(seq 1 3); do
-              echo "📥 curl denemesi $i/3..."
-              rm -f clang.tar.gz
-              curl -fLSs --retry 5 --retry-delay 10 --max-time 1200 \
-                "$CLANG_URL" -o clang.tar.gz || true
-              if [ -f clang.tar.gz ] && [ -s clang.tar.gz ]; then
-                echo "📦 İndirilen boyut: $(du -h clang.tar.gz | cut -f1)"
-                if gzip -t clang.tar.gz 2>/dev/null; then
-                  echo "✅ curl ile dosya bütünlüğü doğrulandı!"
-                  DOWNLOADED=1
-                  break
-                else
-                  echo "⚠️ curl dosyası da bozuk..."
-                  rm -f clang.tar.gz
-                fi
-              fi
-              sleep 15
-            done
-          fi
-          if [ "$DOWNLOADED" -ne 1 ]; then
-            echo "❌ HATA: Clang tüm denemeler sonrasında indirilemedi!"
+
+          echo "🔥 Yuki Clang (+BOLT) indiriliyor..."
+          YUKI_URL="https://usc1.contabostorage.com/ab57618a161b456a8d009c2e2de4a408:xperience/toolchains/yuki-clang-+bolt-20260124.tar.zst"
+
+          mkdir -p "$HOME/toolchains"
+          cd "$HOME/toolchains"
+
+          curl -fLO --retry 5 --retry-delay 10 --max-time 1800 "$YUKI_URL"
+
+          echo "📦 Arşiv çıkarılıyor..."
+          tar --zstd -xf yuki-clang-+bolt-20260124.tar.zst
+          rm -f yuki-clang-+bolt-20260124.tar.zst
+
+          echo "📂 Clang bin dizini tespit ediliyor..."
+          YUKI_BIN=$(find "$HOME/toolchains" -maxdepth 3 -name "clang" -path "*/bin/clang" 2>/dev/null | head -1 | xargs dirname)
+          if [ -z "$YUKI_BIN" ]; then
+            echo "❌ HATA: Clang binary bulunamadı!"
+            find "$HOME/toolchains" -maxdepth 2 -type d
             exit 1
           fi
-          echo "Arşiv Çıkarılıyor..."
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-aosp
-          rm -f clang.tar.gz
-          echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
-          echo "✅ ZyC Clang 22 İndirildi ve PATH'e eklendi!"
-          ls -la $GITHUB_WORKSPACE/clang-aosp/bin/clang*
+
+          echo "✅ Clang bulundu: $YUKI_BIN"
+          ls -la "$YUKI_BIN/clang"*
+          "$YUKI_BIN/clang" --version
+
+          echo "$YUKI_BIN" >> $GITHUB_PATH
+          echo "YUKI_BIN=$YUKI_BIN" >> $GITHUB_ENV
+          echo "✅ Yuki Clang (+BOLT) başarıyla kuruldu ve PATH'e eklendi!"
 
       - name: 2. Kaynakları Çek
         run: |
@@ -225,8 +191,11 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
+          export PATH="$YUKI_BIN:$PATH"
 
+          # ======================================================
+          # OOM koruma: Swap ve VM ayarları ÖNCE yapılsın
+          # ======================================================
           echo "🔧 Bellek optimizasyonu yapılıyor..."
           sudo sysctl -w vm.overcommit_memory=1
           sudo sysctl -w vm.swappiness=100
@@ -240,78 +209,79 @@ jobs:
 
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-
-          # ======================================================
-          # KRİTİK: KCFI'yi Kconfig seviyesinde kökten engelle
-          # CFI_CLANG açıkken Kconfig "select KCFI" ile
-          # otomatik açıyor. Bu satırı tüm Kconfig'lardan sil.
-          # ======================================================
-          echo "🔧 KCFI Kconfig 'select' satırları kaldırılıyor..."
-          find . -type f -name "Kconfig*" | while read f; do
-            if grep -q "select KCFI" "$f" 2>/dev/null; then
-              echo "  ✏️ $f → select KCFI satırı kaldırıldı"
-              sed -i '/select KCFI/d' "$f"
-            fi
-          done
-
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-
           CONFIG_FILE="out/.config"
 
-          # Boot CMDLINE
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-
-          # Timer freq
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-
-          # Preempt
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-
-          # ========== FULL LTO + CFI CONFIG ========================
+          # ========== FULL LTO CONFIG =============================
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
-          # KCFI KAPALI - ZyC Clang 22 kernel 6.1 assembly'de
-          # __kcfi_typeid_* hatası veriyor. Kconfig'teki select
-          # satırı silindiği için olddefconfig tekrar açamaz.
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_HAS_KCFI
           # ========================================================
-
-          # Debug kapalı
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-
-          # Network
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
 
-          # KernelSU + SUSFS
+          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -322,62 +292,41 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-
+          # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
-
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-          # ======================================================
-          # olddefconfig sonrası garanti: KCFI ve CC_HAS_KCFI'yi
-          # bir kez daha kapat + doğrula
-          # ======================================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_HAS_KCFI
-
-          # .config dosyasında sed ile de garantiye al
-          sed -i 's/CONFIG_KCFI=y/# CONFIG_KCFI is not set/' $CONFIG_FILE
-          sed -i 's/CONFIG_CC_HAS_KCFI=y/# CONFIG_CC_HAS_KCFI is not set/' $CONFIG_FILE
-
-          echo "📊 CFI/KCFI doğrulama:"
-          grep -E "CONFIG_CFI_CLANG|CONFIG_KCFI|CONFIG_CC_HAS_KCFI" $CONFIG_FILE || true
-
       - name: 7. Kernel Derleme (Full LTO - Bellek Güvenli)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
+          export PATH="$YUKI_BIN:$PATH"
 
+          # Sonkez bellek kontrolu
           echo "📊 Derleme öncesi bellek durumu:"
           free -h
           echo "📊 Swap durumu:"
           swapon --show
-
-          # ======================================================
-          # Derleme öncesi son kez KCFI'yi .config'ten temizle
-          # (make sırasında auto-restore olabilir)
-          # ======================================================
-          sed -i 's/CONFIG_KCFI=y/# CONFIG_KCFI is not set/' out/.config
-          sed -i 's/CONFIG_CC_HAS_KCFI=y/# CONFIG_CC_HAS_KCFI is not set/' out/.config
-
           BUILD_START=$(date +%s)
           echo "🔥 Full LTO kernel derlemesi başlıyor (NCPU=$NCPU)..."
-
+          # ======================================================
+          # Önce Image (vmlinux) derle - bu en RAM yoğun adım
+          # Tek seferde, düşük paralellik ile
+          # ======================================================
           make -j$NCPU O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-sanitize=kcfi \
             -Wno-error \
             -Wno-format \
             -Wno-format-extra-args \
@@ -389,12 +338,14 @@ jobs:
             -Wl,-O2 \
             -Wl,--threads=1" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
-
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "📊 Image sonrası bellek durumu:"
           free -h
-
+          # ======================================================
+          # Sonra modüller - Image'den sonra daha hafif
+          # Biraz daha paralel olabilir
+          # ======================================================
           MODULE_START=$(date +%s)
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -402,11 +353,9 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -falign-loops=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-sanitize=kcfi \
             -Wno-error \
             -Wno-format \
             -Wno-format-extra-args \
@@ -418,13 +367,10 @@ jobs:
             -Wl,-O2 \
             -Wl,--threads=1" \
             modules || { echo "❌ Modül derleme HATASI!"; exit 1; }
-
           MODULE_TIME=$(($(date +%s) - MODULE_START))
           echo "✅ Modül derleme süresi: $((MODULE_TIME/60)) dakika $((MODULE_TIME%60)) saniye"
-
           TOTAL_TIME=$(($(date +%s) - BUILD_START))
           echo "🎉 TOPLAM derleme süresi: $((TOTAL_TIME/60)) dakika $((TOTAL_TIME%60)) saniye"
-
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3 Paketleme
@@ -444,7 +390,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (ZyC Clang 22 Full LTO)"
+          name: "CG+ Galadriel (Yuki Clang +BOLT Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
