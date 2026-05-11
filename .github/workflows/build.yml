@@ -288,7 +288,7 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2 \
-            -Wl,--threads=1" \ 
+            -Wl,--threads=1" \
             KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
