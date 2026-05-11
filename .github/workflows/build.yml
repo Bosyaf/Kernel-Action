@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 17 Full LTO)
+name: CG+ Galadriel (AOSP Clang 17 Full LTO)
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Sağlam Clang 17 Çekimi
+      - name: 1. Paketler ve AOSP Clang 17 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,19 +35,18 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
             
-          echo "🔥 Asla Patlamayan Link: ZyCromerZ Clang 17 indiriliyor..."
-          # GitHub Releases üzerinde barındırılır, 404 vermez.
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/17.0.6-20231121-release/Clang-17.0.6-20231121.tar.gz"
+          echo "🔥 Google AOSP Clang 17 (android14-release) indiriliyor..."
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz"
           
-          mkdir -p $GITHUB_WORKSPACE/clang-zyc
-          wget -qO clang.tar.gz "$CLANG_URL" || curl -Lso clang.tar.gz "$CLANG_URL"
+          mkdir -p $GITHUB_WORKSPACE/clang-aosp
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak!"; exit 1; }
           
           echo "Arşiv Çıkarılıyor..."
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-aosp
           rm -f clang.tar.gz
           
-          # Clang yolunu GitHub'ın ana PATH'ine kalıcı ekliyoruz
-          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> $GITHUB_PATH
           echo "✅ Clang 17 İndirildi ve PATH'e eklendi!"
           
       - name: 2. Kaynakları Çek
@@ -137,9 +136,7 @@ jobs:
         run: |
           cd common
           echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
-          
           PATCH_DIR="../patches"
-          
           if [ ! -d "$PATCH_DIR" ]; then
             echo "❌ HATA: $PATCH_DIR dizini bulunamadı!"
           else
@@ -147,7 +144,6 @@ jobs:
               filename=$(basename "$patch_file")
               echo "----------------------------------------------------"
               echo "📦 İşleniyor: $filename"
-              
               if patch -p1 --forward < "$patch_file"; then
                 echo "✅ BAŞARILI: $filename"
               else
@@ -155,13 +151,12 @@ jobs:
               fi
             done
             echo "----------------------------------------------------"
-            echo "🎉 Özel yamalar tamamlandı!"
           fi
 
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -191,13 +186,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
-          # ========== LTO & CFI UYUMU (DEEPONGI FORMÜLÜ) ==========
-          # Boot için CFI kesinlikle açık kalmalı, Full LTO devrede!
+          # ========== FULL LTO CONFIG =============================
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
-          # ==========================================================
+          # ========================================================
 
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
@@ -211,7 +205,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           
-          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -222,7 +215,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
@@ -232,18 +224,19 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
 
-      - name: 7. Kernel Derleme (Temiz KCFLAGS ve ZyC Clang 17)
+      - name: 7. Kernel Derleme (Orijinal Optimizasyonlarınla - FULL LTO)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
           
-          echo "🔥 ZyC Clang 17 ile Temiz Derleme Başlıyor..."
-          
+          # SENİN YAZDIĞIN ORİJİNAL FLAGS (Sadece hata veren CFI bypass kodları yok)
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -fno-split-lto-unit \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -251,11 +244,18 @@ jobs:
             -Wno-format \
             -Wno-format-extra-args \
             -Wno-constant-logical-operand" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2 \
+            -Wl,--threads=1" \
+            KAFLAGS="-march=armv9.2-a+crypto+crc+dotprod+rcpc+lse" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3
+      - name: 8. AnyKernel3 (Senin orijinal kodun)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -272,7 +272,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (ZyC Clang 17 Full LTO)"
+          name: "CG+ Galadriel (AOSP Clang 17 Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
