@@ -184,6 +184,9 @@ jobs:
               EXPORT_SYMBOL(__kcfi_typeid_ ## fn)
 
           KCFI_STUB(idmap_cpu_replace_ttbr1);
+          KCFI_STUB(pmull_ghash_update_p64);
+          KCFI_STUB(pmull_ghash_update_p8);
+          KCFI_STUB(idmap_kpti_install_ng_mappings);
           KCFI_STUB(__cpu_setup);
           KCFI_STUB(__cpu_soft_restart);
           KCFI_STUB(__soft_restart);
@@ -377,7 +380,8 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2 \
-            -Wl,--threads=1" \
+            -Wl,--threads=1 \
+            -Wl,--no-check-dynamic-relocations" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
@@ -387,7 +391,13 @@ jobs:
           # Sonra modüller - Image'den sonra daha hafif
           # Biraz daha paralel olabilir
           # ======================================================
-          MODULE_START))
+          MODULE_START=$(date +%s)
+          make -j$NCPU O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            modules || { echo "❌ Modül derleme HATASI!"; exit 1; }
+          MODULE_TIME=$(($(date +%s) - MODULE_START))
           echo "✅ Modül derleme süresi: $((MODULE_TIME/60)) dakika $((MODULE_TIME%60)) saniye"
           TOTAL_TIME=$(($(date +%s) - BUILD_START))
           echo "🎉 TOPLAM derleme süresi: $((TOTAL_TIME/60)) dakika $((TOTAL_TIME%60)) saniye"
