@@ -165,7 +165,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$YUKI_BIN:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -265,7 +265,7 @@ jobs:
       - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$YUKI_BIN:$PATH"
           
           # KCFLAGS içine '-Wno-error' ekledim. 
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
@@ -315,6 +315,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
           
