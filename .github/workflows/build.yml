@@ -1,4 +1,4 @@
-name: CG+ Galadriel (GF Clang Full LTO)
+name: CG+ Galadriel (Yuki Clang +BOLT Full LTO)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve GF Clang Çekimi
+      - name: 1. Paketler ve llvm Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,27 +35,29 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-
-          echo "🔥 GreenForce (GF) Clang kuruluyor..."
-          bash <(wget -qO- https://raw.githubusercontent.com/greenforce-project/greenforce_clang/refs/heads/main/get_clang.sh)
-
-          echo "$GITHUB_WORKSPACE/greenforce-clang/bin" >> $GITHUB_PATH
-          echo "✅ GF Clang İndirildi ve PATH'e eklendi!"
-          ls -la $GITHUB_WORKSPACE/greenforce-clang/bin/clang*
-          $GITHUB_WORKSPACE/greenforce-clang/bin/clang --version
-
+            
+          echo "🔥 LLVM Clang 22.1.5 kuruluyor..."
+          # Not: Verdiğiniz link Windows içindi, Linux sistemde çalışması için Linux x64 sürümü ayarlandı.
+          CLANG_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/clang+llvm-22.1.5-x86_64-unknown-linux-gnu.tar.xz"
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.xz
+          
+          mkdir -p $GITHUB_WORKSPACE/clang-llvm
+          tar -xJf clang.tar.xz -C $GITHUB_WORKSPACE/clang-llvm --strip-components=1
+          rm -f clang.tar.xz
+          
+          echo "$GITHUB_WORKSPACE/clang-llvm/bin" >> $GITHUB_PATH
+          echo "✅ Clang 22 İndirildi!"
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
           echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs --retry 5 --retry-delay 10 \
             "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-
       - name: 3.5. Multi-Manager Desteği
         run: |
           cd common/KernelSU-Next
@@ -66,7 +68,6 @@ jobs:
             echo "⚠️ Multi-manager patch dosyası bulunamadı, atlanıyor..."
           fi
           echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği kontrol edildi!"
-
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
@@ -100,7 +101,6 @@ jobs:
           fi
           rm -f fs_namespace.patch
           find . -name "*.rej" -delete 2>/dev/null || true
-
       - name: 4.5. KernelSU-Next Multi Manager Patch
         run: |
           cd common
@@ -120,7 +120,6 @@ jobs:
               fi
             fi
           fi
-
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
@@ -138,7 +137,6 @@ jobs:
             rm -f setup_bb.sh
           fi
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
@@ -167,57 +165,10 @@ jobs:
             echo "----------------------------------------------------"
             echo "📊 Patch raporu: $PATCH_OK/$PATCH_COUNT başarılı, $PATCH_FAIL atlandı"
           fi
-
-      - name: 5.6. KCFI Stub ve Relocation Fix (Kritik Düzeltme)
-        run: |
-          cd common
-          echo "🔧 KCFI ABS32 hataları için mutlak semboller oluşturuluyor..."
-          
-          # Hata aldığın tüm sembolleri Assembly üzerinden 'mutlak 0' olarak tanımlıyoruz.
-          # Bu yöntem ABS32 relocation hatasını tamamen ortadan kaldırır.
-          cat > arch/arm64/kernel/kcfi_stubs.S << 'STUBEOF'
-          .section .rodata
-          .macro KCFI_STUB name
-              .globl __kcfi_typeid_\name
-              .set __kcfi_typeid_\name, 0
-          .endm
-
-          KCFI_STUB(idmap_cpu_replace_ttbr1)
-          KCFI_STUB(pmull_ghash_update_p64)
-          KCFI_STUB(pmull_ghash_update_p8)
-          KCFI_STUB(idmap_kpti_install_ng_mappings)
-          KCFI_STUB(__cpu_setup)
-          KCFI_STUB(__cpu_soft_restart)
-          KCFI_STUB(__soft_restart)
-          KCFI_STUB(secondary_holding_pen)
-          KCFI_STUB(__cpu_secondary_start)
-          KCFI_STUB(cpu_resume)
-          KCFI_STUB(__cpu_suspend_exit)
-          KCFI_STUB(__idmap_kpti_flag)
-          KCFI_STUB(__cpu_set_tcr_t0sz)
-          KCFI_STUB(__kvm_hyp_init)
-          KCFI_STUB(__kvm_hyp_vector)
-          KCFI_STUB(__kvm_hyp_resume)
-          KCFI_STUB(__kvm_call_hyp)
-          KCFI_STUB(__pkvm_init)
-          KCFI_STUB(__pkvm_cpu_on)
-          KCFI_STUB(__pkvm_prot_finalize)
-          KCFI_STUB(__pkvm_do_psci_finisher)
-          KCFI_STUB(__pkvm_cpu_off)
-          STUBEOF
-
-          echo 'obj-y += kcfi_stubs.o' >> arch/arm64/kernel/Makefile
-
-          # Kernel kaynak kodundaki Assembly fonksiyon başlangıçlarını 'typed' olmaktan çıkarıyoruz.
-          # Bu, toolchain'in ABS32 referansı oluşturmasını engeller.
-          grep -rl "SYM_TYPED_FUNC_START" . | xargs sed -i 's/SYM_TYPED_FUNC_START/SYM_FUNC_START/g' || true
-          
-          echo "✅ KCFI stub ve Assembly fixleri uygulandı!"
-
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/greenforce-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-llvm/bin:$PATH"
           # ======================================================
           # OOM koruma: Swap ve VM ayarları ÖNCE yapılsın
           # ======================================================
@@ -231,18 +182,6 @@ jobs:
           free -h
           echo "📊 Disk durumu:"
           df -h / $GITHUB_WORKSPACE
-
-          # ======================================================
-          # Kconfig'ten KCFI select satırlarını sil
-          # ======================================================
-          echo "🔧 Kconfig KCFI select satırları kaldırılıyor..."
-          find . -type f -name "Kconfig*" | while read f; do
-            if grep -q "select KCFI" "$f" 2>/dev/null; then
-              echo "  ✏️ $f → select KCFI kaldırıldı"
-              sed -i '/select KCFI/d' "$f"
-            fi
-          done
-
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           cat << 'EOF' > scripts/check-local-export
@@ -267,9 +206,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
-          # ========== KCFI KAPALI ================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_HAS_KCFI
           # ========================================================
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
@@ -338,21 +274,10 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
-          # ======================================================
-          # olddefconfig sonrası KCFI garantiye al
-          # ======================================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KCFI
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CC_HAS_KCFI
-          sed -i 's/CONFIG_KCFI=y/# CONFIG_KCFI is not set/' $CONFIG_FILE
-          sed -i 's/CONFIG_CC_HAS_KCFI=y/# CONFIG_CC_HAS_KCFI is not set/' $CONFIG_FILE
-          echo "📊 CFI/KCFI doğrulama:"
-          grep -E "CONFIG_CFI_CLANG|CONFIG_KCFI|CONFIG_CC_HAS_KCFI" $CONFIG_FILE || true
-
       - name: 7. Kernel Derleme (Full LTO - Bellek Güvenli)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/greenforce-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-llvm/bin:$PATH"
           # Sonkez bellek kontrolu
           echo "📊 Derleme öncesi bellek durumu:"
           free -h
@@ -364,13 +289,11 @@ jobs:
           # Önce Image (vmlinux) derle - bu en RAM yoğun adım
           # Tek seferde, düşük paralellik ile
           # ======================================================
-          # KLDFLAGS içine --no-check-dynamic-relocations ekleyerek ABS32 hatalarını bypass ediyoruz.
           make -j$NCPU O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-            -fno-sanitize=kcfi \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -fomit-frame-pointer \
             -ffunction-sections \
@@ -384,8 +307,7 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2 \
-            -Wl,--threads=1 \
-            -Wl,--no-check-dynamic-relocations" \
+            -Wl,--threads=1" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
@@ -393,19 +315,34 @@ jobs:
           free -h
           # ======================================================
           # Sonra modüller - Image'den sonra daha hafif
+          # Biraz daha paralel olabilir
           # ======================================================
           MODULE_START=$(date +%s)
-          make -j$NCPU O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2 \
+            -Wl,--threads=1" \
             modules || { echo "❌ Modül derleme HATASI!"; exit 1; }
           MODULE_TIME=$(($(date +%s) - MODULE_START))
           echo "✅ Modül derleme süresi: $((MODULE_TIME/60)) dakika $((MODULE_TIME%60)) saniye"
           TOTAL_TIME=$(($(date +%s) - BUILD_START))
           echo "🎉 TOPLAM derleme süresi: $((TOTAL_TIME/60)) dakika $((TOTAL_TIME%60)) saniye"
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
@@ -418,12 +355,13 @@ jobs:
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           zip -r "../CG-Galadriel.zip" ./*
           echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (GF Clang Full LTO)"
+          name: "CG+ Galadriel (Yuki Clang +BOLT Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          
