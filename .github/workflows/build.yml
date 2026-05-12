@@ -38,7 +38,7 @@ jobs:
             
           echo "🔥 LLVM Clang 22.1.5 kuruluyor..."
           # Not: Verdiğiniz link Windows içindi, Linux sistemde çalışması için Linux x64 sürümü ayarlandı.
-          CLANG_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/clang+llvm-22.1.5-x86_64-unknown-linux-gnu.tar.xz"
+          CLANG_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.5/clang+llvm-22.1.5-x86_64-pc-windows-msvc.tar.xz"
           
           curl -fLSs "$CLANG_URL" -o clang.tar.xz
           
