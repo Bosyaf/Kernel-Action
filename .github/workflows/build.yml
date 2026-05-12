@@ -35,12 +35,19 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
             
-          echo "🔥 GreenForce (GF) Clang kuruluyor..."
-          bash <(wget -qO- https://raw.githubusercontent.com/greenforce-project/greenforce_clang/refs/heads/main/get_clang.sh)
-          echo "$GITHUB_WORKSPACE/greenforce-clang/bin" >> $GITHUB_PATH
-          echo "✅ GF Clang İndirildi ve PATH'e eklendi!"
-          ls -la $GITHUB_WORKSPACE/greenforce-clang/bin/clang*
-          $GITHUB_WORKSPACE/greenforce-clang/bin/clang --version
+          echo "🔥 Kusursuz Denge: ZyC Clang 22 (Eylül 2025 Sürümü - ARMv9-a Uyumlu)"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          echo "ZyC Clang 22 indiriliyor: $CLANG_URL"
+          
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
+          
+          echo "Arşiv Çıkarılıyor..."
+          mkdir -p $GITHUB_WORKSPACE/clang-zyc
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
+          rm -f clang.tar.gz
+          
+          # Clang yolunu GitHub'ın ana PATH'ine kalıcı ekliyoruz ki sistem başka bir şey kullanmasın
+          echo "$GITHUB_WORKSPACE/>
           
       - name: 2. Kaynakları Çek
         run: |
@@ -157,7 +164,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/greenforce-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
@@ -257,7 +264,7 @@ jobs:
       - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/greenforce-clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
           # KCFLAGS içine '-Wno-error' ekledim. 
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
@@ -307,5 +314,6 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
           
