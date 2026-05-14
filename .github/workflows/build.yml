@@ -83,7 +83,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9-a+crypto -ffomit-frame-pointer -Wno-error" \
+            KCFLAGS="-O2 -Wno-error" \
             LDFLAGS_vmlinux="--threads=1" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
