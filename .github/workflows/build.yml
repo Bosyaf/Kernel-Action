@@ -34,12 +34,9 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-            
-          echo "🔥 Toolchain: Xiaomi Stable Clang 17 (r487747)"
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz"
           
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz"
           mkdir -p $GITHUB_WORKSPACE/clang-17
-          # Google linki tar.gz ama içinde klasör yapısı farklı olabilir, o yüzden direkt dizine açıyoruz
           curl -fLSs "$CLANG_URL" | tar -xzf - -C $GITHUB_WORKSPACE/clang-17
           echo "$GITHUB_WORKSPACE/clang-17/bin" >> $GITHUB_PATH
           
@@ -48,18 +45,25 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 common
 
-      - name: 3. Wi-Fi API Patch Uygulama (OnePlus 12 SM8650 Fix)
+      - name: 3. Wi-Fi API Patch & Klasörü Derlemeden Çıkarma
         run: |
           cd common
-          echo "📦 Wi-Fi 7 (cfg80211) uyumluluk yaması indiriliyor..."
+          # Önce senin istediğin yama (eğer gerekiyorsa)
           curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch
+          patch -p1 --forward < wifi.patch || true
           
-          if [ -s wifi.patch ]; then
-            echo "🔥 Yama uygulanıyor..."
-            # Bu yama qcacld-3.0 içindeki API uyuşmazlığını (argument sayısını) çözer
-            patch -p1 --forward < wifi.patch || echo "⚠️ Bazı parçalar zaten yamalı olabilir, devam ediliyor..."
+          echo "🚫 Wi-Fi Techpack tamamen kapatılıyor..."
+          # Techpack altındaki WLAN derlemesini Makefile ve Kbuild seviyesinde siliyoruz
+          if [ -f "techpack/Kbuild" ]; then
+            sed -i 's/obj-y += wlan/#obj-y += wlan/g' techpack/Kbuild
           fi
-          rm -f wifi.patch
+          if [ -f "techpack/Makefile" ]; then
+            sed -i 's/obj-y += wlan/#obj-y += wlan/g' techpack/Makefile
+          fi
+          # Üst klasörden girişi de keselim
+          sed -i 's/techpack\/wlan//g' Makefile || true
+          
+          echo "✅ Artık derleyici o klasöre girmeyecek."
 
       - name: 4. Kernel Config Hazırlığı (houji_defconfig)
         run: |
@@ -67,47 +71,46 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-17/bin:$PATH"
           touch .scmversion
           
-          # Hatalı warningleri engellemek için defconfig'i oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             houji_defconfig
+          
+          # Config içinden WLAN'ı garanti olsun diye de kapatalım
+          ./scripts/config --file out/.config --disable CONFIG_QCA_CLD_WLAN
 
-      - name: 5. Kernel Derleme (Monolithic + Clang 17)
+      - name: 5. Kernel Derleme (Monolithic - Wi-Fi Klasörü Atlandı)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-17/bin:$PATH"
           
-          # Clang 17 kullandığımız için KCFLAGS daha sade ve stabil
+          # Monolithic birleştirmede patlamamak için --threads=1
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -Wno-error" \
+            KCFLAGS="-O2 -march=armv9-a+crypto -Wno-error" \
             LDFLAGS_vmlinux="--threads=1" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
-          echo "BOOTHASH=Houji-Mono-XiaomiClang-$(date +%s)" >> $GITHUB_ENV
           
       - name: 6. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=Xiaomi 14 Monolithic (Xiaomi Clang)/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=Xiaomi 14 Monolithic (Wi-Fi Excluded)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          
-          # Modüller (WLAN yama ile düzeldiği için artık oluşacaklar)
+          # Sadece WLAN dışındaki modülleri al (Video, Audio vs. monolithic bile olsa bazen çıkar)
           mkdir -p modules/vendor/lib/modules
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \; || true
           
-          zip -r "../Xiaomi14-Monolithic-Stable.zip" ./*
+          zip -r "../Xiaomi14-Monolithic-Success.zip" ./*
 
       - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "Xiaomi 14 Monolithic (Official Clang 17)"
+          tag_name: "Mono-Success-${{ github.run_id }}"
+          name: "Xiaomi 14 Monolithic (Final)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
