@@ -1,10 +1,7 @@
-name: Xiaomi 14 Kernel Build (Kleaf)
+name: Xiaomi 14 Kernel Build
 
 on:
   workflow_dispatch:
-
-env:
-  TZ: "Europe/Istanbul"
 
 jobs:
   build-kernel:
@@ -24,31 +21,28 @@ jobs:
             libncurses5-dev libncursesw5-dev \
             cpio gzip
 
-      - name: Repo Tool Kur
-        run: |
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+x ~/bin/repo
-          export PATH="$HOME/bin:$PATH"
-          echo "$HOME/bin" >> $GITHUB_PATH
-          repo version
-
       - name: Git Yapılandırması
         run: |
           git config --global user.name "Kernel Builder"
           git config --global user.email "builder@github.com"
 
-      - name: Kaynak Kodları İndir
+      - name: Repo Tool İndir ve Kaynak Kodları Çek
         run: |
+          # Repo tool indir
+          mkdir -p $HOME/bin
+          curl -o $HOME/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+          chmod a+x $HOME/bin/repo
           export PATH="$HOME/bin:$PATH"
 
+          # Çalışma dizini oluştur
           mkdir -p kernel_workspace && cd kernel_workspace
 
-          cat > .manifest.xml << 'EOF'
+          # Manifest dosyasını oluştur
+          cat > default.xml << 'MANIFESTEOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <remote fetch="https://git.codelinaro.org/clo/la" name="clo-la"/>
-            <remote fetch="https://github.com/mvaisakh" name="mv-github" revision="kplatform"/>
+            <remote fetch="https://github.com/mvaiskh" name="mv-github" revision="kplatform"/>
             <remote fetch="https://android.googlesource.com" name="aosp"/>
             <default remote="clo-la" revision="dummy_revision" sync-c="true" sync-tags="false" depth="1"/>
             <project remote="clo-la" name="abl/tianocore/edk2" path="kernel_platform/bootable/bootloader/edk2" revision="b55ddaab17afbca10235eb5d2813987aebba2ffe" upstream="refs/heads/uefi.lnx.4.0.r14-rel" depth="1">
@@ -118,81 +112,110 @@ jobs:
               <linkfile dest="kernel_platform/vendor" src="."/>
             </project>
           </manifest>
-          EOF
+          MANIFESTEOF
 
-          repo init -u .manifest.xml --no-clone-bundle --no-tags
+          # Repo init ve sync
+          repo init -u default.xml --no-clone-bundle --no-tags
           repo sync -j$(nproc) --force-sync --no-clone-bundle --no-tags
 
-      - name: Disk Kontrolü
+      - name: Yapı Kontrolü
         run: |
-          df -h
-          du -sh kernel_workspace/*/ 2>/dev/null | sort -rh | head -20
-
-      - name: Derleme Öncesi Kontrol
-        run: |
-          ls -la kernel_workspace/kernel_platform/ || true
-          ls -la kernel_workspace/kernel_platform/msm-kernel/ || true
-          cat kernel_workspace/kernel_platform/msm-kernel/build.config.msm.houji 2>/dev/null || echo "build.config.msm.houji bulunamadi"
-          find kernel_workspace/kernel_platform/msm-kernel -name "build.config*" -type f 2>/dev/null || true
+          echo "=== kernel_platform dizini ==="
+          ls -la kernel_workspace/kernel_platform/ || echo "Dizin yok!"
+          echo ""
+          echo "=== msm-kernel dizini ==="
+          ls -la kernel_workspace/kernel_platform/msm-kernel/ || echo "Dizin yok!"
+          echo ""
+          echo "=== build_with_bazel.py ==="
+          ls -la kernel_workspace/kernel_platform/build_with_bazel.py || echo "Dosya yok!"
+          echo ""
+          echo "=== WORKSPACE ==="
+          ls -la kernel_workspace/kernel_platform/WORKSPACE || echo "Dosya yok!"
+          echo ""
+          echo "=== tools/bazel ==="
+          ls -la kernel_workspace/kernel_platform/tools/bazel || echo "Dosya yok!"
+          echo ""
+          echo "=== BUILD.bazel dosyalari ==="
           find kernel_workspace/kernel_platform/msm-kernel -name "BUILD.bazel" -type f 2>/dev/null || true
+          echo ""
+          echo "=== build.config dosyalari ==="
+          find kernel_workspace/kernel_platform -name "build.config*" -type f 2>/dev/null | head -20 || true
+          echo ""
+          echo "=== Disk kullanimi ==="
+          df -h
 
-      - name: Kernel Derleme (Bazel/Kleaf)
+      - name: Bazel Target Kesfi
         run: |
           cd kernel_workspace/kernel_platform
           chmod +x tools/bazel
-          chmod +x build/build.sh
 
-          echo "=== Bazel Target Aranıyor ==="
-          find . -name "BUILD.bazel" -type f | head -20
-          cat msm-kernel/BUILD.bazel 2>/dev/null || echo "BUILD.bazel yok"
+          echo "=== Mevcut Bazel targetlari aranıyor ==="
+          tools/bazel query --ui_event_filters=-info --noshow_progress \
+            "filter('.*_dist$', attr(generator_function, define_msm_platforms, msm-kernel/...))" \
+            2>/dev/null || echo "define_msm_platforms sorgusu basarisiz"
 
-          echo "=== Derleme Başlıyor ==="
-          tools/bazel build \
-            --config=opt \
-            --jobs=$(nproc) \
-            //msm-kernel:kernel_dist \
-            2>&1 | tee $GITHUB_WORKSPACE/build.log
+          echo ""
+          echo "=== Tüm dist targetlari ==="
+          tools/bazel query --ui_event_filters=-info --noshow_progress \
+            "filter('.*_dist$', msm-kernel/...)" \
+            2>/dev/null || echo "dist sorgusu basarisiz"
 
-      - name: Alternatif Derleme (build.sh)
+          echo ""
+          echo "=== Tüm kernel_build targetlari ==="
+          tools/bazel query --ui_event_filters=-info --noshow_progress \
+            "kind(kernel_build, msm-kernel/...)" \
+            2>/dev/null || echo "kernel_build sorgusu basarisiz"
+
+      - name: Kernel Derleme
+        run: |
+          cd kernel_workspace/kernel_platform
+
+          echo "========================================="
+          echo "  Xiaomi 14 (Houji) Kernel Derlemesi"
+          echo "  Build System: build_with_bazel.py (Kleaf)"
+          echo "========================================="
+
+          # build_with_bazel.py ile derleme
+          # -t houji gki : target=houji, variant=gki
+          python3 build_with_bazel.py -t houji gki --log info 2>&1 | tee $GITHUB_WORKSPACE/build.log
+
+      - name: Alternatif Derleme (pineapple target)
         if: failure()
         run: |
           cd kernel_workspace/kernel_platform
-          echo "Bazel basarisiz, build.sh deneniyor..."
 
-          ls msm-kernel/build.config.* 2>/dev/null || true
-
-          BUILD_CONFIG=msm-kernel/build.config.msm.houji \
-          build/build.sh 2>&1 | tee $GITHUB_WORKSPACE/build_alt.log
+          echo "houji basarisiz, pineapple deneniyor..."
+          python3 build_with_bazel.py -t pineapple gki --log info 2>&1 | tee $GITHUB_WORKSPACE/build_pineapple.log
 
       - name: Çıktıları Topla
         if: always()
         run: |
           mkdir -p /tmp/kernel_output
 
-          echo "=== out dizini aranıyor ==="
-          find kernel_workspace/kernel_platform/out -type f \( \
-            -name "*.img" -o \
-            -name "Image*" -o \
-            -name "*.ko" -o \
-            -name "*.dtb" -o \
-            -name "*.dtbo" \
-          \) 2>/dev/null | head -50
+          echo "=== out dizini ==="
+          find kernel_workspace/kernel_platform/out -type f 2>/dev/null | head -50 || true
 
-          # Çıktıları kopyala
-          find kernel_workspace/kernel_platform -path "*/out/*" -type f \( \
-            -name "*.img" -o \
-            -name "Image*" -o \
-            -name "*.ko" -o \
-            -name "*.dtb" -o \
-            -name "*.dtbo" \
-          \) -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+          # Beklenen çıktı konumu: out/msm-kernel-houji_gki/dist/
+          echo ""
+          echo "=== houji_gki dist ==="
+          ls -la kernel_workspace/kernel_platform/out/msm-kernel-houji_gki/dist/ 2>/dev/null || echo "houji_gki dist bulunamadi"
 
-          # Bazel output
-          find kernel_workspace/kernel_platform/bazel-bin -type f \( \
-            -name "*.img" -o \
-            -name "Image*" \
-          \) -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+          echo ""
+          echo "=== pineapple_gki dist ==="
+          ls -la kernel_workspace/kernel_platform/out/msm-kernel-pineapple_gki/dist/ 2>/dev/null || echo "pineapple_gki dist bulunamadi"
 
+          # Tüm olası çıktı konumlarını tara
+          for dir in $(find kernel_workspace/kernel_platform/out -name "dist" -type d 2>/dev/null); do
+            echo "Bulundu: $dir"
+            cp -rv "$dir"/* /tmp/kernel_output/ 2>/dev/null || true
+          done
+
+          # Bazel-out içinden de ara
+          find kernel_workspace/kernel_platform/bazel-bin -name "Image" -o -name "Image.gz" -o -name "*.ko" 2>/dev/null | while read f; do
+            cp -v "$f" /tmp/kernel_output/
+          done
+
+          echo ""
           echo "=== Toplanan Dosyalar ==="
           ls -lah /tmp/kernel_output/ 2>/dev/null || echo "Çıktı bulunamadı"
 
@@ -200,10 +223,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Kplatform-Kernel-Xiaomi14
+          name: Kernel-Xiaomi14-Houji
           path: |
             /tmp/kernel_output/*
             build.log
-            build_alt.log
+            build_pineapple.log
           retention-days: 7
           if-no-files-found: warn
