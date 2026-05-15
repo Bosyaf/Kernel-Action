@@ -34,14 +34,13 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             git ccache automake flex lzop bison gperf build-essential zip curl jq \
-            zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev \
-            squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
-            make libssl-dev pwgen libswitch-perl policycoreutils minicom \
-            libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 \
-            x11proto-core-dev libx11-dev libgl1-mesa-dev xsltproc unzip \
-            device-tree-compiler python3 python3-pip rsync cpio kmod \
-            libelf-dev wget gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            binutils-aarch64-linux-gnu xz-utils
+            zlib1g-dev libxml2-utils bzip2 libbz2-dev \
+            squashfs-tools schedtool dpkg-dev liblz4-tool \
+            make libssl-dev pwgen libswitch-perl policycoreutils \
+            libxml-sax-base-perl libxml-simple-perl bc \
+            xsltproc unzip device-tree-compiler \
+            python3 python3-pip rsync cpio kmod libelf-dev wget xz-utils \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu
 
       # ----------------------------------------------------------
       # 2. Kernel kaynağı
@@ -56,15 +55,12 @@ jobs:
 
       # ----------------------------------------------------------
       # 3. Toolchain (AOSP Clang prebuilt - ZyCromerZ mirror)
-      #    Bu repo Android Common Kernel 6.1 (Curry Ramen) tabanlı,
-      #    yani LLVM=1 ile clang derlemesi gerekiyor.
       # ----------------------------------------------------------
       - name: Download AOSP Clang toolchain
         run: |
           set -e
           mkdir -p toolchain/clang && cd toolchain/clang
 
-          # ZyCromerZ/Clang son release - AOSP clang prebuilt mirror
           REL_JSON=$(curl -s https://api.github.com/repos/ZyCromerZ/Clang/releases/latest)
           TAR_URL=$(echo "$REL_JSON" | jq -r '.assets[] | select(.name|test("Clang.*tar\\.gz$")) | .browser_download_url' | head -n1)
           echo "Downloading: $TAR_URL"
@@ -127,7 +123,7 @@ jobs:
           cp -v kernel/out/arch/arm64/boot/Image.gz       artifacts/ 2>/dev/null || true
           cp -v kernel/out/arch/arm64/boot/Image.gz-dtb   artifacts/ 2>/dev/null || true
           cp -v kernel/out/arch/arm64/boot/dtbo.img       artifacts/ 2>/dev/null || true
-          if compgen -G "kernel/out/arch/arm64/boot/dts" > /dev/null; then
+          if [ -d kernel/out/arch/arm64/boot/dts ]; then
             mkdir -p artifacts/dtbs
             find kernel/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} artifacts/dtbs/ \;
           fi
