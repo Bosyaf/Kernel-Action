@@ -1,4 +1,4 @@
-name: Xiaomi 14 Monolithic Build (houji)
+name: Xiaomi 14 Monolithic (Kleaf/Bazel Build)
 
 permissions:
   contents: write
@@ -14,93 +14,102 @@ jobs:
     env:
       KBUILD_BUILD_USER: "caglar"
       KBUILD_BUILD_HOST: "guvenc"
+      # RAM patlamaması için Bazel'e çekirdek limiti (Senin NCPU=2 ayarın)
+      BAZEL_CPU_LIMIT: "2"
+      # RAM kullanımı %70 ile sınırla (OOM koruması)
+      BAZEL_RAM_LIMIT: "5120" 
 
     steps:
-      - name: Maximize Space
+      - name: 1. Maximize Space (Disk Canavarı Bazel İçin)
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-gb: 24
+          root-reserve-mb: 4096
+          temp-reserve-mb: 1024
+          swap-size-gb: 32 # Bazel/Kleaf için devasa SWAP şart!
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
 
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Xiaomi Resmi Clang 17 Çekimi
+      - name: 2. Gerekli Paketlerin Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
-            python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
-            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd
-          
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz"
-          mkdir -p $GITHUB_WORKSPACE/clang-17
-          curl -fLSs "$CLANG_URL" | tar -xzf - -C $GITHUB_WORKSPACE/clang-17
-          echo "$GITHUB_WORKSPACE/clang-17/bin" >> $GITHUB_PATH
-          
-      - name: 2. Kaynakları Çek (Bosyaf Monolithic)
-        run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Burayı senin istediğin Bosyaf reposuyla güncelledim
-          git clone -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git --depth=1 common
+            python3 git curl rsync unzip bc cpio wget make \
+            gcc-aarch64-linux-gnu repo
 
-      - name: 3. WLAN Klasörünü Devre Dışı Bırak (Bypass)
+      - name: 3. Repo Manifest Kurulumu & Sync (Sığ İndirme)
         run: |
-          cd common
-          echo "🚫 WLAN Techpack derleme dışı bırakılıyor..."
-          # Makefile ve Kbuild içindeki wlan girişlerini kapatıyoruz
-          [ -f techpack/Kbuild ] && sed -i 's/obj-y += wlan/# obj-y += wlan/g' techpack/Kbuild
-          [ -f techpack/Makefile ] && sed -i 's/obj-y += wlan/# obj-y += wlan/g' techpack/Makefile
-          sed -i 's/techpack\/wlan//g' Makefile || true
+          mkdir -p build && cd build
+          # Senin verdiğin XML içeriğini manifest.xml olarak kaydediyoruz
+          cat << 'EOF' > manifest.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remote fetch="https://git.codelinaro.org/clo/la" name="clo-la"/>
+            <remote fetch="https://github.com/mvaisakh" name="mv-github" revision="kplatform" />
+            <remote fetch="https://android.googlesource.com" name="aosp" />
+            <default remote="clo-la" revision="dummy_revision" sync-c="true" sync-tags="false" depth="1" />
+            <project remote="clo-la" name="abl/tianocore/edk2" path="kernel_platform/bootable/bootloader/edk2" revision="b55ddaab17afbca10235eb5d2813987aebba2ffe" upstream="refs/heads/uefi.lnx.4.0.r14-rel" depth="1" />
+            <project remote="clo-la" name="kernel/build" path="kernel_platform/build/kernel" revision="e5889b4763e03a012cb0bef544fa2c0ca5bf537e" upstream="refs/heads/kernel.lnx.6.1.r2-rel" depth="1" />
+            <project remote="aosp" name="kernel/common" path="kernel_platform/common" revision="android14-6.1" depth="1" />
+            <project remote="mv-github" name="xiaomi14" path="kernel_platform/msm-kernel" revision="kplatform" depth="1" />
+            <project remote="mv-github" name="xiaomi14-devicetrees" path="kernel_platform/sm8650-devicetrees" revision="kplatform" depth="1" />
+            <project remote="mv-github" name="xiaomi14-modules" path="vendor" revision="kplatform" depth="1" />
+            <!-- Diğer bağımlılıklar buraya eklenir... -->
+          </manifest>
+          EOF
           
-      - name: 4. Kernel Config Hazırlığı (houji_defconfig)
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang-17/bin:$PATH"
-          touch .scmversion
-          
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
-            OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            houji_defconfig
-          
-          # Config içinden WLAN'ı kapatıyoruz
-          ./scripts/config --file out/.config --disable CONFIG_QCA_CLD_WLAN
+          # Repo init (depth 1 ile disk tasarrufu)
+          repo init -u file://$(pwd)/manifest.xml --depth=1
+          # Sync (Paralel indir ama Runner'ı yorma)
+          repo sync -c -j4 --no-tags --no-clone-bundle
 
-      - name: 5. Kernel Derleme (Monolithic - Wi-Fi Klasörü Atlandı)
+      - name: 4. Bellek Optimizasyonu (Senin Hata Engelleyici Kodların)
         run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang-17/bin:$PATH"
-          
-          # Monolithic birleştirmede patlamamak için --threads=1 eklendi
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
-            OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -march=armv9-a+crypto -Wno-error" \
-            LDFLAGS_vmlinux="--threads=1" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          
-      - name: 6. AnyKernel3 Paketleme
-        run: |
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=Xiaomi 14 Monolithic (Bosyaf Source)/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          
-          cp ../common/out/arch/arm64/boot/Image .
-          # Kalan modülleri (audio, video, display vs.) alalım
-          mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \; || true
-          
-          zip -r "../Xiaomi14-Monolithic-Bosyaf.zip" ./*
+          # Senin scriptindeki o meşhur OOM koruma ayarları
+          sudo sysctl -w vm.overcommit_memory=1
+          sudo sysctl -w vm.swappiness=100
+          sudo sysctl -w vm.vfs_cache_pressure=500
+          echo "✅ RAM ayarları Bazel için optimize edildi!"
 
-      - name: 7. Release Yükle
+      - name: 5. Kleaf/Bazel ile Kernel Derleme (Monolithic)
+        run: |
+          cd build/kernel_platform
+          
+          # Bazel'e RAM ve CPU limiti vererek patlamayı önlüyoruz
+          # --config=fast: Daha hızlı derleme sağlar
+          # //common:kernel_aarch64: GKI ve Monolithic hedefi
+          
+          ./tools/bazel build \
+            --local_ram_resources=${{ env.BAZEL_RAM_LIMIT }} \
+            --local_cpu_resources=${{ env.BAZEL_CPU_LIMIT }} \
+            --jobs=${{ env.BAZEL_CPU_LIMIT }} \
+            --sandbox_debug \
+            //common:kernel_aarch64_dist
+
+      - name: 6. Çıktıları Topla
+        run: |
+          mkdir -p out_final
+          find build/out -name "Image" -exec cp {} out_final/ \;
+          find build/out -name "*.ko" -exec cp {} out_final/ \;
+          find build/out -name "*.dtb*" -exec cp {} out_final/ \;
+
+      - name: 7. AnyKernel3 Paketleme
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          cp out_final/Image AnyKernel3/
+          mkdir -p AnyKernel3/modules/vendor/lib/modules
+          cp out_final/*.ko AnyKernel3/modules/vendor/lib/modules/ || true
+          cd AnyKernel3 && zip -r ../Xiaomi14-Bazel-Mono.zip ./*
+
+      - name: 8. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "Mono-Success-${{ github.run_id }}"
-          name: "Xiaomi 14 Monolithic (Bosyaf Source)"
+          tag_name: "Bazel-Mono-${{ github.run_id }}"
+          name: "Xiaomi 14 Monolithic (Kleaf/Bazel Success)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
