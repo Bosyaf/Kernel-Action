@@ -1,115 +1,367 @@
-name: Xiaomi 14 Monolithic (Kleaf/Bazel Build)
-
-permissions:
-  contents: write
-  actions: write
+name: Xiaomi 14 Kernel Build (Kleaf)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  MANIFEST_URL: "https://github.com/mvaisakh/xiaomi14"
+  MANIFEST_BRANCH: "kplatform"
+  DEVICE: "houji"
+  PLATFORM: "pineapple"
+  KERNEL_VERSION: "6.1"
+  TZ: "Europe/Istanbul"
 
 jobs:
   build-kernel:
-    runs-on: ubuntu-latest
-    timeout-minutes: 420
-    env:
-      KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "guvenc"
-      # RAM patlamaması için Bazel'e çekirdek limiti (Senin NCPU=2 ayarın)
-      BAZEL_CPU_LIMIT: "2"
-      # RAM kullanımı %70 ile sınırla (OOM koruması)
-      BAZEL_RAM_LIMIT: "5120" 
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
 
     steps:
-      - name: 1. Maximize Space (Disk Canavarı Bazel İçin)
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 4096
-          temp-reserve-mb: 1024
-          swap-size-gb: 32 # Bazel/Kleaf için devasa SWAP şart!
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: 2. Gerekli Paketlerin Kurulumu
+      - name: Sistem Bilgisi
         run: |
-          sudo apt update -qq
-          sudo apt install -y --no-install-recommends \
-            python3 git curl rsync unzip bc cpio wget make \
-            gcc-aarch64-linux-gnu repo
+          echo "========================================="
+          echo "  Xiaomi 14 (Houji) Kernel Builder"
+          echo "  Platform: SM8650 Pineapple"
+          echo "  Kernel: Linux ${KERNEL_VERSION} (GKI)"
+          echo "  Build System: Bazel / Kleaf"
+          echo "========================================="
+          nproc
+          free -h
+          df -h
+          uname -a
 
-      - name: 3. Repo Manifest Kurulumu & Sync (Sığ İndirme)
+      - name: Bağımlılıkları Kur
         run: |
-          mkdir -p build && cd build
-          # Senin verdiğin XML içeriğini manifest.xml olarak kaydediyoruz
-          cat << 'EOF' > manifest.xml
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex \
+            git git-lfs libelf-dev liblz4-tool libssl-dev \
+            libxml2 lzop pngquant rsync schedtool \
+            squashfs-tools xsltproc zip zlib1g-dev \
+            python3 python3-pip \
+            libncurses5-dev libncursesw5-dev \
+            android-sdk-libsparse-utils \
+            cpio gzip p7zip-full
+
+      - name: Repo Tool Kur
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+          repo version
+
+      - name: Git Yapılandırması
+        run: |
+          git config --global user.name "Kernel Builder"
+          git config --global user.email "builder@github.com"
+          git config --global color.ui auto
+
+      - name: Kaynak Kodları İndir (Repo Init & Sync)
+        run: |
+          mkdir -p kernel_workspace && cd kernel_workspace
+
+          # Manifest dosyasını oluştur
+          cat > .manifest.xml << 'MANIFEST_EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <remote fetch="https://git.codelinaro.org/clo/la" name="clo-la"/>
             <remote fetch="https://github.com/mvaisakh" name="mv-github" revision="kplatform" />
             <remote fetch="https://android.googlesource.com" name="aosp" />
             <default remote="clo-la" revision="dummy_revision" sync-c="true" sync-tags="false" depth="1" />
-            <project remote="clo-la" name="abl/tianocore/edk2" path="kernel_platform/bootable/bootloader/edk2" revision="b55ddaab17afbca10235eb5d2813987aebba2ffe" upstream="refs/heads/uefi.lnx.4.0.r14-rel" depth="1" />
-            <project remote="clo-la" name="kernel/build" path="kernel_platform/build/kernel" revision="e5889b4763e03a012cb0bef544fa2c0ca5bf537e" upstream="refs/heads/kernel.lnx.6.1.r2-rel" depth="1" />
-            <project remote="aosp" name="kernel/common" path="kernel_platform/common" revision="android14-6.1" depth="1" />
-            <project remote="mv-github" name="xiaomi14" path="kernel_platform/msm-kernel" revision="kplatform" depth="1" />
-            <project remote="mv-github" name="xiaomi14-devicetrees" path="kernel_platform/sm8650-devicetrees" revision="kplatform" depth="1" />
-            <project remote="mv-github" name="xiaomi14-modules" path="vendor" revision="kplatform" depth="1" />
-            <!-- Diğer bağımlılıklar buraya eklenir... -->
+            <project remote="clo-la" name="abl/tianocore/edk2" path="kernel_platform/bootable/bootloader/edk2" revision="b55ddaab17afbca10235eb5d2813987aebba2ffe" upstream="refs/heads/uefi.lnx.4.0.r14-rel" depth="1">
+              <linkfile dest="kernel_platform/bootable/bootloader/edk2/QcomModulePkg/build.config.msm.houji" src="QcomModulePkg/build.config.msm.pineapple"/>
+            </project>
+            <project remote="clo-la" name="kernel/build" path="kernel_platform/build/kernel" revision="e5889b4763e03a012cb0bef544fa2c0ca5bf537e" upstream="refs/heads/kernel.lnx.6.1.r2-rel" depth="1">
+              <linkfile dest="kernel_platform/tools/bazel" src="kleaf/bazel.sh"/>
+              <linkfile dest="kernel_platform/build/build.sh" src="build.sh"/>
+              <linkfile dest="kernel_platform/build/build_abi.sh" src="build_abi.sh"/>
+              <linkfile dest="kernel_platform/build/build_test.sh" src="build_test.sh"/>
+              <linkfile dest="kernel_platform/build/build_utils.sh" src="build_utils.sh"/>
+              <linkfile dest="kernel_platform/build/all-variants.sh" src="all-variants.sh"/>
+              <linkfile dest="kernel_platform/build/brunch" src="brunch"/>
+              <linkfile dest="kernel_platform/build/build_abl.sh" src="build_abl.sh"/>
+              <linkfile dest="kernel_platform/build/build_module.sh" src="build_module.sh"/>
+              <linkfile dest="kernel_platform/build/android/export_headers.py" src="android/export_headers.py"/>
+              <linkfile dest="kernel_platform/build/android/merge_dtbs.py" src="android/merge_dtbs.py"/>
+              <linkfile dest="kernel_platform/build/android/merge_dtbs.sh" src="android/merge_dtbs.sh"/>
+              <linkfile dest="kernel_platform/build/android/prepare_vendor.sh" src="android/prepare_vendor.sh"/>
+              <linkfile dest="kernel_platform/build/BUILD.bazel" src="BUILD.bazel"/>
+              <linkfile dest="kernel_platform/build/build-tools/path" src="build-tools/path"/>
+              <linkfile dest="kernel_platform/build/config.sh" src="config.sh"/>
+              <linkfile dest="kernel_platform/build/envsetup.sh" src="envsetup.sh"/>
+              <linkfile dest="kernel_platform/build/_setup_env.sh" src="_setup_env.sh"/>
+              <linkfile dest="kernel_platform/build/multi-switcher.sh" src="multi-switcher.sh"/>
+              <linkfile dest="kernel_platform/build/kleaf" src="kleaf"/>
+              <linkfile dest="kernel_platform/build/abi" src="abi"/>
+              <linkfile dest="kernel_platform/build/static_analysis" src="static_analysis"/>
+              <linkfile dest="kernel_platform/build/_wrapper_common.sh" src="_wrapper_common.sh"/>
+            </project>
+            <project remote="aosp" name="kernel/common" path="kernel_platform/common" revision="android14-6.1" depth="1">
+              <linkfile dest="kernel_platform/.source_date_epoch_dir" src="."/>
+            </project>
+            <project remote="clo-la" name="kernel/prebuilts/build-tools" path="kernel_platform/prebuilts/kernel-build-tools" revision="d153b7ab4a4956198957e258d4f370e875c53059" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1">
+              <linkfile dest="kernel_platform/build/prebuilts/kernel-build-tools" src="."/>
+            </project>
+            <project remote="clo-la" name="kernel_platform/build/bazel_common_rules" path="kernel_platform/build/bazel_common_rules" revision="9ac051a42545593e4a6bda7f11511acb8476f4e2" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/external/bazel-skylib" path="kernel_platform/external/bazel-skylib" revision="7fdbc462f5001b7e82f026aa90bd43c494e2a8d8" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/external/bazelbuild-rules_license" path="kernel_platform/external/bazelbuild-rules_license" revision="f578df4fd057ffe2023728444759535685631548" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/external/bazelbuild-rules_pkg" path="kernel_platform/external/bazelbuild-rules_pkg" revision="059aaa0ece0c03b731076db6300f50f83d25829a" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/external/dtc" path="kernel_platform/external/dtc" revision="2bc3f4250c591a4519a899f0f62600834a4da693" upstream="refs/heads/kernel.build.lnx.1.0.r15-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/external/python/absl-py" path="kernel_platform/external/python/absl-py" revision="e46584edbb247bf79c74c4f105b6fff18234cee8" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/external/stardoc" path="kernel_platform/external/stardoc" revision="0d74fed6f8d0844f696771e71bc0b071cae99021" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/prebuilts/asuite" path="kernel_platform/prebuilts/asuite" revision="933fe29a05b097caed99d630727cfc301f770798" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/prebuilts/bazel/linux-x86_64" path="kernel_platform/prebuilts/bazel/linux-x86_64" revision="eee09422f02e60f28192bcb5a8ce8660baba6706" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/prebuilts/build-tools" path="kernel_platform/prebuilts/build-tools" revision="3f7cae3e5f7b0cbbb50ececa504e959b5e1a0b1e" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1">
+              <linkfile dest="kernel_platform/build/prebuilts/build-tools" src="."/>
+            </project>
+            <project remote="clo-la" name="kernel_platform/prebuilts/clang-tools" path="kernel_platform/prebuilts/clang-tools" revision="0613fc5443d035335a9541994607bacae03750f2" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1">
+              <linkfile dest="kernel_platform/build/prebuilts/clang-tools" src="."/>
+            </project>
+            <project remote="clo-la" name="kernel_platform/prebuilts/jdk/jdk11" path="kernel_platform/prebuilts/jdk/jdk11" revision="ced68c9308cbc1b6ec3e602dba8d0d56df8b6d73" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/system/tools/mkbootimg" path="kernel_platform/tools/mkbootimg" revision="b17f184a20744a7e0a421f901bdf20a23be22b07" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/toolchain/prebuilts/ndk/r23" path="kernel_platform/prebuilts/ndk-r23" revision="269a5dc9e862f78dc2030d9262f73cb2642b8127" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernel_platform/tools/tradefederation/prebuilts" path="kernel_platform/prebuilts/tradefed" revision="47fc8dbfffc41429e87a5e76188b7707d63792f4" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernelplatform/prebuilts-master/clang/host/linux-x86" path="kernel_platform/prebuilts/clang/host/linux-x86" revision="9002aa7843a39e9b35bb2d2cbf741cdaf719b981" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1"/>
+            <project remote="clo-la" name="kernelplatform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8" path="kernel_platform/prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8" revision="dd099b5d68822602228e2af66693e61e7b54e0a9" upstream="refs/heads/ks-kernel.lnx.3.0.r1-rel" depth="1">
+              <linkfile dest="kernel_platform/build/build-tools/sysroot" src="sysroot"/>
+            </project>
+            <project remote="mv-github" name="xiaomi14" path="kernel_platform/msm-kernel" revision="kplatform" depth="1">
+              <linkfile dest="kernel_platform/WORKSPACE" src="bazel.WORKSPACE"/>
+              <linkfile dest="kernel_platform/build_with_bazel.py" src="build_with_bazel.py"/>
+              <linkfile dest="kernel_platform/build/qcom_build_extensions" src="qcom_build_extensions"/>
+            </project>
+            <project remote="mv-github" name="xiaomi14-devicetrees" path="kernel_platform/sm8650-devicetrees" revision="kplatform" depth="1"/>
+            <project remote="mv-github" name="xiaomi14-modules" path="vendor" revision="kplatform" depth="1">
+              <linkfile dest="kernel_platform/vendor" src="."/>
+            </project>
           </manifest>
-          EOF
-          
-          # Repo init (depth 1 ile disk tasarrufu)
-          repo init -u file://$(pwd)/manifest.xml --depth=1
-          # Sync (Paralel indir ama Runner'ı yorma)
-          repo sync -c -j4 --no-tags --no-clone-bundle
+          MANIFEST_EOF
 
-      - name: 4. Bellek Optimizasyonu (Senin Hata Engelleyici Kodların)
+          repo init -u .manifest.xml --no-clone-bundle --no-tags
+          repo sync -j$(nproc) --force-sync --no-clone-bundle --no-tags
+
+      - name: Disk Alanı Kontrolü
         run: |
-          # Senin scriptindeki o meşhur OOM koruma ayarları
-          sudo sysctl -w vm.overcommit_memory=1
-          sudo sysctl -w vm.swappiness=100
-          sudo sysctl -w vm.vfs_cache_pressure=500
-          echo "✅ RAM ayarları Bazel için optimize edildi!"
+          echo "=== Disk Kullanımı ==="
+          df -h kernel_workspace/
+          echo "=== En Büyük 20 Klasör ==="
+          du -sh kernel_workspace/*/ 2>/dev/null | sort -rh | head -20
 
-      - name: 5. Kleaf/Bazel ile Kernel Derleme (Monolithic)
+      - name: Kernel Derleme (Bazel/Kleaf)
+        working-directory: kernel_workspace/kernel_platform
         run: |
-          cd build/kernel_platform
-          
-          # Bazel'e RAM ve CPU limiti vererek patlamayı önlüyoruz
-          # --config=fast: Daha hızlı derleme sağlar
-          # //common:kernel_aarch64: GKI ve Monolithic hedefi
-          
-          ./tools/bazel build \
-            --local_ram_resources=${{ env.BAZEL_RAM_LIMIT }} \
-            --local_cpu_resources=${{ env.BAZEL_CPU_LIMIT }} \
-            --jobs=${{ env.BAZEL_CPU_LIMIT }} \
-            --sandbox_debug \
-            //common:kernel_aarch64_dist
+          chmod +x tools/bazel
+          chmod +x build/build.sh
 
-      - name: 6. Çıktıları Topla
+          echo "========================================="
+          echo "  Derleme Başlıyor..."
+          echo "  Hedef: ${DEVICE} (${PLATFORM})"
+          echo "========================================="
+
+          # Bazel/Kleaf ile derleme
+          # --config=houji veya pineapple kullanılabilir
+          tools/bazel build \
+            --config=opt \
+            --config=stamp \
+            --jobs=$(nproc) \
+            //msm-kernel:kernel_dist \
+            2>&1 | tee build.log
+
+          echo "========================================="
+          echo "  Derleme Tamamlandı!"
+          echo "========================================="
+
+      - name: Alternatif Derleme (Shell Script)
+        if: failure()
+        working-directory: kernel_workspace/kernel_platform
         run: |
-          mkdir -p out_final
-          find build/out -name "Image" -exec cp {} out_final/ \;
-          find build/out -name "*.ko" -exec cp {} out_final/ \;
-          find build/out -name "*.dtb*" -exec cp {} out_final/ \;
+          echo "Bazel başarısız oldu, shell script deneniyor..."
 
-      - name: 7. AnyKernel3 Paketleme
+          # Geleneksel build.sh ile dene
+          BUILD_CONFIG=msm-kernel/build.config.msm.houji \
+          TRIPLE=aarch64-linux-gnu- \
+          build/build.sh 2>&1 | tee build_alt.log
+
+      - name: Derleme Çıktılarını Topla
+        working-directory: kernel_workspace/kernel_platform
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-          cp out_final/Image AnyKernel3/
-          mkdir -p AnyKernel3/modules/vendor/lib/modules
-          cp out_final/*.ko AnyKernel3/modules/vendor/lib/modules/ || true
-          cd AnyKernel3 && zip -r ../Xiaomi14-Bazel-Mono.zip ./*
+          echo "=== Çıktı Aranıyor ==="
+          # Olası çıktı konumları
+          OUTPUT_DIRS="
+            out
+            out/msm-kernel
+            out/android14-6.1
+            bazel-bin/msm-kernel
+            dist
+            out/dist
+          "
 
-      - name: 8. Release
-        uses: softprops/action-gh-release@v2
+          mkdir -p /tmp/kernel_output
+
+          for dir in $OUTPUT_DIRS; do
+            if [ -d "$dir" ]; then
+              echo "Bulundu: $dir"
+              find "$dir" -type f \( \
+                -name "*.img" -o \
+                -name "Image*" -o \
+                -name "Image.gz*" -o \
+                -name "*.ko" -o \
+                -name "*.dtb" -o \
+                -name "*.dtbo" -o \
+                -name "System.map" -o \
+                -name "vmlinux" \
+              \) -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+            fi
+          done
+
+          # Kernel Image'i ara
+          find . -path "./out*" -name "Image*" -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+          find . -path "./out*" -name "*.dtb" -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+          find . -path "./out*" -name "*.dtbo" -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+          find . -path "./out*" -name "*.ko" -exec cp -v {} /tmp/kernel_output/ \; 2>/dev/null
+
+          echo "=== Toplanan Dosyalar ==="
+          ls -lah /tmp/kernel_output/
+
+      - name: Boot.img Oluştur (Gerekirse)
+        working-directory: kernel_workspace/kernel_platform
+        run: |
+          if [ ! -f /tmp/kernel_output/boot.img ] && [ -f /tmp/kernel_output/Image.gz ]; then
+            echo "boot.img oluşturuluyor..."
+
+            # DTB'leri bul
+            DTB_FILES=$(find out -name "*.dtb" 2>/dev/null | head -5)
+
+            python3 tools/mkbootimg/mkbootimg.py \
+              --kernel /tmp/kernel_output/Image.gz \
+              --dtb $(echo $DTB_FILES | head -1) \
+              --ramdisk /dev/null \
+              --os_version 14.0.0 \
+              --os_patch_level $(date +%Y-%m) \
+              --header_version 4 \
+              --output /tmp/kernel_output/boot.img \
+              2>/dev/null || echo "mkbootimg başarısız, manuel flash gerekli"
+          fi
+
+          ls -lah /tmp/kernel_output/
+
+      - name: Flashable ZIP Oluştur
+        working-directory: /tmp/kernel_output
+        run: |
+          if [ -f "Image.gz" ] || [ -f "Image" ]; then
+            mkdir -p AnyKernel/META-INF/com/google/android
+            cd AnyKernel
+
+            # anykernel.sh
+            cat > anykernel.sh << 'AKSH'
+            ui_print " "
+            ui_print "======================================="
+            ui_print "  Kplatform Kernel - Xiaomi 14 (Houji)"
+            ui_print "  SM8650 | Android 14 | Linux 6.1 GKI"
+            ui_print "======================================="
+            ui_print " "
+
+            do.device_check=1
+            device_name="houji"
+
+            block=/dev/block/by-name/init_boot;
+            is_slot_device=0;
+
+            do.clean=0
+            do.shell=/system/bin/sh
+            AKSH
+
+            # updater-script
+            cat > META-INF/com/google/android/updater-script << 'UPDATER'
+            ui_print "Kplatform Kernel yükleniyor..."
+            package_extract_dir "tools" /tmp
+            package_extract_dir "files" /tmp
+            set_perm_recursive 0 0 0755 0755 /tmp
+            run_program /tmp/dump_image boot /tmp/boot.img
+            run_program /tmp/mkbootimg --kernel /tmp/files/Image --output /tmp/newboot.img --ramdisk /tmp/ramdisk
+            write_raw_image /tmp/newboot.img init_boot
+            UPDATER
+
+            # update-binary
+            cat > META-INF/com/google/android/update-binary << 'BINARY'
+            #!/sbin/sh
+            OUTFD=/proc/self/fd/$2
+            ZIPFILE="$3"
+            ui_print() {
+              echo "ui_print $1" > "$OUTFD"
+              echo "ui_print" > "$OUTFD"
+            }
+            ui_print "Kplatform Kernel - Xiaomi 14"
+            BINARY
+
+            # Kernel image'i kopyala
+            mkdir -p files
+            cp -f /tmp/kernel_output/Image.gz files/Image 2>/dev/null || \
+            cp -f /tmp/kernel_output/Image files/Image 2>/dev/null
+
+            # DTB/DTBO kopyala
+            cp -f /tmp/kernel_output/*.dtb files/ 2>/dev/null
+            cp -f /tmp/kernel_output/*.dtbo files/ 2>/dev/null
+
+            # ZIP'le
+            cd /tmp/kernel_output/AnyKernel
+            zip -r9 /tmp/kernel_output/Kplatform-Xiaomi14-Houji.zip . -x "*.log"
+            echo "Flashable ZIP oluşturuldu!"
+          fi
+
+      - name: Derleme Özeti
+        if: always()
+        run: |
+          echo "========================================="
+          echo "  DERLEME ÖZETİ"
+          echo "========================================="
+          echo "Cihaz: Xiaomi 14 (Houji)"
+          echo "Platform: SM8650 Pineapple"
+          echo "Kernel: Linux 6.1 (Android 14 GKI)"
+          echo "-------------------------------------------"
+          ls -lah /tmp/kernel_output/ 2>/dev/null || echo "Çıktı bulunamadı"
+          echo "========================================="
+
+      - name: Kernel Image Yükle (Artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "Bazel-Mono-${{ github.run_id }}"
-          name: "Xiaomi 14 Monolithic (Kleaf/Bazel Success)"
-          files: "*.zip"
+          name: Kplatform-Kernel-Xiaomi14-Houji
+          path: |
+            /tmp/kernel_output/*
+            kernel_workspace/kernel_platform/build.log
+            kernel_workspace/kernel_platform/build_alt.log
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Flashable ZIP Yükle (Artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kplatform-Flashable-Xiaomi14
+          path: /tmp/kernel_output/Kplatform-Xiaomi14-Houji.zip
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Telegram Bildirim (Opsiyonel)
+        if: success() && env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          MESSAGE="✅ *Kernel Derleme Başarılı!*
+          📱 Cihaz: Xiaomi 14 (Houji)
+          🔧 Platform: SM8650
+          🐧 Kernel: Linux 6.1 GKI
+          📅 Tarih: $(date '+%Y-%m-%d %H:%M')
+          ⚡ Runner: $(uname -n)"
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="${MESSAGE}" \
+            -d parse_mode="Markdown" || true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
