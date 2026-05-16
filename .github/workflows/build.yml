@@ -185,10 +185,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_QCOM_CPUFREQ_HW
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_MSM_PERFORMANCE
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_DEVFREQ_GOV_QCOM_MEMLAT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
