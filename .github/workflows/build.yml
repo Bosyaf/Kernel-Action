@@ -290,108 +290,23 @@ jobs:
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3 Paketleme (Sıfırdan Modern Script)
+      - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
-          # 1. Eski ve işe yaramaz anykernel.sh dosyasını tamamen siliyoruz
-          rm -f anykernel.sh
-          
-          # 2. Senin cihazına özel, modern ve modül flaşlayan anykernel.sh oluşturuyoruz
-          cat << 'EOF' > anykernel.sh
-          # AnyKernel3 Script - CG+ Galadriel Edition
-          
-          properties() { '
-          kernel.string=CG+ Galadriel Kernel
-          do.devicecheck=0
-          do.modules=1
-          do.systemless=1
-          do.cleanup=1
-          do.cleaner=1
-          device.name1=houji
-          device.name2=shennong
-          device.name3=aurora
-          device.name4=xiaomi14
-          supported.patchlevels=
-          '; }
-          
-          # Boot bloğu ve slot ayarları
-          block=/dev/block/by-name/boot;
-          is_slot_device=auto;
-          ramdisk_compression=auto;
-          patch_vbmeta_flag=auto;
-          
-          # AnyKernel araçlarını yükle
-          . /tmp/anykernel/tools/ak3-helper.sh;
-          
-          # --- KERNEL FLAŞLAMA ---
-          split_boot;
-          flash_kernel;
-          write_boot;
-          
-          # --- MODÜL VE MODULES.LOAD YAMALAMA ---
-          ui_print "🔧 Yeni nesil modüller sisteme işleniyor...";
-          
-          # Hedef klasör ve modules.load yolu
-          MOD_PATH="/vendor/lib/modules";
-          
-          # Vendor bölümünü yazılabilir yapalım
-          mount -o rw,remount /vendor || mount /vendor || true;
-          
-          if [ -d "$MOD_PATH" ]; then
-            ui_print "📂 Hedef bulundu: $MOD_PATH";
-            
-            # 1. Senin derlediğin .ko dosyalarını cihaza kopyala
-            # Zip içindeki 'modules/vendor/lib/modules/' klasöründen alıyoruz
-            cp -f /tmp/anykernel/modules/vendor/lib/modules/*.ko "$MOD_PATH/";
-            
-            # 2. modules.load dosyasını bul ve güncelle
-            # Bazı cihazlarda /vendor/lib/modules içindedir, bazılarında alt klasörde.
-            LOAD_FILE=$(find $MOD_PATH -name modules.load | head -n 1);
-            
-            if [ -n "$LOAD_FILE" ]; then
-              ui_print "📝 modules.load yamalanıyor: $LOAD_FILE";
-              
-              # Eski kayıtları temizle (tekrar olmasın)
-              sed -i '/sched-walt.ko/d' "$LOAD_FILE";
-              sed -i '/qcom-cpufreq-hw.ko/d' "$LOAD_FILE";
-              
-              # EN BAŞA ekle (Sürücülerin önce yüklenmesi şart!)
-              sed -i '1i qcom-cpufreq-hw.ko' "$LOAD_FILE";
-              sed -i '1i sched-walt.ko' "$LOAD_FILE";
-              
-              ui_print "✅ Modül isimleri başarıyla eklendi.";
-            else
-              ui_print "⚠️ modules.load bulunamadı, modüller otomatik yüklenmeyebilir!";
-            fi
-            
-            # İzinleri ayarla (Sistem modülü tanıması için şart)
-            chmod 644 $MOD_PATH/*.ko;
-          else
-            ui_print "❌ HATA: /vendor/lib/modules bulunamadı!";
-          fi
-          EOF
-
-          # 3. Dosyaya çalışma izni ver
-          chmod +x anykernel.sh
-          
-          # 4. Kernel Image dosyasını ana dizine koy
           cp ../common/out/arch/arm64/boot/Image .
-          
-          # 5. Modül dosyalarını (ko) Zip içindeki doğru yapıya yerleştir
-          # AnyKernel flaşlarken /tmp/anykernel/modules/... altına bakar
           mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "sched-walt.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          find ../common/out -name "qcom-cpufreq-hw.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          
-          # 6. Gereksiz dosyaları temizle ve paketle
-          zip -r "../CG-Galadriel.zip" ./* -x .git* README.md *placeholder*
-
+          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          zip -r "../CG-Galadriel.zip" ./*
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
           name: "CG+ Galadriel (ZyC Clang 22)"
-          files: "CG-Galadriel.zip"
+          files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
