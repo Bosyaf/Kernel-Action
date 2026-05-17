@@ -5,6 +5,16 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'lineage-21'
+        type: choice
+        options:
+          - lineage-21
+          - lineage-22.1
+          - lineage-22.2
 
 jobs:
   build:
@@ -25,7 +35,7 @@ jobs:
           sudo apt-get install -y \
             bc bison build-essential flex git libssl-dev \
             libelf-dev python3 wget zip cpio curl dwarves which pahole \
-            kmod lz4 ccache
+            kmod lz4 ccache device-tree-compiler
 
       - name: Setup Neutron Clang
         run: |
@@ -40,8 +50,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: OnePlus-12-Development/android_kernel_qcom_sm8650
-          ref: main
+          ref: ${{ github.event.inputs.branch || 'lineage-21' }}
           path: kernel
+          submodules: true
 
       - name: Setup Build Environment
         run: |
@@ -64,18 +75,29 @@ jobs:
           # Create out directory
           mkdir -p out
           
+          # Check for gki_defconfig location
+          if [ -f "arch/arm64/configs/gki_defconfig" ]; then
+            BASE_CONFIG="gki_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/gki_defconfig" ]; then
+            BASE_CONFIG="vendor/gki_defconfig"
+          else
+            echo "Error: gki_defconfig not found!"
+            ls -la arch/arm64/configs/
+            exit 1
+          fi
+          
           # Generate base config
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 $BASE_CONFIG
           
           # Merge pineapple GKI configs if they exist
           if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
             echo "Merging vendor/pineapple_GKI.config..."
-            cat arch/arm64/configs/vendor/pineapple_GKI.config >> out/.config
+            ./scripts/kconfig/merge_config.sh -O out out/.config arch/arm64/configs/vendor/pineapple_GKI.config
           fi
           
           if [ -f "arch/arm64/configs/vendor/oplus/pineapple_GKI.config" ]; then
             echo "Merging vendor/oplus/pineapple_GKI.config..."
-            cat arch/arm64/configs/vendor/oplus/pineapple_GKI.config >> out/.config
+            ./scripts/kconfig/merge_config.sh -O out out/.config arch/arm64/configs/vendor/oplus/pineapple_GKI.config
           fi
           
           # Regenerate config with merged options
@@ -94,8 +116,7 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            Image
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
       - name: Prepare Artifacts
         run: |
@@ -119,10 +140,16 @@ jobs:
             cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           fi
           
-          # Copy DTB if exists
+          # Copy DTB/DTBO
           if [ -d "out/arch/arm64/boot/dts" ]; then
             find out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} artifacts/ \;
+            find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp {} artifacts/ \;
           fi
+          
+          # Copy modules
+          find out -name "*.ko" | while read module; do
+            cp "$module" artifacts/ 2>/dev/null || true
+          done
           
           # Copy config
           cp out/.config artifacts/kernel.config
@@ -130,10 +157,18 @@ jobs:
           # Get kernel version
           KERNEL_VERSION=$(make O=out kernelversion)
           echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+          
+          # Create build info
+          cat > artifacts/build-info.txt << EOF
+          Kernel Version: $KERNEL_VERSION
+          Branch: ${{ github.event.inputs.branch || 'lineage-21' }}
+          Build Date: $(date)
+          Clang Version: $(clang --version | head -n1)
+          EOF
 
       - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-sm8650-${{ env.KERNEL_VERSION }}
+          name: kernel-sm8650-pineapple-${{ github.event.inputs.branch }}-${{ github.run_number }}
           path: kernel/artifacts/*
           retention-days: 30
