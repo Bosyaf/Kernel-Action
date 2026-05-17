@@ -24,7 +24,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             bc bison build-essential flex git libssl-dev \
-            libelf-dev python3 wget zip cpio curl
+            libelf-dev python3 wget zip cpio curl dwarves which pahole
+          pahole --version
 
       - name: Setup Neutron Clang
         run: |
