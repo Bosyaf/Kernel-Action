@@ -43,12 +43,23 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-      # WLAN Techpack içindeki bilinmeyen warning bayraklarını temizleyen cerrahi adım
-      - name: Fix WLAN Techpack Warnings
+      # ==========================================================
+      # WLAN'I ATLAYAN CERRAHİ ADIM
+      # ==========================================================
+      - name: Skip WLAN Techpack
         run: |
           cd kernel
-          find techpack/wlan/qcacld-3.0 -name "Kbuild" -o -name "Makefile" | xargs sed -i 's/-Wno-multistatement-macros//g'
-          find techpack/wlan/qcacld-3.0 -name "Kbuild" -o -name "Makefile" | xargs sed -i 's/-Wno-enum-int-mismatch//g'
+          echo "🚀 WLAN klasörü derleme listesinden çıkarılıyor..."
+          
+          # 1. Kbuild içindeki otomatik bulma komutuna 'wlan' klasörünü hariç tut diyoruz
+          sed -i 's/-not -name "\.\*"/-not -name ".*" -not -name "wlan"/g' techpack/Kbuild
+          
+          # 2. Kconfig.ext içindeki tüm wlan girişlerini yorum satırı yapıp etkisiz hale getiriyoruz
+          if [ -f "techpack/Kconfig.ext" ]; then
+            sed -i 's|source "techpack/wlan|# source "techpack/wlan|g' techpack/Kconfig.ext
+            sed -i 's|source "techpack/datarmnet-ext/wlan|# source "techpack/datarmnet-ext/wlan|g' techpack/Kconfig.ext
+          fi
+          echo "✅ WLAN artık görünmez."
 
       - name: Build Kernel
         run: |
@@ -58,10 +69,8 @@ jobs:
           # defconfig oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
           
-          # Derleme (KCFLAGS ekleyerek bilinmeyen bayrakların hata vermesini engelledik)
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=unknown-warning-option" \
-            -j$(nproc --all)
+          # Derleme (WLAN atlandığı için hata vermeden devam edecek)
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
 
       - name: Package Kernel
         run: |
@@ -75,7 +84,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: houji-${{ github.run_number }}
-          name: Xiaomi 14 Houji Kernel
+          name: Xiaomi 14 Houji Kernel (WLAN-Disabled)
           files: Houji-Kernel.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
