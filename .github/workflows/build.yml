@@ -76,11 +76,36 @@ jobs:
       - name: Package Kernel
         run: |
           cd AnyKernel3
-          cp ../kernel/out/arch/arm64/boot/Image .
+          # 1. Kernel Image dosyasını kopyala
+          if [ -f ../kernel/out/arch/arm64/boot/Image ]; then
+            cp ../kernel/out/arch/arm64/boot/Image .
+            echo "✅ Image kopyalandı."
+          else
+            echo "❌ HATA: Image bulunamadı!"
+            exit 1
+          fi
+
+          # 2. Modül klasör yapısını oluştur (GKI standardı)
+          mkdir -p modules/vendor/lib/modules
+
+          # 3. Tüm .ko dosyalarını bul ve kopyala
+          echo "📦 Modüller toplanıyor..."
+          find ../kernel/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+
+          # 4. Modülleri 'strip' et (Boyutu küçültmek için kritik adım)
+          # Neutron Clang içindeki llvm-strip'i kullanıyoruz
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          find modules/vendor/lib/modules/ -name "*.ko" -exec llvm-strip --strip-debug {} \;
+          echo "✅ Modüller temizlendi (stripped)."
+
+          # 5. AnyKernel ayarları
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/g' anykernel.sh
+          
+          # 6. Hepsini paketle
           zip -r9 ../Houji-Kernel.zip * -x .git README.md *placeholder
-
+          echo "🎉 Paketleme tamamlandı: Houji-Kernel.zip"
+          
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
