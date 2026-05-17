@@ -236,7 +236,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_COMPRESS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_DECOMPRESS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
