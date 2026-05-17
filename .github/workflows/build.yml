@@ -236,6 +236,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          # WALT ve CPUFreq HW Sürücülerini Modül (m) Olarak Ayarlama
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_QCOM_CPUFREQ_HW
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_COMPRESS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_DECOMPRESS
