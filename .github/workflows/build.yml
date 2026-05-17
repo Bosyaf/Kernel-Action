@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - Clean Build
+name: Kernel Build - SM8650 (Pineapple)
 
 permissions:
   contents: write
@@ -24,8 +24,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             bc bison build-essential flex git libssl-dev \
-            libelf-dev python3 wget zip cpio curl dwarves which pahole
-          pahole --version
+            libelf-dev python3 wget zip cpio curl dwarves which pahole \
+            kmod lz4 ccache
 
       - name: Setup Neutron Clang
         run: |
@@ -36,81 +36,104 @@ jobs:
           ./antman -S
           echo "$HOME/toolchains/neutron-clang/bin" >> $GITHUB_PATH
 
-      - name: Clone Kernel Source
-        run: |
-          git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 kernel
-
-      - name: Clone AnyKernel3
-        run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
-
-      # ==========================================================
-      # WLAN'I ATLAYAN CERRAHİ ADIM
-      # ==========================================================
-      - name: Skip WLAN Techpack
-        run: |
-          cd kernel
-          echo "🚀 WLAN klasörü derleme listesinden çıkarılıyor..."
-          
-          # 1. Kbuild içindeki otomatik bulma komutuna 'wlan' klasörünü hariç tut diyoruz
-          sed -i 's/-not -name "\.\*"/-not -name ".*" -not -name "wlan"/g' techpack/Kbuild
-          
-          # 2. Kconfig.ext içindeki tüm wlan girişlerini yorum satırı yapıp etkisiz hale getiriyoruz
-          if [ -f "techpack/Kconfig.ext" ]; then
-            sed -i 's|source "techpack/wlan|# source "techpack/wlan|g' techpack/Kconfig.ext
-            sed -i 's|source "techpack/datarmnet-ext/wlan|# source "techpack/datarmnet-ext/wlan|g' techpack/Kconfig.ext
-          fi
-          echo "✅ WLAN artık görünmez."
-
-      - name: Build Kernel
-        run: |
-          cd kernel
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          
-          # defconfig oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
-          
-          # Derleme (WLAN atlandığı için hata vermeden devam edecek)
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
-
-      - name: Package Kernel
-        run: |
-          cd AnyKernel3
-          # 1. Kernel Image dosyasını kopyala
-          if [ -f ../kernel/out/arch/arm64/boot/Image ]; then
-            cp ../kernel/out/arch/arm64/boot/Image .
-            echo "✅ Image kopyalandı."
-          else
-            echo "❌ HATA: Image bulunamadı!"
-            exit 1
-          fi
-
-          # 2. Modül klasör yapısını oluştur (GKI standardı)
-          mkdir -p modules/vendor/lib/modules
-
-          # 3. Tüm .ko dosyalarını bul ve kopyala
-          echo "📦 Modüller toplanıyor..."
-          find ../kernel/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-
-          # 4. Modülleri 'strip' et (Boyutu küçültmek için kritik adım)
-          # Neutron Clang içindeki llvm-strip'i kullanıyoruz
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          find modules/vendor/lib/modules/ -name "*.ko" -exec llvm-strip --strip-debug {} \;
-          echo "✅ Modüller temizlendi (stripped)."
-
-          # 5. AnyKernel ayarları
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/g' anykernel.sh
-          
-          # 6. Hepsini paketle
-          zip -r9 ../Houji-Kernel.zip * -x .git README.md *placeholder
-          echo "🎉 Paketleme tamamlandı: Houji-Kernel.zip"
-          
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
         with:
-          tag_name: houji-${{ github.run_number }}
-          name: Xiaomi 14 Houji Kernel (WLAN-Disabled)
-          files: Houji-Kernel.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          repository: OnePlus-12-Development/android_kernel_qcom_sm8650
+          ref: main
+          path: kernel
+
+      - name: Setup Build Environment
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CLANG_PATH=$HOME/toolchains/neutron-clang/bin
+          export PATH=$CLANG_PATH:$PATH
+          export KBUILD_BUILD_USER=builder
+          export KBUILD_BUILD_HOST=github-actions
+
+      - name: Merge Configs and Build
+        run: |
+          cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CLANG_PATH=$HOME/toolchains/neutron-clang/bin
+          export PATH=$CLANG_PATH:$PATH
+          
+          # Create out directory
+          mkdir -p out
+          
+          # Generate base config
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          
+          # Merge pineapple GKI configs if they exist
+          if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
+            echo "Merging vendor/pineapple_GKI.config..."
+            cat arch/arm64/configs/vendor/pineapple_GKI.config >> out/.config
+          fi
+          
+          if [ -f "arch/arm64/configs/vendor/oplus/pineapple_GKI.config" ]; then
+            echo "Merging vendor/oplus/pineapple_GKI.config..."
+            cat arch/arm64/configs/vendor/oplus/pineapple_GKI.config >> out/.config
+          fi
+          
+          # Regenerate config with merged options
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          
+          # Build kernel
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            Image
+
+      - name: Prepare Artifacts
+        run: |
+          cd kernel
+          mkdir -p artifacts
+          
+          # Copy kernel image
+          if [ -f "out/arch/arm64/boot/Image" ]; then
+            cp out/arch/arm64/boot/Image artifacts/
+          fi
+          
+          if [ -f "out/arch/arm64/boot/Image.gz" ]; then
+            cp out/arch/arm64/boot/Image.gz artifacts/
+          fi
+          
+          if [ -f "out/arch/arm64/boot/Image.lz4" ]; then
+            cp out/arch/arm64/boot/Image.lz4 artifacts/
+          fi
+          
+          if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
+            cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          fi
+          
+          # Copy DTB if exists
+          if [ -d "out/arch/arm64/boot/dts" ]; then
+            find out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} artifacts/ \;
+          fi
+          
+          # Copy config
+          cp out/.config artifacts/kernel.config
+          
+          # Get kernel version
+          KERNEL_VERSION=$(make O=out kernelversion)
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-sm8650-${{ env.KERNEL_VERSION }}
+          path: kernel/artifacts/*
+          retention-days: 30
