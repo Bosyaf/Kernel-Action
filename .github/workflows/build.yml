@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - Neutron Build
+name: Xiaomi 14 Houji - Clean Build
 
 permissions:
   contents: write
@@ -24,102 +24,40 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             bc bison build-essential flex git libssl-dev \
-            libelf-dev python3 wget zip cpio curl clang lld
+            libelf-dev python3 wget zip cpio curl
 
       - name: Setup Neutron Clang
         run: |
           mkdir -p "$HOME/toolchains/neutron-clang"
           cd "$HOME/toolchains/neutron-clang"
-
-          curl -LO \
-          https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman
-
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
           chmod +x antman
           ./antman -S
-
           echo "$HOME/toolchains/neutron-clang/bin" >> $GITHUB_PATH
-
-      - name: Verify Toolchain
-        run: |
-          clang --version
-          ld.lld --version
 
       - name: Clone Kernel Source
         run: |
-          git clone -b monolithic-test-2 \
-          https://github.com/mvaisakh/xiaomi14.git \
-          --depth=1 kernel
+          git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 kernel
 
       - name: Clone AnyKernel3
         run: |
-          git clone \
-          https://github.com/osm0sis/AnyKernel3.git \
-          --depth=1 AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
       - name: Build Kernel
         run: |
           cd kernel
-
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-
-          export ARCH=arm64
-          export SUBARCH=arm64
-
-          export KBUILD_BUILD_USER=Galadriel
-          export KBUILD_BUILD_HOST=Neutron
-
-          make mrproper
-
-          make O=out \
-          ARCH=arm64 \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          CC=clang \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
-          READELF=llvm-readelf \
-          HOSTCC=clang \
-          HOSTCXX=clang++ \
-          HOSTAR=llvm-ar \
-          houji_defconfig
-
-          make O=out \
-          ARCH=arm64 \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          CC=clang \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
-          READELF=llvm-readelf \
-          HOSTCC=clang \
-          HOSTCXX=clang++ \
-          HOSTAR=llvm-ar \
-          -j$(nproc --all)
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
 
       - name: Package Kernel
         run: |
           cd AnyKernel3
-
           cp ../kernel/out/arch/arm64/boot/Image .
-
-          sed -i \
-          's/do.devicecheck=1/do.devicecheck=0/g' \
-          anykernel.sh
-
-          sed -i \
-          's/is_slot_device=0/is_slot_device=auto/g' \
-          anykernel.sh
-
-          zip -r9 ../Houji-Kernel.zip * \
-          -x .git README.md *placeholder
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/g' anykernel.sh
+          zip -r9 ../Houji-Kernel.zip * -x .git README.md *placeholder
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
