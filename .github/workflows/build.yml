@@ -271,17 +271,13 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-           -mcpu=cortex-x4 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+fp16fml \
-           -fmerge-all-constants \
-           -fno-strict-aliasing \
-           -fno-common \
-           -fomit-frame-pointer \
-           -ffunction-sections \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+fp16fml+sha3 \
            -fdata-sections \
+           -ffunction-sections \
+           -fomit-frame-pointer \
+           -fno-strict-aliasing \
            -fno-unwind-tables \
            -fno-asynchronous-unwind-tables \
-           -ftree-vectorize \
            -Wno-error \
            -Wno-format \
            -Wno-format-extra-args \
@@ -289,8 +285,6 @@ jobs:
            KLDFLAGS="-Wl,--gc-sections \
            -Wl,--as-needed \
            -Wl,--strip-debug \
-           -Wl,--icf=safe \
-           -Wl,-z,now \
            -Wl,-O2" \
            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
