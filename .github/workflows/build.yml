@@ -279,7 +279,6 @@ jobs:
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
-           -funswitch-loops \
            -fno-unwind-tables \
            -fno-asynchronous-unwind-tables \
            -ftree-vectorize \
