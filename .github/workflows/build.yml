@@ -244,6 +244,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LZO_DECOMPRESS
           # WALT ve CPUFreq HW Sürücülerini Modül (m) Olarak Ayarlama
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_ARM_QCOM_CPUFREQ_HW
           # LZ4 Motoru (Kernelin kalbinde olmalı ki ZRAM modülü onu hemen bulsun)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LZ4_COMPRESS
