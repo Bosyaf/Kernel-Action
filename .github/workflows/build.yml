@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-houji-kernel:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 420
     env:
       KBUILD_BUILD_USER: "houji-builder"
@@ -26,8 +26,8 @@ jobs:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: MiCode/Xiaomi_Kernel_OpenSource
-          ref: shennong-u-oss
+          repository: mvaisakh/xiaomi14
+          ref: monolithic
           path: kernel
           fetch-depth: 1
 
@@ -56,7 +56,19 @@ jobs:
           echo "✅ Neutron Clang 19 Kuruldu!"
           clang --version | head -3
 
-      - name: Build HOUJI Kernel (Neutron Clang 19)
+      - name: Check Available Configs
+        run: |
+          cd $GITHUB_WORKSPACE/kernel
+          
+          echo "📁 Mevcut defconfig'ler aranıyor..."
+          echo "================================================"
+          
+          find arch/arm64/configs -name "*houji*" 2>/dev/null | sort
+          find arch/arm64/configs -name "*defconfig" 2>/dev/null | sort
+          
+          echo "================================================"
+
+      - name: Build HOUJI Kernel (houji_defconfig)
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
@@ -78,67 +90,26 @@ jobs:
           echo "🔨 HOUJI KERNEL DERLENİYOR..."
           echo "================================================"
           echo "Device: Xiaomi 14 (HOUJI)"
-          echo "Source: MiCode/Xiaomi_Kernel_OpenSource"
-          echo "Branch: shennong-u-oss"
+          echo "Source: mvaisakh/xiaomi14"
+          echo "Branch: monolithic"
+          echo "Defconfig: houji_defconfig"
           echo "Toolchain: Neutron Clang 19"
+          echo "Runner: Ubuntu 24.04"
           echo "================================================"
           echo ""
           
           # Temizle
-          make -j$(nproc --all) clean O=${OUT_DIR} || true
           rm -rf ${OUT_DIR}
           mkdir -p ${OUT_DIR}
           
           # ============================================
-          # HOUJI CONFIG MERGE (GERÇEK CONFIG'LER)
+          # DEFCONFIG (MERGE YOK - SADECE HOUJI_DEFCONFIG)
           # ============================================
-          echo "📁 HOUJI Config Merge Başlatılıyor..."
-          echo ""
+          echo "📁 houji_defconfig Yükleniyor..."
           
-          # Mevcut config'leri göster
-          echo "📋 Mevcut HOUJI config'leri:"
-          find arch/arm64/configs -name "*houji*" 2>/dev/null | sort
-          find arch/arm64/configs/vendor -name "*houji*" 2>/dev/null | sort
-          echo ""
+          make O=${OUT_DIR} houji_defconfig
           
-          # ============================================
-          # MERGE CONFIG - HOUJI İÇİN
-          # ============================================
-          echo "⚙️ Config Merge Ediliyor..."
-          
-          ./scripts/kconfig/merge_config.sh -O ${OUT_DIR} \
-            arch/arm64/configs/vendor/houji_GKI.config \
-            arch/arm64/configs/vendor/houji_consolidate.config \
-            2>&1
-          
-          if [ $? -ne 0 ]; then
-            echo "⚠️ Merge uyarıları var, devam ediliyor..."
-          fi
-          
-          # consolidate.fragment varsa ekle
-          if [ -f "arch/arm64/configs/consolidate.fragment" ]; then
-            echo "📝 consolidate.fragment ekleniyor..."
-            cat arch/arm64/configs/consolidate.fragment >> ${OUT_DIR}/.config
-          fi
-          
-          # pineapple config'leri de gerekliyse
-          if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
-            echo "📝 pineapple_GKI.config ekleniyor (SM8650 ortak)..."
-            cat arch/arm64/configs/vendor/pineapple_GKI.config >> ${OUT_DIR}/.config
-          fi
-          
-          if [ -f "arch/arm64/configs/vendor/pineapple_consolidate.config" ]; then
-            echo "📝 pineapple_consolidate.config ekleniyor..."
-            cat arch/arm64/configs/vendor/pineapple_consolidate.config >> ${OUT_DIR}/.config
-          fi
-          
-          # Config'i finalize et
-          echo ""
-          echo "🔧 Config finalize ediliyor (olddefconfig)..."
-          make O=${OUT_DIR} olddefconfig
-          
-          echo ""
-          echo "✅ HOUJI Config Hazır!"
+          echo "✅ Defconfig Hazır!"
           echo "================================================"
           
           # ============================================
@@ -170,7 +141,7 @@ jobs:
           else
             echo ""
             echo "❌ KERNEL DERLEME BAŞARISIZ!"
-            echo "Hata logları: ${OUT_DIR}/kernel.log"
+            echo "Son 100 satır:"
             tail -100 ${OUT_DIR}/kernel.log
             exit 1
           fi
@@ -211,20 +182,14 @@ jobs:
           ║     XIAOMI HOUJI KERNEL BUILD                         ║
           ╠═══════════════════════════════════════════════════════╣
           ║  Device:        Xiaomi 14 (HOUJI)                     ║
-          ║  Source:        MiCode/Xiaomi_Kernel_OpenSource       ║
-          ║  Branch:        shennong-u-oss                        ║
+          ║  Source:        mvaisakh/xiaomi14                     ║
+          ║  Branch:        monolithic                            ║
+          ║  Defconfig:     houji_defconfig                       ║
           ║  Toolchain:     Neutron Clang 19                      ║
+          ║  Runner:        Ubuntu 24.04                          ║
           ║  Build Date:    $(date)                               ║
           ║  Build ID:      ${{ env.BOOTHASH }}                   ║
-          ║  GitHub Run:    ${{ github.run_id }}                  ║
           ╚═══════════════════════════════════════════════════════╝
-          
-          Config Files Used:
-          - arch/arm64/configs/vendor/houji_GKI.config
-          - arch/arm64/configs/vendor/houji_consolidate.config
-          - arch/arm64/configs/consolidate.fragment (if exists)
-          - arch/arm64/configs/vendor/pineapple_GKI.config (if exists)
-          - arch/arm64/configs/vendor/pineapple_consolidate.config (if exists)
           
           Files:
           - Image.gz-dtb  : Kernel + Device Tree
@@ -232,7 +197,6 @@ jobs:
           - modules/      : Kernel Modules
           EOF
           
-          echo ""
           ls -lh release/
 
       - name: Upload Kernel Artifacts
@@ -250,43 +214,21 @@ jobs:
           body: |
             # 🔥 Xiaomi HOUJI Kernel Build
             
-            ## 📱 Device Information
-            | Property | Value |
-            |----------|-------|
-            | **Device** | Xiaomi 14 |
-            | **Codename** | HOUJI |
-            | **Chipset** | Snapdragon 8 Gen 3 (SM8650) |
+            ## 📱 Device: Xiaomi 14 (HOUJI)
+            ## 🔧 Toolchain: Neutron Clang 19
+            ## 🖥️ Runner: Ubuntu 24.04
             
-            ## 🔧 Build Information
-            | Property | Value |
-            |----------|-------|
-            | **Source** | MiCode/Xiaomi_Kernel_OpenSource |
-            | **Branch** | shennong-u-oss |
-            | **Toolchain** | Neutron Clang 19 |
-            | **Build ID** | `${{ env.BOOTHASH }}` |
-            | **GitHub Run** | ${{ github.run_id }} |
+            ### Source:
+            - **Repo:** mvaisakh/xiaomi14
+            - **Branch:** monolithic
+            - **Defconfig:** houji_defconfig
             
-            ## 📋 Config Files Used
-            ```
-            arch/arm64/configs/vendor/houji_GKI.config
-            arch/arm64/configs/vendor/houji_consolidate.config
-            arch/arm64/configs/consolidate.fragment
-            arch/arm64/configs/vendor/pineapple_GKI.config
-            arch/arm64/configs/vendor/pineapple_consolidate.config
-            ```
+            ### Files:
+            - Image.gz-dtb
+            - dtbo.img
+            - modules/
             
-            ## 📦 Included Files
-            - ✅ `Image.gz-dtb` - Kernel + Device Tree
-            - ✅ `dtbo.img` - Device Tree Overlay
-            - ✅ `modules/` - Kernel Modules
-            
-            ## ⚠️ Flashing
-            ```bash
-            fastboot flash boot boot.img
-            fastboot flash dtbo dtbo.img
-            ```
-            
-            **Build Hash:** `${{ env.BOOTHASH }}`
+            **Build ID:** `${{ env.BOOTHASH }}`
           files: |
             kernel/release/Image.gz-dtb
             kernel/release/dtbo.img
