@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: mvaisakh/xiaomi14
-          ref: monolithic
+          ref: monolithic-test-2
           path: kernel
           fetch-depth: 1
 
@@ -79,7 +79,7 @@ jobs:
           echo "================================================"
           echo "Device: Xiaomi 14 (HOUJI)"
           echo "Source: mvaisakh/xiaomi14"
-          echo "Branch: monolithic"
+          echo "Branch: monolithic-test-2"
           echo "Defconfig: houji_defconfig"
           echo "Toolchain: Neutron Clang 19"
           echo "Runner: Ubuntu 24.04"
@@ -101,7 +101,7 @@ jobs:
           echo "================================================"
           
           # ============================================
-          # KERNEL DERLEME (dtbo.img KALDIRILDI!)
+          # KERNEL DERLEME
           # ============================================
           echo "⚡ KERNEL DERLEME BAŞLIYOR..."
           echo "================================================"
@@ -177,7 +177,7 @@ jobs:
           ╠═══════════════════════════════════════════════════════╣
           ║  Device:        Xiaomi 14 (HOUJI)                     ║
           ║  Source:        mvaisakh/xiaomi14                     ║
-          ║  Branch:        monolithic                            ║
+          ║  Branch:        monolithic-test-2                     ║
           ║  Defconfig:     houji_defconfig                       ║
           ║  Toolchain:     Neutron Clang 19                      ║
           ║  Runner:        Ubuntu 24.04                          ║
@@ -216,7 +216,7 @@ jobs:
             
             ### Source:
             - **Repo:** mvaisakh/xiaomi14
-            - **Branch:** monolithic
+            - **Branch:** monolithic-test-2
             - **Defconfig:** houji_defconfig
             
             ### Files:
