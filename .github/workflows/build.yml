@@ -56,18 +56,6 @@ jobs:
           echo "✅ Neutron Clang 19 Kuruldu!"
           clang --version | head -3
 
-      - name: Check Available Configs
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          
-          echo "📁 Mevcut defconfig'ler aranıyor..."
-          echo "================================================"
-          
-          find arch/arm64/configs -name "*houji*" 2>/dev/null | sort
-          find arch/arm64/configs -name "*defconfig" 2>/dev/null | sort
-          
-          echo "================================================"
-
       - name: Build HOUJI Kernel (houji_defconfig)
         run: |
           cd $GITHUB_WORKSPACE/kernel
@@ -103,7 +91,7 @@ jobs:
           mkdir -p ${OUT_DIR}
           
           # ============================================
-          # DEFCONFIG (MERGE YOK - SADECE HOUJI_DEFCONFIG)
+          # DEFCONFIG
           # ============================================
           echo "📁 houji_defconfig Yükleniyor..."
           
@@ -113,7 +101,7 @@ jobs:
           echo "================================================"
           
           # ============================================
-          # KERNEL DERLEME
+          # KERNEL DERLEME (dtbo.img KALDIRILDI!)
           # ============================================
           echo "⚡ KERNEL DERLEME BAŞLIYOR..."
           echo "================================================"
@@ -130,7 +118,7 @@ jobs:
             OBJCOPY=${OBJCOPY} \
             OBJDUMP=${OBJDUMP} \
             STRIP=${STRIP} \
-            Image.gz-dtb dtbo.img modules 2>&1 | tee ${OUT_DIR}/kernel.log
+            Image.gz-dtb modules 2>&1 | tee ${OUT_DIR}/kernel.log
           
           BUILD_STATUS=${PIPESTATUS[0]}
           
@@ -157,24 +145,30 @@ jobs:
           
           echo "📦 Kernel dosyaları hazırlanıyor..."
           
+          # Kernel image
           if [ -f "${OUT_DIR}/arch/arm64/boot/Image.gz-dtb" ]; then
             cp ${OUT_DIR}/arch/arm64/boot/Image.gz-dtb release/
-            echo "✓ Image.gz-dtb kopyalandı"
+            echo "✓ Image.gz-dtb kopyalandı ($(ls -lh ${OUT_DIR}/arch/arm64/boot/Image.gz-dtb | awk '{print $5}'))"
+          elif [ -f "${OUT_DIR}/arch/arm64/boot/Image.gz" ]; then
+            cp ${OUT_DIR}/arch/arm64/boot/Image.gz release/
+            echo "✓ Image.gz kopyalandı"
+          else
+            echo "⚠️ Kernel image bulunamadı!"
+            ls -lh ${OUT_DIR}/arch/arm64/boot/ || true
           fi
           
+          # dtbo.img (varsa kopyala, yoksa skip)
           if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
             cp ${OUT_DIR}/arch/arm64/boot/dtbo.img release/
             echo "✓ dtbo.img kopyalandı"
+          else
+            echo "⚠️ dtbo.img bulunamadı (bu kernel'de yok)"
           fi
           
-          if [ -f "${OUT_DIR}/arch/arm64/boot/Image.gz" ]; then
-            cp ${OUT_DIR}/arch/arm64/boot/Image.gz release/
-            echo "✓ Image.gz kopyalandı"
-          fi
-          
+          # Modules
           if [ -d "${OUT_DIR}/modules" ]; then
             cp -r ${OUT_DIR}/modules release/
-            echo "✓ Modules kopyalandı"
+            echo "✓ Modules kopyalandı ($(find ${OUT_DIR}/modules -name '*.ko' | wc -l) adet .ko)"
           fi
           
           cat > release/build-info.txt << EOF
@@ -193,10 +187,12 @@ jobs:
           
           Files:
           - Image.gz-dtb  : Kernel + Device Tree
-          - dtbo.img      : Device Tree Overlay
           - modules/      : Kernel Modules
+          
+          Note: dtbo.img bu kernel'de mevcut değil
           EOF
           
+          echo ""
           ls -lh release/
 
       - name: Upload Kernel Artifacts
@@ -224,14 +220,13 @@ jobs:
             - **Defconfig:** houji_defconfig
             
             ### Files:
-            - Image.gz-dtb
-            - dtbo.img
-            - modules/
+            - Image.gz-dtb ✅
+            - modules/ ✅
+            - dtbo.img ❌ (bu kernel'de yok)
             
             **Build ID:** `${{ env.BOOTHASH }}`
           files: |
             kernel/release/Image.gz-dtb
-            kernel/release/dtbo.img
             kernel/release/build-info.txt
           draft: false
           prerelease: true
