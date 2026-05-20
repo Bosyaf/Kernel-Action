@@ -262,12 +262,7 @@ jobs:
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
 
                     # ========== PERFORMANS İÇİN DEBUG SİSTEMLERİNİ KAPATMA ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_PINNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PER_VMA_LOCK_STATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MEMORY_INIT
-          
-        
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
           # ================================================================
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ungoliant"
