@@ -262,7 +262,8 @@ jobs:
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
 
                     # ========== PERFORMANS İÇİN DEBUG SİSTEMLERİNİ KAPATMA ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_DEBUG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_ADVANCED_DEBUG
+          
           
           # ================================================================
           
