@@ -262,10 +262,9 @@ jobs:
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
 
                     # ========== PERFORMANS İÇİN DEBUG SİSTEMLERİNİ KAPATMA ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROFILING
-          
-          
-      
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KUNIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KUNIT_DEBUGFS
+        
           # ================================================================
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ungoliant"
