@@ -294,27 +294,23 @@ jobs:
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3 Paketleme
+      - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
-          # GKI Cihazlar için blok ayarını otomatize et
-          sed -i 's/block=.*/block=auto;/' anykernel.sh
-          
-          # Çıktıları AnyKernel'e kopyala (Varsa kopyalar, yoksa hata vermez)
-          [ -f ../common/out/arch/arm64/boot/Image ] && cp ../common/out/arch/arm64/boot/Image . || echo "Image bulunamadı"
-          [ -f ../common/out/arch/arm64/boot/dtbo.img ] && cp ../common/out/arch/arm64/boot/dtbo.img . || echo "dtbo yok"
-          [ -f ../common/out/boot/vendor_boot.img ] && cp ../common/out/boot/vendor_boot.img . || echo "vendor_boot yok"
-          
-          # Modülleri AnyKernel standartlarına göre yerleştir
+          cp ../common/out/arch/arm64/boot/Image .
           mkdir -p modules/vendor/lib/modules
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          
-          # Sched-walt modülünü kernel'e zorla yükletmek için liste oluştur
-          if [ -f modules/vendor/lib/modules/sched-walt.ko ]; then
-             echo "sched-walt.ko" > modules/vendor/lib/modules/modules.load
-          fi
-
           zip -r "../CG-Galadriel.zip" ./*
+      - name: 9. Release Yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Galadriel (ZyC Clang 22)"
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
