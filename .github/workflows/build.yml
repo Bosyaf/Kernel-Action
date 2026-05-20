@@ -247,9 +247,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          # WALT ve CPUFreq HW Sürücülerini Modül (m) Olarak Ayarlama
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -305,24 +303,18 @@ jobs:
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3 Paketleme ve Modül Entegrasyonu
+      - name: 8. AnyKernel3
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
-          # AnyKernel3 içine modül yükleme komutunu ekleyelim
-          # Bu komut AnyKernel yüklenirken vendor ramdisk'e sched_walt.ko'yu ekler
-          sed -i '/# write_boot;/i patch_cmdline "sched_walt" "sched_walt"' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
-          # Tüm modülleri (.ko) AnyKernel3 içine kopyala
           mkdir -p modules/vendor/lib/modules
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          
           zip -r "../CG-Galadriel.zip" ./*
-
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
