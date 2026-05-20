@@ -157,6 +157,20 @@ jobs:
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
+
+          # --- YENİ ADIM: GKI MODÜL LİSTESİNİ YAMALAMA ---
+      - name: 5.9. WALT GKI Modül Listesine Ekle
+        run: |
+          # Python dosyasının yolunu bulalım (GKI modül listesi)
+          GKI_LIST_FILE=$(find . -name "gki_aarch64_modules" -o -name "gki_arm64_modules")
+          if [ -n "$GKI_LIST_FILE" ]; then
+             echo "📦 GKI Listesi Yamalanıyor: $GKI_LIST_FILE"
+             # _ARM64_GKI_MODULES_LIST içine sched_walt.ko'yu alfabetik olarak (k harfiyle) ekleyelim
+             sed -i '/arch\/arm64\/geniezone\/gzvm.ko/a \    "kernel/sched/walt/sched_walt.ko",' $GKI_LIST_FILE
+          else
+             echo "⚠️ GKI modül liste dosyası bulunamadı, AnyKernel3 ile devam edilecek."
+          fi
+          
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -291,18 +305,24 @@ jobs:
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3
+      - name: 8. AnyKernel3 Paketleme ve Modül Entegrasyonu
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          
+          # AnyKernel3 içine modül yükleme komutunu ekleyelim
+          # Bu komut AnyKernel yüklenirken vendor ramdisk'e sched_walt.ko'yu ekler
+          sed -i '/# write_boot;/i patch_cmdline "sched_walt" "sched_walt"' anykernel.sh
           
           cp ../common/out/arch/arm64/boot/Image .
+          # Tüm modülleri (.ko) AnyKernel3 içine kopyala
           mkdir -p modules/vendor/lib/modules
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          
           zip -r "../CG-Galadriel.zip" ./*
+
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
