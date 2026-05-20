@@ -290,7 +290,7 @@ jobs:
            -Wl,--strip-debug \
            -Wl,--icf=safe \
            -Wl,-O2" \
-           Image modules dtbo.img vendor_boot.img vendor_dlkm.img || \ { echo "❌ Derleme HATASI!"; exit 1; }
+           Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
@@ -304,9 +304,9 @@ jobs:
           sed -i 's/block=.*/block=auto;/' anykernel.sh
           
           # Çıktıları AnyKernel'e kopyala (Varsa kopyalar, yoksa hata vermez)
-          [ -f ../common/out/arch/arm64/boot/Image ] && cp ../common/out/arch/arm64/boot/Image .
-          [ -f ../common/out/arch/arm64/boot/dtbo.img ] && cp ../common/out/arch/arm64/boot/dtbo.img .
-          [ -f ../common/out/boot/vendor_boot.img ] && cp ../common/out/boot/vendor_boot.img .
+          [ -f ../common/out/arch/arm64/boot/Image ] && cp ../common/out/arch/arm64/boot/Image . || echo "Image bulunamadı"
+          [ -f ../common/out/arch/arm64/boot/dtbo.img ] && cp ../common/out/arch/arm64/boot/dtbo.img . || echo "dtbo yok"
+          [ -f ../common/out/boot/vendor_boot.img ] && cp ../common/out/boot/vendor_boot.img . || echo "vendor_boot yok"
           
           # Modülleri AnyKernel standartlarına göre yerleştir
           mkdir -p modules/vendor/lib/modules
