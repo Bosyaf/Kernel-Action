@@ -263,19 +263,7 @@ jobs:
 
                     # ========== PERFORMANS İÇİN DEBUG SİSTEMLERİNİ KAPATMA ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_ADVANCED_DEBUG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PROFILING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KUNIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KUNIT_DEBUGFS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UBSAN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KFENCE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRACE_MMIO_ACCESS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DYNAMIC_DEBUG_CORE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHEDSTATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_OWNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAGE_PINNER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PER_VMA_LOCK_STATS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_MEMORY_INIT
+          
           # ================================================================
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ungoliant"
