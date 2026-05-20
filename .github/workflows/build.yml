@@ -237,6 +237,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           # WALT ve CPUFreq HW Sürücülerini Modül (m) Olarak Ayarlama
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -289,28 +290,31 @@ jobs:
            -Wl,--strip-debug \
            -Wl,--icf=safe \
            -Wl,-O2" \
-           Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+           Image modules dtbo.img vendor_boot.img vendor_dlkm.img || \ { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3
+      - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
-          cp ../common/out/arch/arm64/boot/Image .
+          # GKI Cihazlar için blok ayarını otomatize et
+          sed -i 's/block=.*/block=auto;/' anykernel.sh
+          
+          # Çıktıları AnyKernel'e kopyala (Varsa kopyalar, yoksa hata vermez)
+          [ -f ../common/out/arch/arm64/boot/Image ] && cp ../common/out/arch/arm64/boot/Image .
+          [ -f ../common/out/arch/arm64/boot/dtbo.img ] && cp ../common/out/arch/arm64/boot/dtbo.img .
+          [ -f ../common/out/boot/vendor_boot.img ] && cp ../common/out/boot/vendor_boot.img .
+          
+          # Modülleri AnyKernel standartlarına göre yerleştir
           mkdir -p modules/vendor/lib/modules
           find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
-          zip -r "../CG-Galadriel.zip" ./*
-      - name: 9. Release Yükle
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (ZyC Clang 22)"
-          files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
+          # Sched-walt modülünü kernel'e zorla yükletmek için liste oluştur
+          if [ -f modules/vendor/lib/modules/sched-walt.ko ]; then
+             echo "sched-walt.ko" > modules/vendor/lib/modules/modules.load
+          fi
+
+          zip -r "../CG-Galadriel.zip" ./*
