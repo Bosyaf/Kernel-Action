@@ -192,9 +192,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
