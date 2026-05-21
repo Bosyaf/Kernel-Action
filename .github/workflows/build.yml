@@ -40,6 +40,58 @@ jobs:
         run: |
           git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 kernel
 
+      - name: Patch WLAN Compatibility
+        run: |
+          cd kernel
+          python3 - << 'PY'
+          from pathlib import Path
+
+          # 1) cfg80211 API değişikliği düzeltmesi
+          p = Path("techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h")
+          s = p.read_text()
+
+          s = s.replace(
+              "cfg80211_ch_switch_notify(dev, chandef);",
+              "cfg80211_ch_switch_notify(dev, chandef, 0, 0);"
+          )
+
+          s = s.replace(
+              "cfg80211_ch_switch_started_notify(dev, chandef, count);",
+              "cfg80211_ch_switch_started_notify(dev, chandef, 0, count, false, 0);"
+          )
+
+          p.write_text(s)
+
+          # 2) qcom iommu eksik sembol / fonksiyon uyum düzeltmesi
+          p = Path("techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h")
+          s = p.read_text()
+
+          s = s.replace(
+              "return QCOM_IOMMU_MAPPING_CONF_S1_BYPASS;",
+              "return 0;"
+          )
+          s = s.replace(
+              "return QCOM_IOMMU_MAPPING_CONF_ATOMIC;",
+              "return 1;"
+          )
+          s = s.replace(
+              "return QCOM_IOMMU_MAPPING_CONF_FAST;",
+              "return 2;"
+          )
+          s = s.replace(
+              "mapping_config = qcom_iommu_get_mappings_configuration(domain);",
+              "mapping_config = 2;"
+          )
+
+          p.write_text(s)
+          PY
+
+          echo "===== Patched cfg80211 calls ====="
+          grep -n "cfg80211_ch_switch" techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h || true
+
+          echo "===== Patched iommu mappings ====="
+          grep -n "mapping_config" techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h | head -20 || true
+
       - name: Build Kernel (Hatayı Yakalamak İçin)
         continue-on-error: true
         run: |
@@ -60,10 +112,10 @@ jobs:
           echo "======================================="
           echo "🔥 DERLEME ÖZETİ 🔥"
           echo "======================================="
-          grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target|unknown warning option|qcacld|wlan|cnss" build.log | tail -n 100 || true
+          grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target|unknown warning option|qcacld|wlan|cnss|iommu|cfg80211" build.log | tail -n 120 || true
           echo "======================================="
-          echo "SON 80 SATIR:"
-          tail -n 80 build.log || true
+          echo "SON 100 SATIR:"
+          tail -n 100 build.log || true
 
       - name: Upload Log Dosyası
         if: always()
