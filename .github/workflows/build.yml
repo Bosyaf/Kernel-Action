@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - WLAN First Build
+name: Houji GKI + vendor_dlkm WALT Inject (Neutron)
 
 permissions:
   contents: write
@@ -9,24 +9,32 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 420
+    env:
+      KBUILD_BUILD_USER: "caglar"
+      KBUILD_BUILD_HOST: "guvenc"
 
     steps:
-      - name: Maximize Build Space
+      - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
           swap-size-gb: 8
 
+      - name: Checkout Workflow Repo
+        uses: actions/checkout@v4
+
       - name: Install Dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
-            bc bison build-essential flex git libssl-dev \
-            libelf-dev python3 wget zip cpio curl dwarves which pahole \
-            rsync unzip xz-utils
-          pahole --version
+            bc bison build-essential cpio curl dwarves e2fsprogs erofs-utils file flex \
+            gawk git jq kmod libelf-dev liblz4-tool libncurses-dev libssl-dev pahole \
+            pkg-config python3 python3-pip rsync unzip wget xz-utils zip zstd \
+            android-sdk-libsparse-utils
+          python3 -m pip install --upgrade pip
+          python3 -m pip install gdown
 
       - name: Setup Neutron Clang
         run: |
@@ -37,190 +45,222 @@ jobs:
           ./antman -S
           echo "$HOME/toolchains/neutron-clang/bin" >> $GITHUB_PATH
 
-      - name: Clone Kernel Source
+      - name: Clone Sources
         run: |
-          git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 kernel
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git common --depth=1
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-      - name: Patch WLAN Compatibility
+      - name: Apply Local Patches If Present
         run: |
-          cd kernel
-          python3 - << 'PY'
-          from pathlib import Path
-          import re
+          cd common
+          if [ -d "$GITHUB_WORKSPACE/patches" ]; then
+            echo "patches/ bulundu, uygulanıyor..."
+            find "$GITHUB_WORKSPACE/patches" -type f -name "*.patch" | sort | while read -r p; do
+              echo "Applying: $p"
+              patch -p1 --forward < "$p" || true
+            done
+          else
+            echo "patches/ yok, patch adımı atlandı."
+          fi
 
-          # -------------------------------------------------
-          # 1) cfg80211 API uyum patchi
-          # -------------------------------------------------
-          p = Path("techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h")
-          if p.exists():
-              s = p.read_text()
-
-              s = s.replace(
-                  "cfg80211_ch_switch_notify(dev, chandef);",
-                  "cfg80211_ch_switch_notify(dev, chandef, 0, 0);"
-              )
-
-              s = s.replace(
-                  "cfg80211_ch_switch_started_notify(dev, chandef, count);",
-                  "cfg80211_ch_switch_started_notify(dev, chandef, 0, count, false, 0);"
-              )
-
-              p.write_text(s)
-
-          # -------------------------------------------------
-          # 2) IOMMU eksik sembol / fonksiyon geçici uyum patchi
-          # -------------------------------------------------
-          p = Path("techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h")
-          if p.exists():
-              s = p.read_text()
-
-              s = s.replace("return QCOM_IOMMU_MAPPING_CONF_S1_BYPASS;", "return 0;")
-              s = s.replace("return QCOM_IOMMU_MAPPING_CONF_ATOMIC;", "return 1;")
-              s = s.replace("return QCOM_IOMMU_MAPPING_CONF_FAST;", "return 2;")
-              s = s.replace(
-                  "mapping_config = qcom_iommu_get_mappings_configuration(domain);",
-                  "mapping_config = 2;"
-              )
-
-              p.write_text(s)
-
-          # -------------------------------------------------
-          # 3) set_bitrate_mask callback imza uyumu
-          # Yeni kernel:
-          # (wiphy, dev, link_id, peer, mask)
-          # -------------------------------------------------
-          files = [
-              Path("techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c"),
-              Path("techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h"),
-              Path("techpack/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_cfg80211.h"),
-          ]
-
-          sig_pat = re.compile(
-              r'(wlan_hdd_cfg80211_set_bitrate_mask\s*\(\s*'
-              r'struct\s+wiphy\s*\*wiphy\s*,\s*'
-              r'struct\s+net_device\s*\*dev\s*,\s*)'
-              r'(const\s+u8\s*\*peer\s*,\s*'
-              r'const\s+struct\s+cfg80211_bitrate_mask\s*\*mask\s*\))',
-              re.S
-          )
-
-          for p in files:
-              if not p.exists():
-                  continue
-
-              s = p.read_text()
-
-              s2 = sig_pat.sub(
-                  r'\1unsigned int link_id,\n\t\t\t\t const u8 *peer,\n\t\t\t\t const struct cfg80211_bitrate_mask *mask)',
-                  s
-              )
-
-              if p.suffix == ".c" and "unsigned int link_id" in s2 and "(void)link_id;" not in s2:
-                  s2 = re.sub(
-                      r'(wlan_hdd_cfg80211_set_bitrate_mask\s*\([^)]*link_id[^)]*\)\s*\{)',
-                      r'\1\n\t(void)link_id;',
-                      s2,
-                      count=1,
-                      flags=re.S
-                  )
-
-              p.write_text(s2)
-          PY
-
-          echo "===== cfg80211 kontrol ====="
-          grep -n "cfg80211_ch_switch" techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h || true
-
-          echo "===== bitrate mask kontrol ====="
-          grep -n "wlan_hdd_cfg80211_set_bitrate_mask" techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c || true
-
-          echo "===== iommu kontrol ====="
-          grep -n "mapping_config" techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h | head -20 || true
-
-      - name: Prepare Kernel Tree
+      - name: Configure Kernel
         run: |
-          set -o pipefail
-          cd kernel
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig 2>&1 | tee ../defconfig.log
-
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=incompatible-function-pointer-types" \
-            HOSTCFLAGS="-Wno-error=unknown-warning-option" \
-            prepare modules_prepare scripts 2>&1 | tee ../prepare.log
-
-      - name: Fast WLAN Test - Single Object
-        run: |
-          set -o pipefail
-          cd kernel
+          cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=incompatible-function-pointer-types" \
-            HOSTCFLAGS="-Wno-error=unknown-warning-option" \
-            V=1 \
-            techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.o \
-            2>&1 | tee ../wlan-object.log
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            gki_defconfig
 
-      - name: Fast WLAN Test - Full qcacld Module
-        run: |
-          set -o pipefail
-          cd kernel
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          # WALT modül kalsın
+          ./scripts/config --file out/.config --module CONFIG_SCHED_WALT || true
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=incompatible-function-pointer-types" \
-            HOSTCFLAGS="-Wno-error=unknown-warning-option" \
-            V=1 \
-            M=techpack/wlan/qcacld-3.0 \
-            modules \
-            2>&1 | tee ../wlan-module.log
-
-      - name: Full Kernel Build
-        run: |
-          set -o pipefail
-          cd kernel
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          # Vermagic / modül uyumu için branding kapalı
+          ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION ""
+          ./scripts/config --file out/.config --disable CONFIG_LOCALVERSION_AUTO
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=incompatible-function-pointer-types" \
-            HOSTCFLAGS="-Wno-error=unknown-warning-option" \
-            -j$(nproc --all) \
-            2>&1 | tee ../build.log
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            olddefconfig
 
-      - name: Print Error Summary
-        if: always()
+          echo "===== kernelrelease ====="
+          make -s O=out kernelrelease || true
+
+      - name: Build Kernel + Modules
         run: |
-          for f in defconfig.log prepare.log wlan-object.log wlan-module.log build.log; do
-            if [ -f "$f" ]; then
-              echo "======================================="
-              echo "LOG: $f"
-              echo "======================================="
-              grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target|unknown warning option|incompatible function pointer|qcacld|wlan|cnss|iommu|cfg80211" "$f" | tail -n 120 || true
-              echo "--------------- SON 80 SATIR ---------------"
-              tail -n 80 "$f" || true
-            fi
-          done
+          set -o pipefail
+          cd common
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
 
-      - name: Upload Logs
-        if: always()
+          make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            KCFLAGS="-Wno-error=unknown-warning-option" \
+            Image modules 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+          WALT_KO="$(find out -type f \( -name 'sched-walt.ko' -o -name 'sched_walt.ko' \) | head -n1)"
+          if [ -z "$WALT_KO" ]; then
+            echo "❌ sched-walt.ko / sched_walt.ko bulunamadı"
+            find out -type f | grep -i walt || true
+            exit 1
+          fi
+
+          cp "$WALT_KO" "$GITHUB_WORKSPACE/sched-walt.ko"
+          cp out/arch/arm64/boot/Image "$GITHUB_WORKSPACE/Image"
+
+          echo "===== Built WALT module ====="
+          ls -lh "$GITHUB_WORKSPACE/sched-walt.ko"
+          modinfo "$GITHUB_WORKSPACE/sched-walt.ko" || true
+
+      - name: Download Stock vendor_dlkm.img
+        run: |
+          ~/.local/bin/gdown --fuzzy "https://drive.google.com/file/d/1efQ2T3D3B-sLn3CVCe89AjL9ROq3ZvjX/view?usp=drivesdk" -O vendor_dlkm_stock.img
+          echo "===== file output ====="
+          file vendor_dlkm_stock.img
+
+          if file vendor_dlkm_stock.img | grep -qi "HTML"; then
+            echo "❌ Drive dosyası yerine HTML indi. Link public değil."
+            exit 1
+          fi
+
+      - name: Extract Stock vendor_dlkm
+        run: |
+          set -e
+          mkdir -p vendor_dlkm_root vendor_dlkm_mount
+
+          IMG="vendor_dlkm_stock.img"
+          WORK_IMG="$IMG"
+
+          if file "$IMG" | grep -qi "Android sparse image"; then
+            echo "Sparse image bulundu, raw'a çevriliyor..."
+            simg2img "$IMG" vendor_dlkm_stock.raw.img
+            WORK_IMG="vendor_dlkm_stock.raw.img"
+          fi
+
+          if file "$WORK_IMG" | grep -qi "EROFS"; then
+            echo "FS_KIND=erofs" >> $GITHUB_ENV
+            extract.erofs -i "$WORK_IMG" -o vendor_dlkm_root
+          elif file "$WORK_IMG" | grep -qi "ext4"; then
+            echo "FS_KIND=ext4" >> $GITHUB_ENV
+            sudo mount -o loop,ro "$WORK_IMG" vendor_dlkm_mount
+            rsync -aH vendor_dlkm_mount/ vendor_dlkm_root/
+            sudo umount vendor_dlkm_mount
+          else
+            echo "❌ Desteklenmeyen vendor_dlkm dosya sistemi:"
+            file "$WORK_IMG"
+            exit 1
+          fi
+
+          echo "===== extracted candidates ====="
+          find vendor_dlkm_root -type f | grep -Ei 'walt|sched' | head -100 || true
+
+      - name: Replace Stock WALT With Built WALT
+        run: |
+          set -e
+
+          STOCK_WALT="$(find vendor_dlkm_root -type f \( -iname 'sched_walt.ko' -o -iname 'sched-walt.ko' \) | head -n1)"
+          if [ -z "$STOCK_WALT" ]; then
+            STOCK_WALT="$(find vendor_dlkm_root -type f -iname '*walt*.ko' | head -n1)"
+          fi
+
+          if [ -z "$STOCK_WALT" ]; then
+            echo "❌ vendor_dlkm içinde WALT modülü bulunamadı"
+            find vendor_dlkm_root -type f | grep -Ei 'walt|sched' || true
+            exit 1
+          fi
+
+          echo "Stock WALT path: $STOCK_WALT"
+          echo "Stock WALT size:"
+          ls -lh "$STOCK_WALT"
+
+          cp -f "$STOCK_WALT" "${STOCK_WALT}.bak"
+          install -m 0644 "$GITHUB_WORKSPACE/sched-walt.ko" "$STOCK_WALT"
+
+          echo "New WALT size:"
+          ls -lh "$STOCK_WALT"
+
+      - name: Rebuild vendor_dlkm.img
+        run: |
+          set -e
+
+          if [ "$FS_KIND" = "erofs" ]; then
+            mkfs.erofs -zlz4hc --mount-point=/vendor_dlkm vendor_dlkm_patched.img vendor_dlkm_root
+          elif [ "$FS_KIND" = "ext4" ]; then
+            SIZE_BYTES="$(du -sb vendor_dlkm_root | awk '{print $1}')"
+            SIZE_BYTES=$((SIZE_BYTES + 64*1024*1024))
+            BLOCKS=$(( (SIZE_BYTES + 4095) / 4096 ))
+            mke2fs -q -t ext4 -b 4096 -d vendor_dlkm_root -L vendor_dlkm vendor_dlkm_patched.img "$BLOCKS"
+          else
+            echo "❌ FS_KIND bilinmiyor"
+            exit 1
+          fi
+
+          echo "===== patched image ====="
+          ls -lh vendor_dlkm_patched.img
+          file vendor_dlkm_patched.img
+
+      - name: Build AnyKernel3 Image Zip
+        run: |
+          cd AnyKernel3
+
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/g' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+
+          cp "$GITHUB_WORKSPACE/Image" .
+
+          zip -r9 "$GITHUB_WORKSPACE/Houji-Image-Neutron.zip" ./* -x .git README.md '*placeholder'
+
+      - name: Prepare Release Files
+        run: |
+          mkdir -p release
+
+          cp Image release/
+          cp sched-walt.ko release/
+          cp vendor_dlkm_patched.img release/
+          cp Houji-Image-Neutron.zip release/
+          cp build.log release/ || true
+
+          cat > release/FLASH_README.txt << 'EOF'
+          FLASH SIRASI
+
+          1) Kernel Image zip:
+             Recovery/Kernels üzerinden:
+             Houji-Image-Neutron.zip
+
+          2) vendor_dlkm:
+             Fastboot modda:
+             fastboot flash vendor_dlkm vendor_dlkm_patched.img
+
+          3) Reboot:
+             fastboot reboot
+
+          NOT:
+          - Çalışan ROM sürümün ile aynı stock vendor_dlkm kullanılmalı.
+          - lsmod/proc_modules tarafında sched_walt görünmesi normaldir.
+          EOF
+
+          echo "TAG_NAME=houji-neutron-walt-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
-          if-no-files-found: ignore
-          path: |
-            defconfig.log
-            prepare.log
-            wlan-object.log
-            wlan-module.log
-            build.log
+          name: houji-neutron-walt-output
+          path: release/*
 
-      - name: Upload Kernel Output
-        if: success()
-        uses: actions/upload-artifact@v4
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: kernel-output
-          if-no-files-found: ignore
-          path: |
-            kernel/out/arch/arm64/boot/Image
-            kernel/out/**/*.ko
+          tag_name: ${{ env.TAG_NAME }}
+          name: "Houji Neutron WALT vendor_dlkm Inject"
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print Last Build Log Lines On Failure
+        if: failure()
+        run: |
+          echo "===== SON 150 SATIR ====="
+          tail -n 150 build.log || true
