@@ -1,4 +1,4 @@
-name: Houji GKI + vendor_dlkm WALT Inject (Neutron)
+name: Houji kplatform WALT Inject (Neutron)
 
 permissions:
   contents: write
@@ -30,11 +30,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             bc bison build-essential cpio curl dwarves e2fsprogs erofs-utils file flex \
-            gawk git jq kmod libelf-dev liblz4-tool libncurses-dev libssl-dev pahole \
-            pkg-config python3 python3-pip rsync unzip wget xz-utils zip zstd \
-            android-sdk-libsparse-utils
+            gawk gcc-aarch64-linux-gnu git jq kmod libelf-dev liblz4-tool libncurses-dev \
+            libssl-dev pahole pkg-config python3 python3-pip rsync unzip wget xz-utils zip \
+            zstd android-sdk-libsparse-utils
           python3 -m pip install --upgrade pip
-          python3 -m pip install gdown
+          python3 -m pip install --user gdown
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Setup Neutron Clang
         run: |
@@ -47,36 +48,38 @@ jobs:
 
       - name: Clone Sources
         run: |
-          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git common --depth=1
+          git clone -b kplatform https://github.com/mvaisakh/xiaomi14.git kernel --depth=1
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
 
-      - name: Apply Local Patches If Present
+      - name: Patch WALT Build Flags
         run: |
-          cd common
-          if [ -d "$GITHUB_WORKSPACE/patches" ]; then
-            echo "patches/ bulundu, uygulanıyor..."
-            find "$GITHUB_WORKSPACE/patches" -type f -name "*.patch" | sort | while read -r p; do
-              echo "Applying: $p"
-              patch -p1 --forward < "$p" || true
-            done
-          else
-            echo "patches/ yok, patch adımı atlandı."
+          cd kernel
+          if ! grep -q 'Wno-error=format' kernel/sched/walt/Makefile; then
+            echo 'ccflags-y += -Wno-error=format' >> kernel/sched/walt/Makefile
           fi
+          echo "===== kernel/sched/walt/Makefile ====="
+          tail -n 20 kernel/sched/walt/Makefile
 
-      - name: Configure Kernel
+      - name: Merge Houji Config Stack
         run: |
-          cd common
+          cd kernel
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            gki_defconfig
+          mkdir -p out
 
-          # WALT modül kalsın
+          CONFIGS=(
+            arch/arm64/configs/gki_defconfig
+            arch/arm64/configs/consolidate.fragment
+            arch/arm64/configs/vendor/pineapple_GKI.config
+            arch/arm64/configs/vendor/pineapple_consolidate.config
+            arch/arm64/configs/vendor/houji_GKI.config
+            arch/arm64/configs/vendor/houji_consolidate.config
+          )
+
+          ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          bash scripts/kconfig/merge_config.sh -m -O out "${CONFIGS[@]}"
+
           ./scripts/config --file out/.config --module CONFIG_SCHED_WALT || true
-
-          # Vermagic / modül uyumu için branding kapalı
           ./scripts/config --file out/.config --set-str CONFIG_LOCALVERSION ""
           ./scripts/config --file out/.config --disable CONFIG_LOCALVERSION_AUTO
 
@@ -85,43 +88,62 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
+          echo "===== WALT config ====="
+          grep -n "CONFIG_SCHED_WALT" out/.config || true
+
           echo "===== kernelrelease ====="
           make -s O=out kernelrelease || true
 
-      - name: Build Kernel + Modules
+      - name: Build Image + Only WALT Module
         run: |
           set -o pipefail
-          cd common
+          cd kernel
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
 
-          make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            KCFLAGS="-Wno-error=unknown-warning-option" \
-            Image modules 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=format" \
+            HOSTCFLAGS="-Wno-error=unknown-warning-option" \
+            prepare modules_prepare Image 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=format" \
+            HOSTCFLAGS="-Wno-error=unknown-warning-option" \
+            M=kernel/sched/walt modules 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+
+          IMAGE_PATH="out/arch/arm64/boot/Image"
           WALT_KO="$(find out -type f \( -name 'sched-walt.ko' -o -name 'sched_walt.ko' \) | head -n1)"
+
+          if [ ! -f "$IMAGE_PATH" ]; then
+            echo "❌ Image bulunamadı"
+            exit 1
+          fi
+
           if [ -z "$WALT_KO" ]; then
-            echo "❌ sched-walt.ko / sched_walt.ko bulunamadı"
+            echo "❌ WALT modülü bulunamadı"
             find out -type f | grep -i walt || true
             exit 1
           fi
 
+          cp "$IMAGE_PATH" "$GITHUB_WORKSPACE/Image"
           cp "$WALT_KO" "$GITHUB_WORKSPACE/sched-walt.ko"
-          cp out/arch/arm64/boot/Image "$GITHUB_WORKSPACE/Image"
 
-          echo "===== Built WALT module ====="
+          echo "===== Built outputs ====="
+          ls -lh "$GITHUB_WORKSPACE/Image"
           ls -lh "$GITHUB_WORKSPACE/sched-walt.ko"
           modinfo "$GITHUB_WORKSPACE/sched-walt.ko" || true
 
       - name: Download Stock vendor_dlkm.img
         run: |
-          ~/.local/bin/gdown --fuzzy "https://drive.google.com/file/d/1efQ2T3D3B-sLn3CVCe89AjL9ROq3ZvjX/view?usp=drivesdk" -O vendor_dlkm_stock.img
+          gdown --fuzzy "https://drive.google.com/file/d/1efQ2T3D3B-sLn3CVCe89AjL9ROq3ZvjX/view?usp=drivesdk" -O vendor_dlkm_stock.img
           echo "===== file output ====="
           file vendor_dlkm_stock.img
 
           if file vendor_dlkm_stock.img | grep -qi "HTML"; then
-            echo "❌ Drive dosyası yerine HTML indi. Link public değil."
+            echo "❌ HTML indi. Drive linki public değil."
             exit 1
           fi
 
@@ -141,19 +163,23 @@ jobs:
 
           if file "$WORK_IMG" | grep -qi "EROFS"; then
             echo "FS_KIND=erofs" >> $GITHUB_ENV
-            extract.erofs -i "$WORK_IMG" -o vendor_dlkm_root
+            if command -v extract.erofs >/dev/null 2>&1; then
+              extract.erofs -i "$WORK_IMG" -o vendor_dlkm_root
+            else
+              fsck.erofs --extract=vendor_dlkm_root "$WORK_IMG"
+            fi
           elif file "$WORK_IMG" | grep -qi "ext4"; then
             echo "FS_KIND=ext4" >> $GITHUB_ENV
             sudo mount -o loop,ro "$WORK_IMG" vendor_dlkm_mount
             rsync -aH vendor_dlkm_mount/ vendor_dlkm_root/
             sudo umount vendor_dlkm_mount
           else
-            echo "❌ Desteklenmeyen vendor_dlkm dosya sistemi:"
+            echo "❌ Desteklenmeyen dosya sistemi:"
             file "$WORK_IMG"
             exit 1
           fi
 
-          echo "===== extracted candidates ====="
+          echo "===== WALT candidates ====="
           find vendor_dlkm_root -type f | grep -Ei 'walt|sched' | head -100 || true
 
       - name: Replace Stock WALT With Built WALT
@@ -166,22 +192,21 @@ jobs:
           fi
 
           if [ -z "$STOCK_WALT" ]; then
-            echo "❌ vendor_dlkm içinde WALT modülü bulunamadı"
+            echo "❌ vendor_dlkm içinde WALT bulunamadı"
             find vendor_dlkm_root -type f | grep -Ei 'walt|sched' || true
             exit 1
           fi
 
           echo "Stock WALT path: $STOCK_WALT"
-          echo "Stock WALT size:"
           ls -lh "$STOCK_WALT"
 
           cp -f "$STOCK_WALT" "${STOCK_WALT}.bak"
           install -m 0644 "$GITHUB_WORKSPACE/sched-walt.ko" "$STOCK_WALT"
 
-          echo "New WALT size:"
+          echo "===== replaced ====="
           ls -lh "$STOCK_WALT"
 
-      - name: Rebuild vendor_dlkm.img
+      - name: Rebuild vendor_dlkm Patched Image
         run: |
           set -e
 
@@ -201,17 +226,18 @@ jobs:
           ls -lh vendor_dlkm_patched.img
           file vendor_dlkm_patched.img
 
-      - name: Build AnyKernel3 Image Zip
+      - name: Build AnyKernel3 Zip For Image
         run: |
           cd AnyKernel3
 
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/g' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=Houji kplatform WALT Test/' anykernel.sh
 
           cp "$GITHUB_WORKSPACE/Image" .
 
-          zip -r9 "$GITHUB_WORKSPACE/Houji-Image-Neutron.zip" ./* -x .git README.md '*placeholder'
+          zip -r9 "$GITHUB_WORKSPACE/Houji-kplatform-Image.zip" ./* -x .git README.md '*placeholder'
 
       - name: Prepare Release Files
         run: |
@@ -220,47 +246,46 @@ jobs:
           cp Image release/
           cp sched-walt.ko release/
           cp vendor_dlkm_patched.img release/
-          cp Houji-Image-Neutron.zip release/
+          cp Houji-kplatform-Image.zip release/
           cp build.log release/ || true
 
           cat > release/FLASH_README.txt << 'EOF'
           FLASH SIRASI
 
-          1) Kernel Image zip:
-             Recovery/Kernels üzerinden:
-             Houji-Image-Neutron.zip
+          1) Recovery/Kernel manager ile:
+             Houji-kplatform-Image.zip
 
-          2) vendor_dlkm:
-             Fastboot modda:
+          2) Fastboot modda:
              fastboot flash vendor_dlkm vendor_dlkm_patched.img
 
           3) Reboot:
              fastboot reboot
 
-          NOT:
-          - Çalışan ROM sürümün ile aynı stock vendor_dlkm kullanılmalı.
-          - lsmod/proc_modules tarafında sched_walt görünmesi normaldir.
+          NOTLAR
+          - Bu paket full vendor_dlkm source build değildir.
+          - Stock vendor_dlkm içine yeni sched-walt.ko enjekte eder.
+          - Aynı testte Image + vendor_dlkm birlikte flashlanmalıdır.
           EOF
 
-          echo "TAG_NAME=houji-neutron-walt-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
+          echo "TAG_NAME=houji-kplatform-walt-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_ENV
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: houji-neutron-walt-output
+          name: houji-kplatform-walt-output
           path: release/*
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
-          name: "Houji Neutron WALT vendor_dlkm Inject"
+          name: "Houji kplatform WALT Inject"
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Print Last Build Log Lines On Failure
+      - name: Print Last Log Lines On Failure
         if: failure()
         run: |
-          echo "===== SON 150 SATIR ====="
-          tail -n 150 build.log || true
+          echo "===== SON 200 SATIR ====="
+          tail -n 200 build.log || true
