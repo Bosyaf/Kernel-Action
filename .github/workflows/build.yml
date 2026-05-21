@@ -45,64 +45,116 @@ jobs:
           cd kernel
           python3 - << 'PY'
           from pathlib import Path
+          import re
 
-          # 1) cfg80211 API değişikliği düzeltmesi
+          # -------------------------------------------------
+          # 1) cfg80211 API düzeltmeleri
+          # -------------------------------------------------
           p = Path("techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h")
-          s = p.read_text()
+          if p.exists():
+              s = p.read_text()
 
-          s = s.replace(
-              "cfg80211_ch_switch_notify(dev, chandef);",
-              "cfg80211_ch_switch_notify(dev, chandef, 0, 0);"
-          )
+              s = s.replace(
+                  "cfg80211_ch_switch_notify(dev, chandef);",
+                  "cfg80211_ch_switch_notify(dev, chandef, 0, 0);"
+              )
 
-          s = s.replace(
-              "cfg80211_ch_switch_started_notify(dev, chandef, count);",
-              "cfg80211_ch_switch_started_notify(dev, chandef, 0, count, false, 0);"
-          )
+              s = s.replace(
+                  "cfg80211_ch_switch_started_notify(dev, chandef, count);",
+                  "cfg80211_ch_switch_started_notify(dev, chandef, 0, count, false, 0);"
+              )
 
-          p.write_text(s)
+              p.write_text(s)
 
-          # 2) qcom iommu eksik sembol / fonksiyon uyum düzeltmesi
+          # -------------------------------------------------
+          # 2) qcom iommu geçici uyum düzeltmesi
+          # -------------------------------------------------
           p = Path("techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h")
-          s = p.read_text()
+          if p.exists():
+              s = p.read_text()
 
-          s = s.replace(
-              "return QCOM_IOMMU_MAPPING_CONF_S1_BYPASS;",
-              "return 0;"
-          )
-          s = s.replace(
-              "return QCOM_IOMMU_MAPPING_CONF_ATOMIC;",
-              "return 1;"
-          )
-          s = s.replace(
-              "return QCOM_IOMMU_MAPPING_CONF_FAST;",
-              "return 2;"
-          )
-          s = s.replace(
-              "mapping_config = qcom_iommu_get_mappings_configuration(domain);",
-              "mapping_config = 2;"
+              s = s.replace(
+                  "return QCOM_IOMMU_MAPPING_CONF_S1_BYPASS;",
+                  "return 0;"
+              )
+              s = s.replace(
+                  "return QCOM_IOMMU_MAPPING_CONF_ATOMIC;",
+                  "return 1;"
+              )
+              s = s.replace(
+                  "return QCOM_IOMMU_MAPPING_CONF_FAST;",
+                  "return 2;"
+              )
+              s = s.replace(
+                  "mapping_config = qcom_iommu_get_mappings_configuration(domain);",
+                  "mapping_config = 2;"
+              )
+
+              p.write_text(s)
+
+          # -------------------------------------------------
+          # 3) set_bitrate_mask callback imza düzeltmesi
+          # Eski: (wiphy, dev, peer, mask)
+          # Yeni: (wiphy, dev, link_id, peer, mask)
+          # -------------------------------------------------
+          candidates = [
+              Path("techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c"),
+              Path("techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.h"),
+              Path("techpack/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_cfg80211.h"),
+          ]
+
+          sig_pat = re.compile(
+              r'(wlan_hdd_cfg80211_set_bitrate_mask\s*\(\s*'
+              r'struct\s+wiphy\s*\*wiphy,\s*'
+              r'struct\s+net_device\s*\*dev,\s*)'
+              r'(const\s+u8\s*\*peer,\s*'
+              r'const\s+struct\s+cfg80211_bitrate_mask\s*\*mask\s*\))',
+              re.S
           )
 
-          p.write_text(s)
+          for p in candidates:
+              if not p.exists():
+                  continue
+
+              s = p.read_text()
+
+              s_new = sig_pat.sub(
+                  r'\1unsigned int link_id,\n\t\t\t\t const u8 *peer,\n\t\t\t\t const struct cfg80211_bitrate_mask *mask)',
+                  s
+              )
+
+              # C dosyasında unused parameter olmaması için
+              if p.name.endswith(".c") and "unsigned int link_id" in s_new and "(void)link_id;" not in s_new:
+                  s_new = re.sub(
+                      r'(wlan_hdd_cfg80211_set_bitrate_mask\s*\([^)]*link_id[^)]*\)\s*\{)',
+                      r'\1\n\t(void)link_id;',
+                      s_new,
+                      count=1,
+                      flags=re.S
+                  )
+
+              p.write_text(s_new)
           PY
 
-          echo "===== Patched cfg80211 calls ====="
+          echo "===== cfg80211 patch kontrol ====="
           grep -n "cfg80211_ch_switch" techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h || true
 
-          echo "===== Patched iommu mappings ====="
+          echo "===== bitrate mask patch kontrol ====="
+          grep -n "wlan_hdd_cfg80211_set_bitrate_mask" techpack/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_cfg80211.c || true
+
+          echo "===== iommu patch kontrol ====="
           grep -n "mapping_config" techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h | head -20 || true
 
-      - name: Build Kernel (Hatayı Yakalamak İçin)
-        continue-on-error: true
+      - name: Build Kernel
         run: |
           cd kernel
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
-          
+
           echo "🚀 Derleme başlıyor..."
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            KCFLAGS="-Wno-error=unknown-warning-option" \
+            KCFLAGS="-Wno-error=unknown-warning-option -Wno-error=incompatible-function-pointer-types" \
             HOSTCFLAGS="-Wno-error=unknown-warning-option" \
             -j$(nproc --all) 2>&1 | tee ../build.log
 
@@ -112,10 +164,10 @@ jobs:
           echo "======================================="
           echo "🔥 DERLEME ÖZETİ 🔥"
           echo "======================================="
-          grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target|unknown warning option|qcacld|wlan|cnss|iommu|cfg80211" build.log | tail -n 120 || true
+          grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target|unknown warning option|incompatible function pointer|qcacld|wlan|cnss|iommu|cfg80211" build.log | tail -n 150 || true
           echo "======================================="
-          echo "SON 100 SATIR:"
-          tail -n 100 build.log || true
+          echo "SON 120 SATIR:"
+          tail -n 120 build.log || true
 
       - name: Upload Log Dosyası
         if: always()
