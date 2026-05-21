@@ -1,4 +1,4 @@
-name: Xiaomi 14 Houji - Normal Build Log
+name: Xiaomi 14 Houji - Hata Yakalama
 
 permissions:
   contents: write
@@ -24,9 +24,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y \
             bc bison build-essential flex git libssl-dev \
-            libelf-dev python3 wget zip cpio curl dwarves \
-            which pahole rsync unzip xz-utils lz4 zstd \
-            gcc-aarch64-linux-gnu
+            libelf-dev python3 wget zip cpio curl dwarves which pahole
           pahole --version
 
       - name: Setup Neutron Clang
@@ -40,56 +38,31 @@ jobs:
 
       - name: Clone Kernel Source
         run: |
-          git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 msm-kernel
+          git clone -b monolithic-test-2 https://github.com/mvaisakh/xiaomi14.git --depth=1 kernel
 
-      - name: Normal Build
+      - name: Build Kernel (Hatayı Yakalamak İçin)
+        continue-on-error: true
         run: |
-          chmod +x msm-kernel/build/build.sh
+          cd kernel
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
+          
+          echo "🚀 Derleme başlıyor, wlan hatası bekleniyor..."
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 -j$(nproc --all) 2>&1 | tee ../build.log
 
-          export ROOT_DIR=$GITHUB_WORKSPACE
-          export KERNEL_DIR=msm-kernel
-          export BUILD_CONFIG=msm-kernel/build.config.msm.pineapple
-          export VARIANT=consolidate
-          export OUT_DIR=$GITHUB_WORKSPACE/out
-          export DIST_DIR=$GITHUB_WORKSPACE/dist
-          export LLVM=1
-          export LLVM_IAS=1
-          export TARGET_PRODUCT=houji
-
-          bash msm-kernel/build/build.sh 2>&1 | tee $GITHUB_WORKSPACE/build.log
-
-      - name: Show Outputs
-        if: always()
+      - name: Hatayı Ekrana Bas
         run: |
-          echo "=== IMG DOSYALARI ==="
-          find $GITHUB_WORKSPACE -type f \( -name "*.img" -o -name "Image" \) | sort || true
+          echo "======================================="
+          echo "🔥 WLAN / DERLEME HATASI BURADA 🔥"
+          echo "======================================="
+          grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target" build.log | tail -n 50 || true
+          echo "======================================="
+          echo "SON 50 SATIR:"
+          tail -n 50 build.log || true
 
-          echo "=== KO DOSYALARI ==="
-          find $GITHUB_WORKSPACE -type f -name "*.ko" | head -200 || true
-
-      - name: Print Error Summary
-        if: failure()
-        run: |
-          echo "=== SON 120 SATIR ==="
-          tail -n 120 $GITHUB_WORKSPACE/build.log || true
-
-          echo "=== HATA SATIRLARI ==="
-          grep -n -i -E "error:|fatal error:|undefined reference|No rule to make target|FAILED|wlan|qcacld|cnss" \
-            $GITHUB_WORKSPACE/build.log | tail -n 100 || true
-
-      - name: Upload Build Log
-        if: always()
+      - name: Upload Log Dosyası
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: build.log
-
-      - name: Upload Dist
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: |
-            dist/**
-            out/dist/**
