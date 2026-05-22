@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Özel Clang Kurulumu
+      - name: 1. Paketler ve Resmi AOSP Clang Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,13 +35,14 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make \
             gcc-aarch64-linux-gnu pkg-config zstd kmod
 
-          # ZyC Clang 17 indirme ve iç içe klasör hatasını engellemek için düzgün çıkartma
+          # Resmi Google AOSP Clang r487747c (Clang 17) İndiriliyor
           mkdir -p $GITHUB_WORKSPACE/clang
-          wget -q "https://github.com/ZyCromerZ/Clang/releases/download/17.0.0git-20231027-release/Clang-17.0.0git-20231027.tar.gz" -O clang.tar.gz
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang --strip-components=1
-          rm -f clang.tar.gz
+          cd $GITHUB_WORKSPACE
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
+          tar -xzf clang-r487747c.tar.gz -C $GITHUB_WORKSPACE/clang
+          rm -f clang-r487747c.tar.gz
           
-          # Path güncellemesi (Sonraki adımların Clang'i görebilmesi için)
+          # Path güncellemesi
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: 2. Xiaomi Mi 14 (shennong-u-oss) Source Çek
