@@ -37,19 +37,40 @@ jobs:
 
           echo "🔧 Resmi AOSP Clang r487747 indiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang
-          # Verdiğin özel Google arşivi
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz"
-          wget -q "$CLANG_URL" -o clang.tar.gz || curl -fLSs "$CLANG_URL" -o clang.tar.gz
-          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
           
-          # PATH ayarlarını GitHub sistemine işle
+          # Dosyayı indirmeyi dene (Hata durumunda 3 kez tekrarla)
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz"
+          
+          # İndirme ve Arşiv Açma (Bağlantı kopmasına karşı dirençli yöntem)
+          success=false
+          for i in {1..3}; do
+            if curl -fL --retry 3 --retry-delay 5 "$CLANG_URL" -o clang.tar.gz; then
+              if tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang; then
+                success=true
+                break
+              fi
+            fi
+            echo "⚠️ İndirme veya açma başarısız, tekrar deneniyor ($i/3)..."
+            rm -f clang.tar.gz
+            sleep 5
+          done
+
+          if [ "$success" = false ]; then
+            echo "❌ Google sunucusu reddetti, yedek (mirror) kaynaktan r487747 çekiliyor..."
+            # Alternatif güvenilir kaynak (Aynı r487747 sürümü)
+            curl -fL --retry 3 "https://raw.githubusercontent.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r487747/14.0/clang-r487747.tar.gz" -o clang.tar.gz || \
+            wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main-kernel-build-2024/clang-r487747c.tar.gz" -O clang.tar.gz
+            tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
+          fi
+
+          rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
           
-          # İndirilen araçları doğrula
           echo "🔍 Araçlar kontrol ediliyor:"
           ls $GITHUB_WORKSPACE/clang/bin/ | grep -E "clang|ld.lld|llvm-ar"
+          # PATH'i manuel olarak da dışa aktaralım
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          clang --version | head -1
+          $GITHUB_WORKSPACE/clang/bin/clang --version | head -1
 
       - name: 2. Xiaomi Mi 14 (shennong-u-oss) Kaynak Kodu
         run: |
@@ -62,7 +83,7 @@ jobs:
       - name: 3. Config Birleştirme (Full Official Layout)
         run: |
           cd common
-          # PATH'i bu adımda da netleştirelim
+          # Bu adımda Clang bin yolunu kesinleştiriyoruz
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           
           # 1. Base GKI
@@ -106,7 +127,7 @@ jobs:
           # GKI Sembolleri
           cp common/out/Module.symvers dist/ 2>/dev/null || true
           
-          # Log dosyası
+          # Derleme logu
           cp common/build.log dist/ 2>/dev/null || true
 
           echo "📦 Toplam Modül Sayısı: $(ls dist/modules/ | wc -l)"
