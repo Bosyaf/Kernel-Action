@@ -36,8 +36,6 @@ jobs:
             gcc-aarch64-linux-gnu pkg-config zstd \
             lld llvm clang  # <-- BU SATIRI EKLE
 
-          echo "🔧 AOSP Clang r487747c indiriliyor..."
-          mkdir -p $GITHUB_WORKSPACE/clang
                     # ZyC Clang 17 (Xiaomi source ile uyumlu versiyon)
           wget -q "https://github.com/ZyCromerZ/Clang/releases/download/17.0.0git-20231027-release/Clang-17.0.0git-20231027.tar.gz" \
             -O clang.tar.gz
@@ -45,19 +43,6 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-          wget -q --show-progress \
-            "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.3/clang+llvm-17.0.3-x86_64-linux-gnu-ubuntu-22.04.tar.xz" \
-            -O clang.tar.gz
-
-          tar -xf clang.tar.gz -C $GITHUB_WORKSPACE/clang
-          rm -f clang.tar.gz
-
-          # PATH'e ekle
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
-
-          # Clang geldi mi kontrol et
-          ls $GITHUB_WORKSPACE/clang/bin/ | grep -E "clang|lld"
-          echo "✅ Clang hazır"
 
       - name: 2. Xiaomi Mi 14 (shennong-u-oss) Source Çek
         run: |
