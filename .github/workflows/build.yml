@@ -1,4 +1,4 @@
-name: Houji (Mi 14) Source Build
+name: Houji (Mi 14) Official Source Build
 
 permissions:
   contents: write
@@ -26,107 +26,92 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Resmi AOSP Clang Kurulumu
+      - name: 1. Paketler ve Resmi AOSP Clang r487747
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make \
-            gcc-aarch64-linux-gnu pkg-config zstd kmod
+            gcc-aarch64-linux-gnu pkg-config zstd
 
-          # Resmi Google AOSP Clang r487747c (Clang 17) İndiriliyor
+          echo "🔧 Resmi AOSP Clang r487747 indiriliyor..."
           mkdir -p $GITHUB_WORKSPACE/clang
-          cd $GITHUB_WORKSPACE
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz
-          tar -xzf clang-r487747c.tar.gz -C $GITHUB_WORKSPACE/clang
-          rm -f clang-r487747c.tar.gz
+          # Verdiğin özel Google arşivi
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz"
+          wget -q "$CLANG_URL" -o clang.tar.gz || curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang
           
-          # Path güncellemesi
+          # PATH ayarlarını GitHub sistemine işle
           echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+          
+          # İndirilen araçları doğrula
+          echo "🔍 Araçlar kontrol ediliyor:"
+          ls $GITHUB_WORKSPACE/clang/bin/ | grep -E "clang|ld.lld|llvm-ar"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          clang --version | head -1
 
-      - name: 2. Xiaomi Mi 14 (shennong-u-oss) Source Çek
+      - name: 2. Xiaomi Mi 14 (shennong-u-oss) Kaynak Kodu
         run: |
-          echo "📦 Xiaomi Mi 14 (houji/shennong) orijinal kaynak kodu çekiliyor..."
+          echo "📦 Xiaomi Mi 14 (houji) orijinal kaynak kodu çekiliyor..."
           git clone -b shennong-u-oss \
             https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git \
             --depth=1 common
-          echo "✅ Source çekildi."
-          echo "📋 Kernel versiyonu:"
-          head -5 common/Makefile
+          echo "✅ Source hazır."
 
-      - name: 3. Config Hazırlığı (gki + pineapple + houji)
+      - name: 3. Config Birleştirme (Full Official Layout)
+        run: |
+          cd common
+          # PATH'i bu adımda da netleştirelim
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          
+          # 1. Base GKI
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+
+          # 2. Pineapple Platform Configs
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_GKI.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_consolidate.config
+
+          # 3. Houji Device Configs
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/houji_GKI.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/houji_consolidate.config
+
+          # Finalize
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          echo "✅ Configler başarıyla birleştirildi."
+
+      - name: 4. Derleme (Image + DTBO + Modüller)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
 
-          touch .scmversion
-          sed -i 's/check_defconfig//' build.config.gki 2>/dev/null || true
-
-          echo "⚙️ 1. Adım: GKI base config..."
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
-
-          echo "⚙️ 2. Adım: Pineapple GKI config..."
-          ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_GKI.config
-
-          echo "⚙️ 3. Adım: Pineapple consolidate config..."
-          ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/pineapple_consolidate.config
-
-          echo "⚙️ 4. Adım: Houji GKI config..."
-          ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/houji_GKI.config
-
-          echo "⚙️ 5. Adım: Houji consolidate config..."
-          ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/houji_consolidate.config
-
-          echo "⚙️ 6. Adım: Config finalleştiriliyor..."
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-
-          echo "✅ Config hazır."
-
-      - name: 4. Kernel Derleme
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-
-          echo "🔥 Derleme başlıyor..."
+          echo "🚀 Derleme başlatılıyor..."
+          # LLVM=1 parametresi ld.lld ve diğer araçları otomatik seçer
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             Image Image.gz Image.lz4 dtbo.img modules 2>&1 | tee build.log
 
-          echo "BUILD_TAG=houji-source-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
+          echo "BUILD_TAG=houji-official-$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-      - name: 5. Çıktıları Topla
+      - name: 5. Çıktıları Paketle
         run: |
           mkdir -p dist/modules
-
-          # Kernel dosyaları
-          cp common/out/arch/arm64/boot/Image       dist/ 2>/dev/null || true
-          cp common/out/arch/arm64/boot/Image.gz    dist/ 2>/dev/null || true
-          cp common/out/arch/arm64/boot/Image.lz4   dist/ 2>/dev/null || true
-          cp common/out/arch/arm64/boot/dtbo.img    dist/ 2>/dev/null || true
-
-          # Modüller
+          # Kernel ve DTBO
+          cp common/out/arch/arm64/boot/Image* dist/ 2>/dev/null || true
+          cp common/out/arch/arm64/boot/dtbo.img dist/ 2>/dev/null || true
+          
+          # Sürücü Modülleri (.ko)
           find common/out -name "*.ko" -exec cp {} dist/modules/ \;
-
-          # Sembol dosyası
+          
+          # GKI Sembolleri
           cp common/out/Module.symvers dist/ 2>/dev/null || true
-
-          # Derleme logu
+          
+          # Log dosyası
           cp common/build.log dist/ 2>/dev/null || true
 
-          # Özet rapor
-          echo "=============================="
-          echo "       ÇIKTI LİSTESİ          "
-          echo "=============================="
-          ls -lh dist/
-          echo ""
-          echo "=============================="
-          echo "   MODÜL SAYISI: $(ls dist/modules/ | wc -l)"
-          echo "=============================="
-          ls dist/modules/ | head -20
-          echo "..."
+          echo "📦 Toplam Modül Sayısı: $(ls dist/modules/ | wc -l)"
 
-      - name: 6. Artifact Yükle
+      - name: 6. Sonuçları Yükle
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BUILD_TAG }}
