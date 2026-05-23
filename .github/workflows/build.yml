@@ -1,24 +1,3 @@
-Skip to content
-Bosyaf
-Kernel-Action
-Repository navigation
-Code
-Issues
-Pull requests
-Agents
-Actions
-Projects
-Models
-Wiki
-Security and quality
-Insights
-Settings
-CG+ Galadriel (ZyC Clang 23)
-CG+ Galadriel (ZyC Clang 23) #816
-All jobs
-Run details
-Workflow file for this run
-.github/workflows/build.yml at 882105f
 name: CG+ Galadriel (ZyC Clang 23)
 
 permissions:
@@ -282,12 +261,12 @@ jobs:
             -Wno-format \
             -Wno-format-extra-args \
             -Wno-constant-logical-operand" \
-            KBUILD_LDFLAGS="--gc-sections \
-            --as-needed \
-            --strip-debug \
-            --icf=safe \
-            -O2" \
-            Image || { echo '❌ Derleme HATASI!'; exit 1; }
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2" \
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
