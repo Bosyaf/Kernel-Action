@@ -241,26 +241,33 @@ jobs:
           # KCFLAGS içine '-Wno-error' ekledim. 
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
-           -falign-loops=32 \
-           -fomit-frame-pointer \
-           -ffunction-sections \
-           -fdata-sections \
-           -Wno-error \
-           -Wno-format \
-           -Wno-format-extra-args \
-           -Wno-constant-logical-operand" \
-           KLDFLAGS="-Wl,--gc-sections \
-           -Wl,--as-needed \
-           -Wl,--strip-debug \
-           -Wl,--icf=safe \
-           -Wl,-O2" \
-           Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
+            -mtune=cortex-x4 \
+            -falign-functions=32 \
+            -falign-loops=32 \
+            -funroll-loops \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
+            -fstrict-aliasing \
+            -mllvm -polly \
+            -Wno-unused-command-line-argument \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand" \
+            KBUILD_LDFLAGS="-fuse-ld=lld \
+            -Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=all \
+            -Wl,-O2" \
+            Image || { echo '❌ Derleme HATASI!'; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
