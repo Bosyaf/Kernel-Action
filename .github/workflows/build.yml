@@ -261,12 +261,11 @@ jobs:
             -Wno-format \
             -Wno-format-extra-args \
             -Wno-constant-logical-operand" \
-            KBUILD_LDFLAGS="-fuse-ld=lld \
-            -Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=all \
-            -Wl,-O2" \
+            KBUILD_LDFLAGS="--gc-sections \
+            --as-needed \
+            --strip-debug \
+            --icf=all \
+            -O2" \
             Image || { echo '❌ Derleme HATASI!'; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
