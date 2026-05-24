@@ -178,7 +178,7 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull loglevel=0 irqpoll stack_depot_disable=on kvm-arm.mode=protected bootconfig quiet nosoftlockup nmi_watchdog=0 skew_tick=1 kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -251,6 +251,8 @@ jobs:
             -ffunction-sections \
             -fdata-sections \
             -fstrict-aliasing \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
             -Wno-unused-command-line-argument \
             -Wno-error \
             -Wno-format \
