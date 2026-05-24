@@ -178,7 +178,7 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull loglevel=0 printk.devkmsg=off stack_depot_disable=on kvm-arm.mode=protected bootconfig quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull loglevel=0 irqpoll stack_depot_disable=on kvm-arm.mode=protected bootconfig quiet nosoftlockup nmi_watchdog=0 skew_tick=1 kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -264,7 +264,7 @@ jobs:
             -Wl,--icf=safe \
             -Wl,-z,relro \
             -Wl,-O2" \
-            Image dtbo.img || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
