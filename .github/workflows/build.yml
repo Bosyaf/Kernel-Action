@@ -16,6 +16,44 @@ jobs:
       KBUILD_BUILD_HOST: "guvenc"
 
     steps:
+      - name: Tum GitHub Actions Cachelerini Temizle
+        run: |
+          echo "🧹 Tüm cache'ler siliniyor..."
+          gh extension install actions/gh-actions-cache 2>/dev/null || true
+          REPO=${{ github.repository }}
+          BRANCH=${{ github.ref_name }}
+          CACHE_LIST=$(gh actions-cache list -R "$REPO" -B "$BRANCH" 2>/dev/null | cut -f1)
+          if [ -n "$CACHE_LIST" ]; then
+            echo "$CACHE_LIST" | while read -r cache_id; do
+              if [ -n "$cache_id" ]; then
+                echo "  → Siliniyor: $cache_id"
+                gh actions-cache delete "$cache_id" -R "$REPO" -B "$BRANCH" --confirm 2>/dev/null || true
+              fi
+            done
+          else
+            echo "  ✅ Silinecek cache yok."
+          fi
+          echo "✅ Cache temizleme tamamlandı."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Runner Disk ve Bellek Temizligi
+        run: |
+          echo "🧹 Runner hafızası temizleniyor..."
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/go /opt/hostedtoolcache/Python /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/node /opt/hostedtoolcache/ruby /opt/hostedtoolcache/Java_Temurin-Hotspot /opt/hostedtoolcache/cmake 2>/dev/null || true
+          sudo rm -rf /home/runneradmin/.cache /home/runner/.cache 2>/dev/null || true
+          sudo rm -rf /tmp/* 2>/dev/null || true
+          sudo apt-get clean -y 2>/dev/null || true
+          sudo apt-get autoremove -y 2>/dev/null || true
+          sudo rm -rf /var/cache/apt /var/lib/apt/lists 2>/dev/null || true
+          sudo rm -rf /usr/local/lib/node_modules /usr/local/share/chrom* /usr/local/share/pip* 2>/dev/null || true
+          docker system prune -af 2>/dev/null || true
+          sudo swapoff -a 2>/dev/null || true
+          sudo rm -f /swapfile 2>/dev/null || true
+          echo "🧹 Çalışma alanı temizleniyor..."
+          rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.* 2>/dev/null || true
+          echo "✅ Runner tertemiz!"
+
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
