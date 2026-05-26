@@ -1,4 +1,4 @@
-name: Build Kernel - Xiaomi Mi 14 (Houji)
+name: Build Kernel - qcom_sm8650 (pineapple native)
 
 permissions:
   contents: write
@@ -6,12 +6,6 @@ permissions:
 
 on:
   workflow_dispatch:
-    inputs:
-      KSU:
-        description: 'KernelSU eklensin mi?'
-        required: true
-        default: true
-        type: boolean
 
 jobs:
   build-kernel:
@@ -55,95 +49,77 @@ jobs:
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
 
-      - name: Setup KernelSU (Optional)
-        if: ${{ inputs.KSU }}
-        run: |
-          echo "📦 KernelSU kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
-          echo "✅ KernelSU setup complete!"
-
-      - name: Find Correct Defconfig
-        run: |
-          echo "=== Mevcut defconfig dosyaları ==="
-          find . -name "*defconfig*" -path "*/arch/arm64/configs/*" | head -30
-          echo ""
-          echo "=== GKI defconfig ==="
-          find . -name "gki_defconfig" | head -20
-          echo ""
-          echo "=== Houji/Mi14/pineapple ile ilgili ==="
-          find . -iname "*houji*" -o -iname "*xiaomi*" -o -iname "*pineapple*" | head -20
-          echo ""
-          echo "=== Build scriptleri ==="
-          find . -maxdepth 2 -name "build*.sh" -o -name "build.config*" | head -20
-
-      - name: Generate Defconfig
+      - name: 2. Config Merge (gki_defconfig + pineapple_GKI.config)
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           touch .scmversion
+          mkdir -p out
+
+          ARCH=arm64 bash scripts/kconfig/merge_config.sh -m -O out \
+            arch/arm64/configs/gki_defconfig \
+            arch/arm64/configs/vendor/pineapple_GKI.config
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            gki_defconfig
-
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-gnu- \
             olddefconfig
 
-      - name: Build Kernel
+          echo "=== merged config kontrol ==="
+          test -f out/.config
+          grep -E 'CONFIG_(QCOM|WALT|ARM64)' out/.config | head -50 || true
+
+      - name: 3. Native Build (Image + dtbs + modules)
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          NPROC=$(nproc --all)
-          echo "Building with $NPROC threads..."
 
-          make -j${NPROC} O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            Image 2>&1 | tee build.log
+            Image dtbs modules 2>&1 | tee build.log
 
-          if [ -f "out/arch/arm64/boot/Image" ]; then
-            echo "✅ Kernel Image found!"
-            ls -lh out/arch/arm64/boot/Image
-          else
-            echo "❌ Kernel image NOT found!"
-            tail -100 build.log
-            exit 1
-          fi
-
-      - name: Create AnyKernel3 Package
+      - name: 4. Output Kontrol
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git anykernel
-          cd anykernel
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh || true
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh || true
+          echo "=== Image ==="
+          ls -lh out/arch/arm64/boot/Image
 
-          cp ../out/arch/arm64/boot/Image .
+          echo ""
+          echo "=== DTB/DTBO ==="
+          find out/arch/arm64/boot/dts \( -name "*.dtb" -o -name "*.dtbo" \) | head -200 || true
 
-          DATE=$(date +"%Y%m%d-%H%M")
-          KSU_TAG=""
-          if [ "${{ inputs.KSU }}" = "true" ]; then
-            KSU_TAG="-KernelSU"
+          echo ""
+          echo "=== Modules ==="
+          find out -type f -name "*.ko" | head -200 || true
+
+      - name: 5. Artifacts Hazirla
+        run: |
+          mkdir -p artifacts
+          
+          cp out/arch/arm64/boot/Image artifacts/
+          cp out/.config artifacts/kernel.config
+          cp build.log artifacts/
+
+          if find out/arch/arm64/boot/dts \( -name "*.dtb" -o -name "*.dtbo" \) | grep -q .; then
+            mkdir -p artifacts/dtb_pack
+            find out/arch/arm64/boot/dts \( -name "*.dtb" -o -name "*.dtbo" \) -exec cp --parents {} artifacts/dtb_pack/ \;
+            tar -C artifacts -czf artifacts/dtbs.tar.gz dtb_pack
+            rm -rf artifacts/dtb_pack
           fi
-          ZIP_NAME="Kernel-Mi14-Houji${KSU_TAG}-${DATE}.zip"
-          zip -r9 "../${ZIP_NAME}" ./*
-          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "✅ Package created: ${ZIP_NAME}"
 
-      - name: Upload Kernel ZIP
+          if find out -type f -name "*.ko" | grep -q .; then
+            mkdir -p artifacts/modules_pack
+            find out -type f -name "*.ko" -exec cp --parents {} artifacts/modules_pack/ \;
+            tar -C artifacts -czf artifacts/modules.tar.gz modules_pack
+            rm -rf artifacts/modules_pack
+          fi
+
+          echo "=== Son artifact listesi ==="
+          ls -lah artifacts
+
+      - name: 6. Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: ${{ env.ZIP_NAME }}
+          name: qcom-sm8650-pineapple-native-build
+          path: artifacts/*
           retention-days: 30
-
-      - name: Upload Build Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-          retention-days: 7
