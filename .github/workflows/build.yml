@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 22)
+name: CG+ Galadriel (ZyC Clang 23)
 
 permissions:
   contents: write
@@ -22,6 +22,9 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
           swap-size-gb: 16
+
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
@@ -239,7 +242,7 @@ jobs:
           # KCFLAGS içine '-Wno-error' ekledim. 
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           
-            make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+             make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -291,4 +294,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
+          
