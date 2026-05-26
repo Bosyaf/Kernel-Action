@@ -23,12 +23,6 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: lineage-22.2
-          fetch-depth: 1
-
       - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
           sudo apt update -qq
@@ -49,36 +43,35 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
           
-          # Clang yolunu GitHub'ın ana PATH'ine kalıcı ekliyoruz ki sistem başka bir şey kullanmasın
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
 
-      - name: 2. Config Merge (gki_defconfig + pineapple_GKI.config)
+      - name: 2. Kaynakları Çek
+        run: |
+          git clone -b lineage-22.2 https://github.com/Bosyaf/android_kernel_qcom_sm8650.git --depth=1 common
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+
+      - name: 3. Config Merge (gki_defconfig + pineapple_GKI.config)
+        working-directory: common
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           touch .scmversion
           mkdir -p out
 
-          echo "=== Gerekli dosyalar kontrol ediliyor ==="
-          test -f scripts/kconfig/merge_config.sh || { echo "HATA: merge_config.sh yok!"; exit 1; }
-          test -f arch/arm64/configs/gki_defconfig || { echo "HATA: gki_defconfig yok!"; exit 1; }
-          test -f arch/arm64/configs/vendor/pineapple_GKI.config || { echo "HATA: pineapple_GKI.config yok!"; exit 1; }
-
           chmod +x scripts/kconfig/merge_config.sh
 
-          echo "=== Configler merge ediliyor ==="
           ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out \
             arch/arm64/configs/gki_defconfig \
             arch/arm64/configs/vendor/pineapple_GKI.config
 
-          echo "=== olddefconfig oluşturuluyor ==="
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
-      - name: 3. Native Build (Image + dtbs + modules)
+      - name: 4. Native Build (Image + dtbs + modules)
+        working-directory: common
         run: |
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
@@ -88,7 +81,8 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             Image dtbs modules 2>&1 | tee build.log
 
-      - name: 4. Output Kontrol
+      - name: 5. Output Kontrol
+        working-directory: common
         run: |
           echo "=== Image ==="
           ls -lh out/arch/arm64/boot/Image || echo "⚠️ Image bulunamadı!"
@@ -101,7 +95,8 @@ jobs:
           echo "=== Modules ==="
           find out -type f -name "*.ko" | head -50 || echo "⚠️ Modül bulunamadı!"
 
-      - name: 5. Artifacts Hazırla
+      - name: 6. Artifacts Hazırla
+        working-directory: common
         run: |
           mkdir -p artifacts
           
@@ -126,9 +121,9 @@ jobs:
           echo "=== Son artifact listesi ==="
           ls -lah artifacts
 
-      - name: 6. Upload Artifacts
+      - name: 7. Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: qcom-sm8650-pineapple-build
-          path: artifacts/*
+          path: common/artifacts/*
           retention-days: 30
