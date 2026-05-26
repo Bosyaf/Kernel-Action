@@ -1,288 +1,89 @@
-name: Build Android Kernel - SM8650 (houji)
+name: Build Kernel SM8650
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  KERNEL_REPO: https://github.com/Bosyaf/android_kernel_qcom_sm8650
-  KERNEL_BRANCH: main
-  DEVICE_CODENAME: houji
-  ARCH: arm64
-  BUILD_USER: github-actions
-  BUILD_HOST: github-runner
-
 jobs:
-  build-kernel:
-    name: Build SM8650 GKI Kernel
+  build:
     runs-on: ubuntu-22.04
     
     steps:
-      - name: 📋 Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: 🔧 Setup Build Environment
+      - name: Setup Environment
         run: |
-          echo "🔨 Setting up build environment..."
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            bc bison build-essential ccache curl flex \
-            g++-multilib gcc-multilib git gnupg gperf \
-            imagemagick lib32ncurses5-dev lib32readline-dev \
-            lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
-            libsdl1.2-dev libssl-dev libxml2 libxml2-utils \
-            lzop pngcrush rsync schedtool squashfs-tools \
-            xsltproc zip zlib1g-dev libelf-dev cpio kmod \
-            python3 python3-pip
+          sudo apt-get install -y bc bison build-essential ccache curl flex \
+            g++-multilib gcc-multilib git libelf-dev libssl-dev \
+            libncurses5-dev libxml2 libxml2-utils xsltproc zip \
+            zlib1g-dev cpio kmod python3
 
-      - name: 📦 Cache Clang Toolchain
+      - name: Cache Clang
         id: cache-clang
         uses: actions/cache@v4
         with:
           path: ~/clang
-          key: clang-r522817-${{ runner.os }}
-          restore-keys: |
-            clang-r522817-
+          key: clang-r522817
 
-      - name: ⬇️ Download Google Clang 17.0.2 (r522817)
+      - name: Download Clang
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          echo "📥 Downloading Clang r522817 from Google..."
           mkdir -p ~/clang
           cd ~/clang
-          
-          wget --progress=bar:force:noscroll \
-            --retry-connrefused --waitretry=1 \
-            --read-timeout=20 --timeout=15 -t 3 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android15-release/clang-r522817.tar.gz" \
-            -O clang-r522817.tar.gz
-          
-          echo "📦 Extracting Clang toolchain..."
+          wget -q --show-progress \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android15-release/clang-r522817.tar.gz"
           tar -xzf clang-r522817.tar.gz
           rm clang-r522817.tar.gz
-          
-          echo "✅ Clang 17.0.2 downloaded successfully"
-          ~/clang/bin/clang --version
 
-      - name: 🌲 Clone Kernel Source
+      - name: Clone Kernel
         run: |
-          echo "📥 Cloning kernel source..."
-          git clone --depth=1 --branch=main https://github.com/Bosyaf/android_kernel_qcom_sm8650 kernel
+          git clone --depth=1 https://github.com/Bosyaf/android_kernel_qcom_sm8650 kernel
           cd kernel
-          echo "📊 Kernel source info:"
-          git log -1 --oneline
-          
-          echo "📂 Checking repository structure..."
-          ls -la
-          
-          echo "🔍 Looking for defconfig files..."
-          find . -name "*.config" -o -name "*defconfig" -o -name "*.fragment" 2>/dev/null | head -20
+          find . -name "*defconfig" -o -name "*.config" | head -20
 
-      - name: 🔧 Setup Toolchain Paths
-        run: |
-          echo "PATH=${HOME}/clang/bin:${PATH}" >> $GITHUB_ENV
-          echo "CLANG_PATH=${HOME}/clang" >> $GITHUB_ENV
+      - name: Setup Paths
+        run: echo "$HOME/clang/bin" >> $GITHUB_PATH
 
-      - name: ⚙️ Generate Kernel Config
+      - name: Configure Kernel
         run: |
           cd kernel
-          
-          export PATH=${HOME}/clang/bin:${PATH}
           export ARCH=arm64
-          export SUBARCH=arm64
           
-          echo "🔍 Detecting defconfig strategy..."
-          
-          # Strategy 1: Check for gki_defconfig (standard GKI)
           if [ -f "arch/arm64/configs/gki_defconfig" ]; then
-            echo "✅ Found gki_defconfig - using GKI build"
-            DEFCONFIG="gki_defconfig"
+            make O=out ARCH=arm64 gki_defconfig
             
-            # Generate base GKI config
-            make O=out ARCH=arm64 ${DEFCONFIG}
-            
-            # Apply vendor fragments if they exist
-            if [ -f "arch/arm64/configs/vendor/sm8650_GKI.config" ]; then
-              echo "📝 Merging vendor/sm8650_GKI.config..."
-              cat arch/arm64/configs/vendor/sm8650_GKI.config >> out/.config
-            fi
-            
-            if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
-              echo "📝 Merging vendor/pineapple_GKI.config..."
-              cat arch/arm64/configs/vendor/pineapple_GKI.config >> out/.config
-            fi
-            
-            # Check for any vendor fragments
-            for fragment in arch/arm64/configs/vendor/*.fragment; do
-              if [ -f "$fragment" ]; then
-                echo "📝 Merging fragment: $fragment"
-                cat "$fragment" >> out/.config
-              fi
+            for cfg in arch/arm64/configs/vendor/*.config; do
+              [ -f "$cfg" ] && cat "$cfg" >> out/.config
             done
             
-            # Regenerate with merged configs
             make O=out ARCH=arm64 olddefconfig
-            
-          # Strategy 2: Check for vendor_gki_defconfig
-          elif [ -f "arch/arm64/configs/vendor_gki_defconfig" ]; then
-            echo "✅ Found vendor_gki_defconfig"
-            make O=out ARCH=arm64 vendor_gki_defconfig
-            
-          # Strategy 3: Check for vendor/sm8650-gki_defconfig
-          elif [ -f "arch/arm64/configs/vendor/sm8650-gki_defconfig" ]; then
-            echo "✅ Found vendor/sm8650-gki_defconfig"
-            make O=out ARCH=arm64 vendor/sm8650-gki_defconfig
-            
-          # Strategy 4: Use build.config if exists
-          elif [ -f "build.config" ] || [ -f "build.config.msm.gki" ]; then
-            echo "✅ Found build.config - using kernel build script"
-            if [ -f "build.config.msm.gki" ]; then
-              source build.config.msm.gki
-            elif [ -f "build.config" ]; then
-              source build.config
-            fi
-            
-            # Use defconfig from build.config
-            if [ -n "${DEFCONFIG}" ]; then
-              echo "Using DEFCONFIG from build.config: ${DEFCONFIG}"
-              make O=out ARCH=arm64 ${DEFCONFIG}
-            else
-              echo "⚠️ No DEFCONFIG found in build.config, using gki_defconfig"
-              make O=out ARCH=arm64 gki_defconfig
-            fi
-            
           else
-            echo "❌ No compatible defconfig found!"
-            echo "Available configs:"
-            find arch/arm64/configs -type f | sort
-            exit 1
+            echo "Searching for defconfig..."
+            find arch/arm64/configs -name "*defconfig" | head -1 | xargs -I {} basename {} | xargs -I {} make O=out ARCH=arm64 {}
           fi
-          
-          echo "✅ Kernel configuration completed"
-          
-          echo "📋 Final config summary:"
-          grep "CONFIG_LOCALVERSION" out/.config || echo "No LOCALVERSION set"
 
-      - name: 🔨 Build Kernel
+      - name: Build Kernel
         run: |
           cd kernel
-          echo "🚀 Starting kernel compilation..."
-          
-          export PATH=${HOME}/clang/bin:${PATH}
-          export ARCH=arm64
-          export SUBARCH=arm64
-          
-          # Build with Clang + LLVM
-          make -j$(nproc --all) \
-            O=out \
-            ARCH=arm64 \
+          make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            LD=ld.lld \
-            2>&1 | tee kernel_build.log
-          
-          echo "✅ Kernel compilation completed"
+            LLVM=1 LLVM_IAS=1 \
+            2>&1 | tee build.log
 
-      - name: 📦 Check Build Outputs
-        run: |
-          cd kernel
-          echo "📦 Checking build outputs..."
-          
-          if [ -f "out/arch/arm64/boot/Image" ]; then
-            echo "✅ Kernel Image found"
-            ls -lh out/arch/arm64/boot/Image
-          else
-            echo "❌ Kernel Image not found!"
-          fi
-          
-          if [ -f "out/arch/arm64/boot/Image.gz" ]; then
-            echo "✅ Kernel Image.gz found"
-            ls -lh out/arch/arm64/boot/Image.gz
-          fi
-          
-          if [ -f "out/arch/arm64/boot/Image.gz-dtb" ]; then
-            echo "✅ Image.gz-dtb found"
-            ls -lh out/arch/arm64/boot/Image.gz-dtb
-          fi
-          
-          echo "📊 All output files:"
-          find out/arch/arm64/boot -type f -name "Image*" -o -name "*.img" -o -name "dtb*" | sort
-
-      - name: 📊 Build Information
-        run: |
-          cd kernel
-          echo "📊 Build Information:"
-          echo "===================="
-          echo "Device: Xiaomi Mi 14 (houji)"
-          echo "Platform: SM8650 (Pineapple)"
-          echo "Clang: 17.0.2 (r522817)"
-          echo "Build Type: GKI Kernel"
-          echo "Build User: $BUILD_USER"
-          echo "Build Host: $BUILD_HOST"
-          echo "Build Date: $(date '+%Y-%m-%d %H:%M:%S')"
-          echo "===================="
-          
-          if [ -f "out/include/generated/utsrelease.h" ]; then
-            echo "Kernel Version:"
-            cat out/include/generated/utsrelease.h
-          fi
-          
-          if [ -f "out/.config" ]; then
-            echo ""
-            echo "Key Config Options:"
-            grep -E "CONFIG_LOCALVERSION|CONFIG_BUILD_ARM64_DT_OVERLAY" out/.config | head -5
-          fi
-
-      - name: 📤 Upload Kernel Image
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-sm8650-houji-${{ github.run_number }}
-          path: |
-            kernel/out/arch/arm64/boot/Image
-            kernel/out/arch/arm64/boot/Image.gz
-            kernel/out/arch/arm64/boot/Image.gz-dtb
-            kernel/out/arch/arm64/boot/dtb*
-            kernel/out/arch/arm64/boot/*.img
-
-      - name: 📤 Upload Kernel Modules
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: kernel-modules-sm8650-${{ github.run_number }}
+          name: kernel-houji
           path: |
-            kernel/out/**/*.ko
-
-      - name: 📤 Upload Build Log
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log-sm8650-${{ github.run_number }}
-          path: kernel/kernel_build.log
-
-      - name: ✅ Build Complete
-        run: |
-          echo "════════════════════════════════════════"
-          echo "✅ Kernel build completed successfully!"
-          echo "════════════════════════════════════════"
-          echo ""
-          echo "📦 Download artifacts from Actions tab:"
-          echo "   • kernel-sm8650-houji-XXX → Kernel images"
-          echo "   • kernel-modules-sm8650-XXX → Kernel modules (.ko)"
-          echo "   • build-log-sm8650-XXX → Build log"
-          echo ""
-          echo "🎉 Happy flashing!"
+            kernel/out/arch/arm64/boot/Image*
+            kernel/out/arch/arm64/boot/*.img
+            kernel/build.log
