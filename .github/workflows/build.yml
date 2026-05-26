@@ -6,6 +6,11 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      dummy:
+        description: 'Start build'
+        required: false
+        default: 'yes'
 
 jobs:
   build-kernel:
@@ -23,7 +28,7 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: 1. Paketler ve Neutron Clang Çekimi
+      - name: Step 1 - Install Packages and Neutron Clang
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -32,7 +37,7 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd zip
 
-          echo "🔥 Neutron Clang kuruluyor..."
+          echo "Installing Neutron Clang..."
           mkdir -p "$HOME/toolchains/neutron-clang"
           cd "$HOME/toolchains/neutron-clang"
           curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
@@ -40,14 +45,14 @@ jobs:
           ./antman -S
 
           echo "$HOME/toolchains/neutron-clang/bin" >> $GITHUB_PATH
-          echo "✅ Neutron Clang İndirildi ve PATH'e eklendi!"
+          echo "Neutron Clang installed!"
 
-      - name: 2. Kaynakları Çek
+      - name: Step 2 - Clone Sources
         run: |
           git clone -b lineage-22.2 https://github.com/Bosyaf/android_kernel_qcom_sm8650.git --depth=1 common
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
 
-      - name: 3. Config Merge (gki_defconfig + pineapple_GKI.config)
+      - name: Step 3 - Config Merge
         working-directory: common
         run: |
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
@@ -66,7 +71,7 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
 
-      - name: 4. Kernel Derleme (Sadece Image)
+      - name: Step 4 - Build Kernel
         working-directory: common
         run: |
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
@@ -77,44 +82,44 @@ jobs:
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             Image 2>&1 | tee build.log
 
-      - name: 5. Image Kontrol
+      - name: Step 5 - Check Image
         working-directory: common
         run: |
           if [ -f "out/arch/arm64/boot/Image" ]; then
-            echo "✅ Image bulundu!"
+            echo "Image found!"
             ls -lh out/arch/arm64/boot/Image
           else
-            echo "❌ Image bulunamadı!"
+            echo "Image NOT found!"
             tail -100 build.log
             exit 1
           fi
 
-      - name: 6. AnyKernel3 ile Paketleme
+      - name: Step 6 - Package with AnyKernel3
         run: |
           cd AnyKernel3
-          
+
           sed -i 's/kernel.string=.*/kernel.string=SM8650-Custom-Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          
+
           cp ../common/out/arch/arm64/boot/Image .
-          
+
           rm -rf .git README.md
-          
+
           DATE=$(date +"%Y%m%d-%H%M")
           ZIP_NAME="Kernel-Mi14-SM8650-${DATE}.zip"
           zip -r9 "../${ZIP_NAME}" ./*
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "✅ Paket oluşturuldu: ${ZIP_NAME}"
+          echo "Package created: ${ZIP_NAME}"
 
-      - name: 7. Upload ZIP
+      - name: Step 7 - Upload ZIP
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
           path: ${{ env.ZIP_NAME }}
           retention-days: 30
 
-      - name: 8. Upload Build Log
+      - name: Step 8 - Upload Build Log
         if: always()
         uses: actions/upload-artifact@v4
         with:
