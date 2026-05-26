@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 22)
+name: CG+ Galadriel (ZyC Clang 23)
 
 permissions:
   contents: write
@@ -16,12 +16,49 @@ jobs:
       KBUILD_BUILD_HOST: "guvenc"
 
     steps:
+      - name: Tum GitHub Actions Cachelerini Temizle
+        run: |
+          echo "🧹 Tüm cache'ler siliniyor..."
+          gh extension install actions/gh-actions-cache 2>/dev/null || true
+          REPO=${{ github.repository }}
+          BRANCH=${{ github.ref_name }}
+          CACHE_LIST=$(gh actions-cache list -R "$REPO" -B "$BRANCH" 2>/dev/null | cut -f1)
+          if [ -n "$CACHE_LIST" ]; then
+            echo "$CACHE_LIST" | while read -r cache_id; do
+              if [ -n "$cache_id" ]; then
+                echo "  → Siliniyor: $cache_id"
+                gh actions-cache delete "$cache_id" -R "$REPO" -B "$BRANCH" --confirm 2>/dev/null || true
+              fi
+            done
+          else
+            echo "  ✅ Silinecek cache yok."
+          fi
+          echo "✅ Cache temizleme tamamlandı."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Runner Disk ve Bellek Temizligi
+        run: |
+          echo "🧹 Runner hafızası temizleniyor..."
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/go /opt/hostedtoolcache/Python /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/node /opt/hostedtoolcache/ruby /opt/hostedtoolcache/Java_Temurin-Hotspot /opt/hostedtoolcache/cmake 2>/dev/null || true
+          sudo rm -rf /home/runneradmin/.cache /home/runner/.cache 2>/dev/null || true
+          sudo rm -rf /tmp/* 2>/dev/null || true
+          sudo apt-get clean -y 2>/dev/null || true
+          sudo apt-get autoremove -y 2>/dev/null || true
+          sudo rm -rf /var/cache/apt /var/lib/apt/lists 2>/dev/null || true
+          sudo rm -rf /usr/local/lib/node_modules /usr/local/share/chrom* /usr/local/share/pip* 2>/dev/null || true
+          docker system prune -af 2>/dev/null || true
+          sudo swapoff -a 2>/dev/null || true
+          sudo rm -f /swapfile 2>/dev/null || true
+          echo "🧹 Çalışma alanı temizleniyor..."
+          rm -rf $GITHUB_WORKSPACE/* $GITHUB_WORKSPACE/.* 2>/dev/null || true
+          echo "✅ Runner tertemiz!"
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 8
+          swap-size-gb: 16
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -178,7 +215,7 @@ jobs:
             
           CONFIG_FILE="out/.config"
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -187,36 +224,19 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAVE_KPROBES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBE_EVENTS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
@@ -226,18 +246,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          # WALT ve CPUFreq HW Sürücülerini Modül (m) Olarak Ayarlama
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -251,7 +264,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Maedhros"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ungoliant"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -266,31 +279,36 @@ jobs:
           # KCFLAGS içine '-Wno-error' ekledim. 
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+fp16fml+sha3 \
-           -fdata-sections \
-           -ffunction-sections \
-           -fomit-frame-pointer \
-           -fno-strict-aliasing \
-           -fno-unwind-tables \
-           -fno-asynchronous-unwind-tables \
-           -Wno-error \
-           -Wno-format \
-           -Wno-format-extra-args \
-           -Wno-constant-logical-operand" \
-           KLDFLAGS="-Wl,--gc-sections \
-           -Wl,--as-needed \
-           -Wl,--strip-debug \
-           -Wl,-O2" \
-           Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
+            -fstrict-aliasing \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
+            -Wno-unused-command-line-argument \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand \
+            -Wno-unused-variable \
+            -Wno-address-of-packed-member" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-z,relro \
+            -Wl,-O2" \
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 8. AnyKernel3
+      - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -298,10 +316,10 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
+          # Sadece Image dosyasını alıyoruz
           cp ../common/out/arch/arm64/boot/Image .
-          mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           zip -r "../CG-Galadriel.zip" ./*
+          
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
@@ -310,5 +328,6 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
           
