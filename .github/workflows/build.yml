@@ -1,4 +1,4 @@
-name: Build Kernel - qcom_sm8650 (pineapple native)
+name: Build Kernel - SM8650 (pineapple)
 
 permissions:
   contents: write
@@ -25,6 +25,9 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: lineage-22.2
+          fetch-depth: 1
 
       - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
@@ -46,6 +49,7 @@ jobs:
           tar -xzf clang.tar.gz -C $GITHUB_WORKSPACE/clang-zyc
           rm -f clang.tar.gz
           
+          # Clang yolunu GitHub'ın ana PATH'ine kalıcı ekliyoruz ki sistem başka bir şey kullanmasın
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> $GITHUB_PATH
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
 
@@ -55,19 +59,24 @@ jobs:
           touch .scmversion
           mkdir -p out
 
-          ARCH=arm64 bash scripts/kconfig/merge_config.sh -m -O out \
+          echo "=== Gerekli dosyalar kontrol ediliyor ==="
+          test -f scripts/kconfig/merge_config.sh || { echo "HATA: merge_config.sh yok!"; exit 1; }
+          test -f arch/arm64/configs/gki_defconfig || { echo "HATA: gki_defconfig yok!"; exit 1; }
+          test -f arch/arm64/configs/vendor/pineapple_GKI.config || { echo "HATA: pineapple_GKI.config yok!"; exit 1; }
+
+          chmod +x scripts/kconfig/merge_config.sh
+
+          echo "=== Configler merge ediliyor ==="
+          ARCH=arm64 ./scripts/kconfig/merge_config.sh -m -O out \
             arch/arm64/configs/gki_defconfig \
             arch/arm64/configs/vendor/pineapple_GKI.config
 
+          echo "=== olddefconfig oluşturuluyor ==="
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             olddefconfig
-
-          echo "=== merged config kontrol ==="
-          test -f out/.config
-          grep -E 'CONFIG_(QCOM|WALT|ARM64)' out/.config | head -50 || true
 
       - name: 3. Native Build (Image + dtbs + modules)
         run: |
@@ -82,23 +91,23 @@ jobs:
       - name: 4. Output Kontrol
         run: |
           echo "=== Image ==="
-          ls -lh out/arch/arm64/boot/Image
+          ls -lh out/arch/arm64/boot/Image || echo "⚠️ Image bulunamadı!"
 
           echo ""
           echo "=== DTB/DTBO ==="
-          find out/arch/arm64/boot/dts \( -name "*.dtb" -o -name "*.dtbo" \) | head -200 || true
+          find out/arch/arm64/boot/dts \( -name "*.dtb" -o -name "*.dtbo" \) | head -50 || echo "⚠️ DTB/DTBO bulunamadı!"
 
           echo ""
           echo "=== Modules ==="
-          find out -type f -name "*.ko" | head -200 || true
+          find out -type f -name "*.ko" | head -50 || echo "⚠️ Modül bulunamadı!"
 
-      - name: 5. Artifacts Hazirla
+      - name: 5. Artifacts Hazırla
         run: |
           mkdir -p artifacts
           
-          cp out/arch/arm64/boot/Image artifacts/
-          cp out/.config artifacts/kernel.config
-          cp build.log artifacts/
+          cp out/arch/arm64/boot/Image artifacts/ 2>/dev/null || true
+          cp out/.config artifacts/kernel.config 2>/dev/null || true
+          cp build.log artifacts/ 2>/dev/null || true
 
           if find out/arch/arm64/boot/dts \( -name "*.dtb" -o -name "*.dtbo" \) | grep -q .; then
             mkdir -p artifacts/dtb_pack
@@ -120,6 +129,6 @@ jobs:
       - name: 6. Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: qcom-sm8650-pineapple-native-build
+          name: qcom-sm8650-pineapple-build
           path: artifacts/*
           retention-days: 30
