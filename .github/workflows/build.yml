@@ -132,11 +132,25 @@ jobs:
       - name: 4.5 KernelSU-Next Multi Manager Patch
         run: |
           cd common
-          echo "📦 Multi Manager patch'i uygulanıyor..."
-          # Sadece bu patch kalsın, manuel SED'leri ve FIX'leri SİL!
-          if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
-            patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
+          echo "🔥 KowSU, MamboSU ve Multi-Manager desteği ekleniyor..."
+          
+          # Patch dizinini tanımlıyoruz
+          PATCH_DIR="$GITHUB_WORKSPACE/patches/ksu"
+          
+          # 1. KowSU ve Genel Multi-Manager Desteği (En önemlisi)
+          if [ -f "$PATCH_DIR/ksun-add-more-managers-support.patch" ]; then
+            echo "✅ ksun-add-more-managers-support uygulanıyor..."
+            patch -p1 < "$PATCH_DIR/ksun-add-more-managers-support.patch" || echo "⚠️ Yama atlandı veya zaten uygulanmış."
           fi
+          
+          # 2. MamboSU Menajer Desteği
+          if [ -f "$PATCH_DIR/rksu-add-mambosu-manager-support.patch" ]; then
+            echo "✅ rksu-add-mambosu-manager-support uygulanıyor..."
+            patch -p1 < "$PATCH_DIR/rksu-add-mambosu-manager-support.patch" || echo "⚠️ Yama atlandı."
+          fi
+
+          echo "✅ KowSU ve Multi-Manager yamaları tamamlandı!"
+          # NOT: Linker'ı bozan o eski 'sed' satırları artık yok, güvendeyiz.
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
