@@ -54,38 +54,24 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-      - name: 2.5 LZ4K Dosyalarını Yerleştir ve Patch Uygula
+      - name: 2.5 LZ4K Entegrasyonu (Cerrahi Mod)
         run: |
           cd common
-          echo "📦 LZ4K kaynak dosyaları yerlerine taşınıyor..."
-          
-          # 1. Header (H) dosyalarını taşı
-          cp lz4_source/lz4k/include/linux/*.h include/linux/
-          
-          # 2. Crypto (C) dosyalarını taşı
-          cp lz4_source/lz4k/crypto/*.c crypto/
-          
-          # 3. Lib (Kütüphane) klasörlerini oluştur ve dosyaları taşı
-          mkdir -p lib/lz4k
-          mkdir -p lib/lz4kd
-          mkdir -p lib/lz4k_oplus
-          
+          # 1. Dosyaları Yerleştir
+          find lz4_source -name "*.h" -exec cp {} include/linux/ \;
+          find lz4_source -name "*.c" -exec cp {} crypto/ \;
+          mkdir -p lib/lz4k lib/lz4kd lib/lz4k_oplus
           cp -R lz4_source/lz4k/lib/lz4k/* lib/lz4k/
           cp -R lz4_source/lz4k/lib/lz4kd/* lib/lz4kd/
           cp -R lz4_source/lz4k_oplus/* lib/lz4k_oplus/
-          
-          echo "✅ Dosyalar taşındı. Şimdi patch'ler uygulanıyor..."
-          
-          # 4. ZRAM Patch'lerini uygula (6.1 klasöründen)
-          if [ -f "lz4_source/zram_patch/6.1/lz4kd.patch" ]; then
-            patch -p1 < lz4_source/zram_patch/6.1/lz4kd.patch || echo "⚠️ lz4kd.patch başarısız"
-          fi
-          
-          if [ -f "lz4_source/zram_patch/6.1/lz4k_oplus.patch" ]; then
-            patch -p1 < lz4_source/zram_patch/6.1/lz4k_oplus.patch || echo "⚠️ lz4k_oplus.patch başarısız"
-          fi
-          
-          echo "🚀 LZ4K hazırlığı tamamlandı!"
+
+          # 2. Makefile'lara Ekle (Derleyici görsün diye)
+          sed -i '$a obj-y += lz4k/ lz4kd/ lz4k_oplus/' lib/Makefile
+          sed -i '$a obj-$(CONFIG_CRYPTO_LZ4K) += lz4k.o' crypto/Makefile
+          sed -i '$a obj-$(CONFIG_CRYPTO_LZ4KD) += lz4kd.o' crypto/Makefile
+
+          # 3. ZRAM Patch (Patch komutu hata verirse diye manuel string ekleme)
+          sed -i 's/static const char \*const backends\[\] = {/static const char *const backends[] = {"lz4k", "lz4kd", /' drivers/block/zram/zram_drv.c || true
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -129,28 +115,20 @@ jobs:
           fi
           rm -f fs_namespace.patch
           find . -name "*.rej" -delete 2>/dev/null || true
-      - name: 4.5 KernelSU-Next Multi Manager Patch
+      - name: 4.5 SUSFS Linker Fix ve KowSU Desteği
         run: |
           cd common
-          echo "🔥 KowSU, MamboSU ve Multi-Manager desteği ekleniyor..."
+          echo "🛠️ Linker engelleri kaldırılıyor..."
+          # Değişkenleri static'ten kurtar ki Linker her yerden görebilsin
+          sed -i 's/static bool fake_status/bool fake_status/g' drivers/kernelsu/selinux/selinux.c || true
+          sed -i 's/static int ksu_selinux_hide_enabled/int ksu_selinux_hide_enabled/g' drivers/kernelsu/selinux/selinux.c || true
+          sed -i 's/static struct static_key_true fake_status_initialize_key/struct static_key_true fake_status_initialize_key/g' drivers/kernelsu/selinux/selinux.c || true
           
-          # Patch dizinini tanımlıyoruz
-          PATCH_DIR="$GITHUB_WORKSPACE/patches/ksu"
-          
-          # 1. KowSU ve Genel Multi-Manager Desteği (En önemlisi)
-          if [ -f "$PATCH_DIR/ksun-add-more-managers-support.patch" ]; then
-            echo "✅ ksun-add-more-managers-support uygulanıyor..."
-            patch -p1 < "$PATCH_DIR/ksun-add-more-managers-support.patch" || echo "⚠️ Yama atlandı veya zaten uygulanmış."
+          echo "🔥 KowSU Desteği Ekleniyor..."
+          KSU_PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
+          if [ -f "$KSU_PATCH" ]; then
+            patch -p1 < "$KSU_PATCH" || true
           fi
-          
-          # 2. MamboSU Menajer Desteği
-          if [ -f "$PATCH_DIR/rksu-add-mambosu-manager-support.patch" ]; then
-            echo "✅ rksu-add-mambosu-manager-support uygulanıyor..."
-            patch -p1 < "$PATCH_DIR/rksu-add-mambosu-manager-support.patch" || echo "⚠️ Yama atlandı."
-          fi
-
-          echo "✅ KowSU ve Multi-Manager yamaları tamamlandı!"
-          # NOT: Linker'ı bozan o eski 'sed' satırları artık yok, güvendeyiz.
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
