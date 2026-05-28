@@ -54,36 +54,12 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-      - name: 2.5 LZ4K Entegrasyonu (Cerrahi Mod)
-        run: |
-          cd common
-          # 1. Dosyaları Yerleştir
-          find lz4_source -name "*.h" -exec cp {} include/linux/ \;
-          find lz4_source -name "*.c" -exec cp {} crypto/ \;
-          mkdir -p lib/lz4k lib/lz4kd lib/lz4k_oplus
-          cp -R lz4_source/lz4k/lib/lz4k/* lib/lz4k/
-          cp -R lz4_source/lz4k/lib/lz4kd/* lib/lz4kd/
-          cp -R lz4_source/lz4k_oplus/* lib/lz4k_oplus/
-
-          # 2. Makefile'lara Ekle (Derleyici görsün diye)
-          sed -i '$a obj-y += lz4k/ lz4kd/ lz4k_oplus/' lib/Makefile
-          sed -i '$a obj-$(CONFIG_CRYPTO_LZ4K) += lz4k.o' crypto/Makefile
-          sed -i '$a obj-$(CONFIG_CRYPTO_LZ4KD) += lz4kd.o' crypto/Makefile
-
-          # 3. ZRAM Patch (Patch komutu hata verirse diye manuel string ekleme)
-          sed -i 's/static const char \*const backends\[\] = {/static const char *const backends[] = {"lz4k", "lz4kd", /' drivers/block/zram/zram_drv.c || true
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
           echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < $GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch || echo "⚠️ Başarısız"
-          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
-          
+
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
@@ -115,19 +91,27 @@ jobs:
           fi
           rm -f fs_namespace.patch
           find . -name "*.rej" -delete 2>/dev/null || true
-      - name: 4.5 SUSFS Linker Fix ve KowSU Desteği
+      - name: 4.5. KernelSU-Next Multi Manager Patch
         run: |
           cd common
-          echo "🛠️ Linker engelleri kaldırılıyor..."
-          # Değişkenleri static'ten kurtar ki Linker her yerden görebilsin
-          sed -i 's/static bool fake_status/bool fake_status/g' drivers/kernelsu/selinux/selinux.c || true
-          sed -i 's/static int ksu_selinux_hide_enabled/int ksu_selinux_hide_enabled/g' drivers/kernelsu/selinux/selinux.c || true
-          sed -i 's/static struct static_key_true fake_status_initialize_key/struct static_key_true fake_status_initialize_key/g' drivers/kernelsu/selinux/selinux.c || true
+          echo "📦 Multi Manager patch'i uygulanıyor..."
+          if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
+            patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
+          fi
+          echo "✅ KowSU, MKSU, VortexSU, ReSukiSU desteği eklendi!"
           
-          echo "🔥 KowSU Desteği Ekleniyor..."
-          KSU_PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
-          if [ -f "$KSU_PATCH" ]; then
-            patch -p1 < "$KSU_PATCH" || true
+          echo "📦 SUSFS symbol fix uygulanıyor..."
+          if [ -f "drivers/kernelsu/supercalls.c" ]; then
+            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ DISABLED to fix build \*\//' drivers/kernelsu/supercalls.c || true
+          fi
+          
+          echo "📦 AVC spoof fix uygulanıyor..."
+          if [ -f "drivers/kernelsu/extras.c" ]; then
+            if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
+              if ! grep -q "__attribute__((weak))" drivers/kernelsu/extras.c; then
+                printf '\n#ifdef CONFIG_KSU_SUSFS\n#ifndef susfs_avc_log_spoofing_key_true\n__attribute__((weak))\nstruct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;\n#endif\n#endif\n' >> drivers/kernelsu/extras.c
+              fi
+            fi
           fi
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
@@ -224,11 +208,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-           # ========== Sadece LZ4K & ZRAM Temel Config ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4K
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4KD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4K_OPLUS
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4k"
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -240,9 +219,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
