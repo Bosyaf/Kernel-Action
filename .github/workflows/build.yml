@@ -129,26 +129,13 @@ jobs:
           fi
           rm -f fs_namespace.patch
           find . -name "*.rej" -delete 2>/dev/null || true
-      - name: 4.5. KernelSU-Next Multi Manager Patch
+      - name: 4.5 KernelSU-Next Multi Manager Patch
         run: |
           cd common
           echo "📦 Multi Manager patch'i uygulanıyor..."
+          # Sadece bu patch kalsın, manuel SED'leri ve FIX'leri SİL!
           if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
             patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
-          fi
-          
-          echo "📦 SUSFS symbol fix uygulanıyor..."
-          if [ -f "drivers/kernelsu/supercalls.c" ]; then
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ DISABLED to fix build \*\//' drivers/kernelsu/supercalls.c || true
-          fi
-          
-          echo "📦 AVC spoof fix uygulanıyor..."
-          if [ -f "drivers/kernelsu/extras.c" ]; then
-            if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
-              if ! grep -q "__attribute__((weak))" drivers/kernelsu/extras.c; then
-                printf '\n#ifdef CONFIG_KSU_SUSFS\n#ifndef susfs_avc_log_spoofing_key_true\n__attribute__((weak))\nstruct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;\n#endif\n#endif\n' >> drivers/kernelsu/extras.c
-              fi
-            fi
           fi
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
