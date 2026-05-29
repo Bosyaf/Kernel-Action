@@ -57,6 +57,7 @@ jobs:
           EOF
           chmod +x scripts/check-local-export
 
+          mkdir -p out
           cp ../prebuilt/.config out/.config
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
