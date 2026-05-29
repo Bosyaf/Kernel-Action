@@ -266,7 +266,6 @@ jobs:
             KBUILD_LDFLAGS="--gc-sections \
             --as-needed \
             --strip-debug \
-            --icf=safe \
             -O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
