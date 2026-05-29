@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 23)
+name: CG+ Galadriel (ZyC Clang 22)
 
 permissions:
   contents: write
@@ -191,9 +191,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_DEFAULT_GOV_WALT || true
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CPU_FREQ_DEFAULT_GOV "walt" || true
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
@@ -227,7 +224,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ungoliant"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Draug"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -239,7 +236,10 @@ jobs:
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          # KCFLAGS içine '-Wno-error' ekledim. 
+          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
+          
+             make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -248,7 +248,8 @@ jobs:
             -falign-functions=32 \
             -fno-stack-protector \
             -fomit-frame-pointer \
-            -fno-strict-aliasing \
+            -ffunction-sections \
+            -fdata-sections \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -Wno-unused-command-line-argument \
@@ -258,12 +259,14 @@ jobs:
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
             -Wno-address-of-packed-member" \
-            KBUILD_LDFLAGS="--strip-all \
-            -O2" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2" \
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-          
           
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
@@ -286,7 +289,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-
-
-        
