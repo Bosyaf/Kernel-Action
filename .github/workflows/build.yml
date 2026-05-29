@@ -43,7 +43,7 @@ jobs:
       - name: Clone sources
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b main --depth=1 https://github.com/mvaisakh/xiaomi14.git common
+          git clone -b monolithic --depth=1 https://github.com/mvaisakh/xiaomi14.git common
           git clone -b 16 --depth=1 https://github.com/mvaisakh/android_device_houji-kernel.git prebuilt
 
       - name: Build
