@@ -53,7 +53,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1 https://github.com/Bosyaf/kernel_common.git --depth=1 common
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -239,10 +239,7 @@ jobs:
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          # KCFLAGS içine '-Wno-error' ekledim. 
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
-          
-             make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -251,8 +248,6 @@ jobs:
             -falign-functions=32 \
             -fno-stack-protector \
             -fomit-frame-pointer \
-            -ffunction-sections \
-            -fdata-sections \
             -fno-strict-aliasing \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
@@ -263,12 +258,12 @@ jobs:
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
             -Wno-address-of-packed-member" \
-            KBUILD_LDFLAGS="--as-needed \
-            --strip-debug \
+            KBUILD_LDFLAGS="--strip-all \
             -O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          
           
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
@@ -291,3 +286,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+
+
+
+        
