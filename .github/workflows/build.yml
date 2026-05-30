@@ -99,8 +99,13 @@ jobs:
           else
             echo "  ⚠️ Patch bulunamadı"
           fi
-
           rm -f fs_namespace.patch
+          
+          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
+          echo "  ✅ Canlı Yama Başarılı!"
+
           find . -name "*.rej" -delete 2>/dev/null || true
 
       - name: 4.5. KernelSU-Next Multi Manager Patch
@@ -265,7 +270,6 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=32 \
             -fomit-frame-pointer \
-            -fno-stack-protector \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -ftrivial-auto-var-init=uninitialized \
@@ -281,7 +285,6 @@ jobs:
             KBUILD_LDFLAGS="--as-needed \
             --strip-debug \
             --hash-style=gnu \
-            --lto-O3 \
             -O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
 
