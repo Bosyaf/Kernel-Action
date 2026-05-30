@@ -297,7 +297,7 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../Bosyaf.zip" ./*
 
-            - name: 9. Release Yükle
+      - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
@@ -409,5 +409,5 @@ jobs:
 
             Kısacası Bosyaf Kernel, gösteriş için ağırlaştırılmış bir benchmark çekirdeği değil; gerçek kullanım için tasarlanmış, dengeli ve hedefli bir Xiaomi 14 Serisi çekirdeğidir.
           files: "Bosyaf.zip"
-        env:
+          env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
