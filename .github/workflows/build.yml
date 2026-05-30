@@ -12,8 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
-      KBUILD_BUILD_USER: "caglar"
-      KBUILD_BUILD_HOST: "guvenc"
+      KBUILD_BUILD_USER: "bos"
+      KBUILD_BUILD_HOST: "yaf"
 
     steps:
       - name: Maximize Space
@@ -294,8 +294,10 @@ jobs:
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
           cd ./AnyKernel3
+          test -f ../common/out/arch/arm64/boot/Image || { echo "❌ Image bulunamadı!"; exit 1; }
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Bosyaf.zip" ./*
+          zip -r ../Bosyaf.zip ./*
+          ls -lh ../Bosyaf.zip
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
@@ -395,7 +397,8 @@ jobs:
             • Çoklu manager desteği uygulanmıştır. Bu yapı aşağıdaki ekosistemlerle uyumluluk hedefler:
               - KernelSU Next
               - KowSU
-              🔓 Seccomp Kısıtlamaları Kaldırıldı (Zincirsiz Root Profili)
+              
+            🔓 SECCOMP Kısıtlamaları Kaldırıldı (Zincirsiz Root Profili)
             • Seccomp (Secure Computing), Linux çekirdeğinde uygulamaların kritik sistem çağrılarına (syscall) erişimini kısıtlayan bir güvenlik duvarıdır. 
             • Bu derlemede, root yetkisi verilen süreçler için Seccomp kısıtlamaları bilinçli olarak devre dışı bırakılmıştır.
             • Özellikle KowSU ve benzeri yönetici uygulamalarında görülen “Seccomp: disabled” ibaresi bir hata veya güvenlik açığı değil; root profilinin Android’in standart filtrelerine takılmadan, doğrudan çekirdek düzeyinde özgürce çalıştığının kanıtıdır.
