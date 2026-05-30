@@ -1,4 +1,4 @@
-name: CG+ Galadriel (ZyC Clang 22)
+name: Bosyaf (ZyC Clang 22)
 
 permissions:
   contents: write
@@ -51,7 +51,7 @@ jobs:
 
       - name: 2. Kaynakları Çek
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
@@ -289,24 +289,19 @@ jobs:
             -O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
 
-          echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+          echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Galadriel.zip" ./*
+          zip -r "../Bosyaf.zip" ./*
 
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (ZyC Clang 22)"
-          files: "*.zip"
+          name: "Bosyaf Kernel (ZyC Clang 22)"
+          files: "Bosyaf.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
