@@ -395,6 +395,12 @@ jobs:
             • Çoklu manager desteği uygulanmıştır. Bu yapı aşağıdaki ekosistemlerle uyumluluk hedefler:
               - KernelSU Next
               - KowSU
+              🔓 Seccomp Kısıtlamaları Kaldırıldı (Zincirsiz Root Profili)
+            • Seccomp (Secure Computing), Linux çekirdeğinde uygulamaların kritik sistem çağrılarına (syscall) erişimini kısıtlayan bir güvenlik duvarıdır. 
+            • Bu derlemede, root yetkisi verilen süreçler için Seccomp kısıtlamaları bilinçli olarak devre dışı bırakılmıştır.
+            • Özellikle KowSU ve benzeri yönetici uygulamalarında görülen “Seccomp: disabled” ibaresi bir hata veya güvenlik açığı değil; root profilinin Android’in standart filtrelerine takılmadan, doğrudan çekirdek düzeyinde özgürce çalıştığının kanıtıdır.
+            • Amaç; root erişimini yalnızca kâğıt üstünde değil, pratik kullanımda da eksiksiz, prangasız ve tam yetkili hâle getirmektir.
+            
             • **Baseband-Guard** güvenlik katmanı sisteme dahil edilmiştir.  
               Bu tercih, root ortamı sağlanırken kritik alanların başıboş bırakılmaması gerektiği anlayışına dayanır.
 
