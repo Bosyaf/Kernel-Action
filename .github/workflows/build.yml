@@ -270,6 +270,7 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=32 \
             -fomit-frame-pointer \
+            -fstack-protector \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -ftrivial-auto-var-init=uninitialized \
