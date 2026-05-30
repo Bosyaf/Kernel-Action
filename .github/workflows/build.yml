@@ -303,111 +303,158 @@ jobs:
           tag_name: ${{ env.BOOTHASH }}
           name: "Bosyaf Kernel (ZyC Clang 22)"
           body: |
-            Bosyaf Kernel, Xiaomi 14 Serisi için hazırlanmış özel bir Android 14 GKI 6.1-staging çekirdeğidir. Hedefi; oyunlarda stabil performans, temiz termal davranış, güçlü root gizleme ve günlük kullanımda yüksek akıcılığı tek bir dengeli yapıda sunmaktır.
+            # ✦ Bosyaf Kernel
 
-            Bu derleme özellikle kaynak ağacını mümkün olduğunca temiz tutar ve geniş çaplı, dengesiz veya gereksiz müdahalelerden uzak durur. Bunun yerine; sağlam bir GKI tabanı, hedefli sistem iyileştirmeleri, modern root gizleme bileşenleri, güçlü ağ yapılandırması ve dikkatli derleyici optimizasyonları ile ilerler.
+            **Bosyaf Kernel**, Xiaomi 14 Serisi için hazırlanmış, Android 14 GKI 6.1-staging tabanı üzerine inşa edilmiş özel bir çekirdektir.  
+            Bu çalışma; kararlılık, süreklilik, termal denge, güçlü root gizleme ve yüksek günlük akıcılığı tek bir çatı altında birleştirmeyi hedefleyen, ölçülü ve seçici bir mühendislik yaklaşımının ürünüdür.
+
+            Bu çekirdek; rastgele yama kalabalığıyla ağırlaştırılmış bir deneme yapısı değildir. Aksine, temiz bir kaynak temeli korunarak yalnızca gerçekten anlamlı görülen scheduler, termal, ağ ve root gizleme iyileştirmeleri dikkatle işlenmiştir. Nihai amaç; Xiaomi 14 Serisi üzerinde uzun süreli kullanımlarda dengesini koruyan, oyun sırasında karakterini kaybetmeyen ve günlük kullanımda rafine hissettiren bir sistem sunmaktır.
 
             ━━━━━━━━━━━━━━━━━━
-            Taban ve Desteklenen Cihazlar
+            📱 Taban ve Desteklenen Cihazlar
             ━━━━━━━━━━━━━━━━━━
-            • Taban: Android 14 GKI 6.1-staging
+            • Taban: **Android 14 GKI 6.1-staging**  
             • Desteklenen cihazlar:
-              - Xiaomi 14 (houji)
-              - Xiaomi 14 Pro (shennong)
-              - Xiaomi 14 Ultra (aurora)
+              - Xiaomi 14 (**houji**)
+              - Xiaomi 14 Pro (**shennong**)
+              - Xiaomi 14 Ultra (**aurora**)
+
+            Bu çekirdek, doğrudan Xiaomi 14 serisi düşünülerek hazırlanmıştır. Hedef; çok geniş bir cihaz yelpazesine dağılmak değil, aynı donanım ailesi üzerinde daha tutarlı ve daha rafine bir davranış elde etmektir.
 
             ━━━━━━━━━━━━━━━━━━
-            Sistem Davranışı ve Akıcılık
+            🧠 Scheduler ve Sistem Akıcılığı
             ━━━━━━━━━━━━━━━━━━
-            • Çekirdek zamanlayıcısı düşük gecikme ve günlük kullanım akıcılığı gözetilerek düzenlendi.
-            • İşlemci üzerindeki gereksiz scheduler yükleri azaltıldı.
-            • Modern mobil işlemci topolojisine uygun kümelendirme mantığı korunarak görevlerin daha doğru çekirdek gruplarında çalışması hedeflendi.
-            • Boş çekirdek arama yolundaki gereksiz tekrarlar azaltılarak görev yerleşimi daha temiz hale getirildi.
-            • Günlük kullanımda arayüz tepkisi, kaydırma akıcılığı ve uzun süreli kullanım stabilitesi ön planda tutuldu.
+            • Çekirdek zamanlayıcısı, düşük gecikme ve yüksek genel akıcılık gözetilerek düzenlenmiştir.  
+            • İşlemci üzerindeki gereksiz scheduler yükleri azaltılmış, görev yerleşim mantığı daha temiz hâle getirilmiştir.  
+            • Cluster farkındalığı korunarak görevlerin uygun işlemci kümelerine yerleştirilmesi hedeflenmiştir. Bu yaklaşım, modern mobil CPU topolojisinde daha tutarlı görev dağılımı ve daha düzenli önbellek davranışı sağlar.  
+            • Boş çekirdek arama yolundaki gereksiz tekrarlar azaltılmıştır. Bu küçük görünen düzenleme, yoğun görev geçişlerinde sistem davranışını daha temiz hâle getirir.  
+            • IRQ tarafındaki gereksiz uyarı gürültüsü düşürülerek çalışma anındaki log karmaşası azaltılmıştır.
+
+            Bu katmanın temel amacı; agresif ama dengesiz davranan bir yapı kurmak değil, sistemin görev yerleşimini daha ölçülü, daha verimli ve daha rafine hâle getirmektir.
 
             ━━━━━━━━━━━━━━━━━━
-            Oyun ve Uzun Oturum Dengesi
+            🎮 Oyun ve Uzun Oturum Dengesi
             ━━━━━━━━━━━━━━━━━━
-            • Oyunlarda yalnızca ilk anda hızlı hissedilen ama kısa sürede cihazı ısıtan agresif yaklaşımlar yerine, uzun oturumda daha dengeli kalan bir yapı benimsendi.
-            • Sistem zamanlayıcı yapısı, tepkisellik ile termal yük arasında dengeli bir noktaya yerleştirildi.
-            • Amaç kısa süreli patlama performansı değil; uzun oyun seanslarında daha stabil frametime ve daha temiz davranış sağlamaktır.
+            Bosyaf Kernel, ilk dakikalarda etkileyici görünüp uzun kullanımda düzenini kaybeden “patlama odaklı” çekirdek yaklaşımını benimsemez.
+
+            Bunun yerine hedeflenen yapı:
+            • kısa süreli gösterişli yükselişler yerine uzun oturum kararlılığı  
+            • ilk tepki kadar sürdürülebilir frametime düzeni  
+            • arka planda gereksiz yük taşımayan temiz ön plan performansı  
+            • ısındığında karakterini bir anda kaybetmeyen kontrollü bir sistem davranışı
+
+            Bu nedenle scheduler, termal ve runtime tarafındaki kararlar yalnızca ilk etki için değil; cihaz yük altında kaldığında da kalitesini koruyabilmesi için alınmıştır.
 
             ━━━━━━━━━━━━━━━━━━
-            Termal Politika
+            🌡️ Termal Politika
             ━━━━━━━━━━━━━━━━━━
-            • Performansı kör şekilde kesen kaba termal yaklaşım kaldırıldı.
-            • Bunun yerine, yük ve güç bütçesini daha akıllı yöneten ana termal yapı tercih edildi.
-            • Koruma tarafı tamamen bırakılmadı; sistem güvenliği ve cihaz sağlığı için yedek koruma yolu açık tutuldu.
-            • Kısacası bu yapı:
-              - gereksiz performans kesintisini azaltır
-              - uzun yük altında daha kontrollü davranır
-              - cihazı koruma tarafını da tamamen göz ardı etmez
+            Termal davranış tarafında özellikle kaba ve kör müdahalelerden kaçınılmıştır.
+
+            • **fair_share** yaklaşımı devre dışı bırakılmıştır.  
+              Bunun temel nedeni, yük altında performansı gereğinden sert ve dengesiz biçimde kesebilmesidir.
+
+            • **step_wise** sistemde açık tutulmuştur.  
+              Bu tercih performans için değil, cihaz güvenliği ve koruma tarafının tamamen terk edilmemesi içindir.
+
+            • Varsayılan termal yapı olarak **power_allocator** tercih edilmiştir.  
+              Bu, Bosyaf Kernel’in termal karakterini belirleyen başlıca kararlarından biridir. Yük altında daha akıllı güç bütçesi oluşturur, ani ve kaba performans kaybı yerine daha dengeli bir davranış hedefler.
+
+            Özetle bu yapı:
+            • gereksiz sert performans düşüşlerini azaltır  
+            • koruma mekanizmasını tamamen ortadan kaldırmaz  
+            • uzun yük altında daha olgun ve daha modern bir termal davranış sunar
+
+            Bu yaklaşım özellikle uzun oyun oturumlarında önemlidir; çünkü asıl kalite, cihaz ısındığında nasıl davrandığında ortaya çıkar.
 
             ━━━━━━━━━━━━━━━━━━
-            Ağ Yığını
+            🌐 Ağ Yığını
             ━━━━━━━━━━━━━━━━━━
-            • Güncel tıkanıklık kontrol algoritması kullanılarak gecikme davranışı iyileştirildi.
-            • Varsayılan kuyruk disiplini, özellikle gerçek hayattaki mobil ağ trafiğinde gecikme sıçramalarını azaltacak şekilde seçildi.
-            • Ağ tarafındaki yapı; çok oyunculu oyunlarda daha temiz tepki, daha düşük gecikme ve daha dengeli çevrim içi davranış hedefiyle kuruldu.
-            • Ayrıca bu kernel tabanı için gerekli görülen Wi-Fi uyumluluk düzeltmeleri de uygulandı.
+            Ağ tarafı yalnızca “çalışsın” mantığıyla bırakılmamış, bilinçli şekilde düzenlenmiştir.
+
+            • **BBRv3** entegre edilmiştir.  
+              Bu sayede özellikle dengesiz bağlantılar ve bufferbloat içeren ortamlarda daha modern bir tıkanıklık kontrolü elde edilir.
+
+            • Varsayılan kuyruk disiplini olarak **fq_codel** tercih edilmiştir.  
+              Bu tercih, gecikme sıçramalarını azaltmak ve mobil ağ trafiğini daha disiplinli yönetmek için yapılmıştır.
+
+            • Bu çekirdek tabanı için gerekli görülen **Wi‑Fi uyumluluk düzeltmesi** de uygulanmıştır.
+
+            Ağ yapılandırmasının hedefi:
+            • yük altında daha düşük gecikme  
+            • daha düzenli kuyruk davranışı  
+            • çevrim içi oyunlarda daha temiz tepki  
+            • günlük internet kullanımında daha kararlı bir his
 
             ━━━━━━━━━━━━━━━━━━
-            Root Gizleme ve Güvenlik Katmanı
+            🛡️ Root Gizleme ve Güvenlik Katmanı
             ━━━━━━━━━━━━━━━━━━
-            • KernelSU-Next entegre edilmiştir.
-            • SUSFS4KSU entegre edilmiştir.
-            • Çoklu manager desteği uygulanmıştır. Bu yapı:
+            Bosyaf Kernel’de root gizleme tarafı, sonradan iliştirilmiş yüzeysel bir ek değildir; tasarımın doğrudan parçasıdır.
+
+            • **KernelSU-Next** entegre edilmiştir.  
+            • **SUSFS4KSU** entegre edilmiştir.  
+            • Çoklu manager desteği uygulanmıştır. Bu yapı aşağıdaki ekosistemlerle uyumluluk hedefler:
               - KernelSU Next
               - KowSU
-              - MKSU
-              - VortexSU
-              - ReSukiSU
-              yönetici taraflarıyla uyumluluk hedefler.
-            • Root gizleme bu çekirdekte sonradan eklenmiş yüzeysel bir özellik değildir; çekirdek tasarımının önemli bir parçasıdır.
-            • Root gizleme, spoofing ve yönetici uyumluluğu birlikte ele alınmıştır.
-            • Baseband-Guard eklenerek güvenlik tarafı güçlendirilmiştir.
-            • Derleme sırasında ek güvenlik düzeltmeleri uygulanarak, dosya yolu ve dentry denetimlerinde daha güvenli davranış sağlanmıştır.
-            • Amaç; modern Xiaomi GKI düzeninde hem güçlü root gizleme hem de daha güvenli davranış sunmaktır.
+            • **Baseband-Guard** güvenlik katmanı sisteme dahil edilmiştir.  
+              Bu tercih, root ortamı sağlanırken kritik alanların başıboş bırakılmaması gerektiği anlayışına dayanır.
+
+            • Derleme sürecinde ek güvenlik düzeltmeleri uygulanarak dosya yolu ve dentry kontrolleri daha güvenli hâle getirilmiştir.
+
+            Bu bölümün amacı yalnızca root yetkisi vermek değildir. Asıl amaç:
+            • güçlü root gizleme  
+            • gelişmiş spoofing davranışı  
+            • çoklu manager uyumluluğu  
+            • daha güvenli ve daha disiplinli bir root ortamı
+
+            Kısacası Bosyaf Kernel, root tarafını güç ile birlikte ciddiyetle ele alır.
 
             ━━━━━━━━━━━━━━━━━━
-            Runtime Temizliği
+            🧹 Runtime Temizliği
             ━━━━━━━━━━━━━━━━━━
-            • Gereksiz debug, takip ve teşhis yükleri çalışma anında baskı oluşturmayacak şekilde temizlendi.
-            • Ağır hata ayıklama mekanizmaları günlük kullanım ve oyun tarafını yormayacak biçimde sınırlandı.
-            • Bellek ayırıcı ve sayfa izleme tarafındaki gereksiz ek yükler azaltıldı.
-            • Konsol ve çalışma zamanı gürültüsü temizlenerek sistemin ön plan deneyimine daha fazla kaynak bırakıldı.
-            • Bu sayede cihaz, sürekli log ve debug üretmek yerine doğrudan iş yüküne odaklanır.
+            Çalışma anında sisteme yük bindiren gereksiz mekanizmalar mümkün olduğunca sadeleştirilmiştir.
+
+            • Ağır debug ve izleme davranışları günlük kullanım ve oyun senaryolarını yormayacak şekilde sınırlandırılmıştır.  
+            • Konsol ve log gürültüsü temizlenerek sistemin gerçek iş yüküne daha fazla kaynak ayırması sağlanmıştır.  
+            • Bellek ayırıcı ve sayfa izleme tarafındaki gereksiz yükler azaltılmıştır.  
+            • Sistem, kendini sürekli raporlayan bir yapı olmaktan çıkarılıp yaptığı işe odaklanan bir yapıya yaklaştırılmıştır.
+
+            Bu katmanın temel yaklaşımı nettir:  
+            **gösteriş için çalışan bir sistem değil, doğrudan işini yapan bir sistem.**
 
             ━━━━━━━━━━━━━━━━━━
-            Derleme Yaklaşımı
+            🧬 Derleme Yaklaşımı (ZyC Clang 22)
             ━━━━━━━━━━━━━━━━━━
-            • Derleme tarafında modern LLVM tabanlı araç zinciri kullanılmıştır.
-            • Optimizasyon seviyesi, agresif ama dengesiz bir yaklaşım yerine; stabiliteyi bozmadan yüksek verim sağlayacak şekilde seçilmiştir.
-            • ThinLTO kullanılarak bağlantı aşamasında daha temiz ve verimli bir yapı hedeflenmiştir.
-            • Amaç yalnızca küçük dosya boyutu değil; daha düzenli, daha temiz ve daha tutarlı çalışan bir çekirdek üretmektir.
+            Derleme tarafında sıradan araçlar yerine, saf performansa odaklanan modern ve özelleştirilmiş bir araç zinciri kullanılmıştır.
+
+            • Çekirdek; standart derleyiciler yerine, `ARMv9.2-a` komut setlerinden maksimum verim alabilmek için doğrudan **ZyC Clang 22.0.0** ile derlenmiştir.  
+            • Optimizasyon yaklaşımı, aşırı saldırgan ama dengesiz bir yol yerine; kararlılığı bozmadan yüksek verim üreten (-O2) bir çizgide tutulmuştur.  
+            • Bağlayıcı (Linker) olarak **ld.lld** tercih edilmiş ve **ThinLTO** kullanılarak bağlantı aşamasında daha temiz, daha düzenli ve daha verimli bir yapı hedeflenmiştir.  
+            • Gereksiz debug yükü nihai imajdan tamamen temizlenmiştir.
+
+            Buradaki temel anlayış:
+            • rastgele agresiflik yerine bilinçli optimizasyon  
+            • nicelik yerine nitelik  
+            • hız uğruna dengeyi feda etmeyen bir derleme politikası
 
             ━━━━━━━━━━━━━━━━━━
-            Genel Yaklaşım
+            ✦ Genel Yaklaşım
             ━━━━━━━━━━━━━━━━━━
-            Bu kernel büyük patch sayısına yaslanarak değil, kontrol ve denge gözetilerek oluşturulmuştur.
+            Bosyaf Kernel, büyük yama sayılarıyla değil; **seçici müdahale, temiz yapı ve kontrollü davranış** ilkesiyle oluşturulmuştur.
 
-            Temel yaklaşım:
-            • önce stabil GKI tabanı
-            • ardından hedefli scheduler ve ağ iyileştirmeleri
-            • pratik termal politika
-            • güçlü root gizleme entegrasyonu
-            • çalışma anında azaltılmış gereksiz yük
+            Ana çizgi:
+            • önce stabil GKI tabanı  
+            • ardından anlamlı scheduler ve ağ iyileştirmeleri  
+            • rafine termal politika  
+            • güçlü root gizleme ve güvenlik entegrasyonu  
+            • çalışma anında azaltılmış gereksiz yük  
             • günlük kullanım ile oyun arasında gerçekçi bir denge
 
-            Bu nedenle bu çekirdek;
-            • uzun oyun oturumları
-            • akıcı günlük kullanım
-            • modern root gizleme ihtiyacı
+            Bu nedenle Bosyaf Kernel;
+            • uzun oyun oturumları  
+            • yüksek günlük akıcılık  
+            • modern root gizleme gereksinimi  
             • temiz ve kontrollü sistem davranışı
 
-            için hazırlanmıştır.
+            için tasarlanmıştır.
 
-            Kısacası Bosyaf Kernel, gösteriş için ağırlaştırılmış bir benchmark çekirdeği değil; gerçek kullanım için tasarlanmış, dengeli ve hedefli bir Xiaomi 14 Serisi çekirdeğidir.
-          files: "Bosyaf.zip"
-          env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            ✅ Sonuç olarak **Bosyaf Kernel**, yalnızca etkileyici görünmek için ağırlaştırılmış bir benchmark çekirdeği değil; Xiaomi 14 Serisi üzerinde gerçek kullanım için hazırlanmış, dengeli, seçici ve profesyonel bir çekirdektir.
