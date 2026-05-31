@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-            - name: 1. Paketler ve Neutron Clang 23 Çekimi
+      - name: 1. Paketler ve Neutron Clang 23 Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
