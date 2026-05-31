@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p $GITHUB_WORKSPACE/toolchain
           # Senin attığın SHA ve tarih bilgisine göre kesin link:
-          CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06032023/neutron-clang-06032023.tar.zst"
+          CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/26052026/neutron-clang-26052026.tar.zst"
           curl -fLSs "$CLANG_URL" -o clang.tar.zst
           tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/toolchain
           rm clang.tar.zst
