@@ -1,86 +1,105 @@
-name: Build Kernel with Timestamp Release
+name: Houji-Official-Source-Test
 
 on:
-  workflow_dispatch:  # 手动触发
-  push:
-    tags:
-      - "houji-6.1-*"
-    branches: [ "houji-shennong-u-oss" ]
+  workflow_dispatch:
 
 jobs:
-  build-and-release:
+  test-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Maximize Space
+        uses: easimon/maximize-build-space@master
         with:
-          fetch-depth: 0  # 获取完整提交历史
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          swap-size-gb: 16
 
-      - name: Generate Timestamp
-        id: timestamp
+      - name: 1. Paketleri Kur
         run: |
-          # 生成北京时间（格式：年月日-时分）
-          TZ='Asia/Shanghai'
-          TIMESTAMP=$(date +"%Y%m%d-%H%M")
-          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            git curl wget bc bison flex make rsync unzip zip cpio \
+            libssl-dev libelf-dev zstd xz-utils python3 \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi dwarves pahole
 
-      - name: Setup Dynamic Tag
-        id: dynamic-tag
+      - name: 2. Neutron Clang 17 İndir
         run: |
-          # 如果触发的是 tag 事件，保留原 tag 名称
-          if [[ ${{ github.event_name }} == 'push' && ${{ startsWith(github.ref, 'refs/tags/') }} ]]; then
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            # 手动触发或分支推送时使用时间戳 + 短提交 SHA
-            COMMIT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-            echo "tag=auto-${{ steps.timestamp.outputs.timestamp }}-${COMMIT_SHA}" >> $GITHUB_OUTPUT
-          fi
+          mkdir -p $GITHUB_WORKSPACE/toolchain
+          # Senin attığın SHA ve tarih bilgisine göre kesin link:
+          CLANG_URL="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06032023/neutron-clang-06032023.tar.zst"
+          curl -fLSs "$CLANG_URL" -o clang.tar.zst
+          tar -I zstd -xf clang.tar.zst -C $GITHUB_WORKSPACE/toolchain
+          rm clang.tar.zst
+          echo "$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_PATH
 
-      - name: Print Tag Info
+      - name: 3. Kaynakları Çek (3 Ayrı Repo)
         run: |
-          echo "Using Tag: ${{ steps.dynamic-tag.outputs.tag }}"
-          echo "Trigger Event: ${{ github.event_name }}"
+          mkdir -p $GITHUB_WORKSPACE/work
+          cd $GITHUB_WORKSPACE/work
 
-      - name: Install Dependencies
+          # A) Kernel Source (MiCode)
+          git clone --depth=1 -b shennong-u-oss https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git msm-kernel
+
+          # B) Device Tree (Houji/Pineapple)
+          git clone --depth=1 -b kplatform https://github.com/Bosyaf/xiaomi14-devicetrees.git devicetrees
+
+          # C) Vendor Modules/Headers
+          git clone --depth=1 -b kplatform https://github.com/mvaisakh/xiaomi14-modules.git modules
+
+      - name: 4. Klasör Düzenini Hazırla (Xiaomi Symlink Uyumu)
         run: |
-          sudo apt update
-          sudo apt install -y git build-essential bc rsync libncurses-dev flex bison \
-            libssl-dev libelf-dev dwarves zstd lz4 python3 python3-pip \
-            android-sdk-libsparse-utils clang gcc
-          sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross      # ARM64 C++ 标准库开发文件
-
-
-      - name: Build Kernel
-        run: |
-          git clone https://github.com/lavajCN/kernel_xiaomi_houji-shennong-spec
-          cd kernel_xiaomi_houji-shennong-spec
+          cd $GITHUB_WORKSPACE/work
           
-          # 实际构建命令（示例）
-          make -j$(nproc --all) ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- \
-              CROSS_COMPILE=aarch64-linux-gnu- \
+          # qcom/proprietary/devicetree yolunu ayarla
+          mkdir -p qcom/proprietary
+          # Repodaki qcom klasörünü ana qcom altına taşıyoruz
+          cp -a devicetrees/qcom/proprietary/devicetree qcom/proprietary/
 
-          # 打包产物
-          mkdir -p ../artifact
-          cp arch/arm64/boot/Image ../artifact/
-          tar czvf ../artifact/kernel-${{ steps.dynamic-tag.outputs.tag }}.tar.gz -C out/arch/arm64/boot/ .
+          # vendor/qcom/opensource yolunu ayarla
+          mkdir -p vendor/qcom/opensource
+          # Modules reposundaki opensource içeriğini buraya taşıyoruz
+          cp -a modules/qcom/opensource/* vendor/qcom/opensource/
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.dynamic-tag.outputs.tag }}  # 动态生成的 Tag
-          name: "Kernel Build (${{ steps.dynamic-tag.outputs.tag }})"
-          files: |
-            artifact/Image
-            artifact/*.tar.gz
-          generate_release_notes: true
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto Push Tag (For non-tag triggers)
-        if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/') }}
+      - name: 5. Houji Config Merge (Pineapple Tabanlı)
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          git tag ${{ steps.dynamic-tag.outputs.tag }}
-          git push origin ${{ steps.dynamic-tag.outputs.tag }}
+          cd $GITHUB_WORKSPACE/work/msm-kernel
+          mkdir -p out
+          
+          # MiCode'un merge scriptini kullanarak config oluştur
+          ./scripts/kconfig/merge_config.sh -m -r -y \
+            arch/arm64/configs/gki_defconfig \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/consolidate.fragment \
+            arch/arm64/configs/vendor/pineapple_consolidate.config \
+            arch/arm64/configs/vendor/houji_consolidate.config
+
+          mv .config out/.config
+          
+          # Toolchain yolunu tekrar belirtiyoruz build için
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            olddefconfig
+
+      - name: 6. Derlemeyi Başlat (Image + DTBS)
+        run: |
+          cd $GITHUB_WORKSPACE/work/msm-kernel
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            Image dtbs
+
+      - name: 7. Çıktı Kontrolü
+        run: |
+          echo "=== IMAGE KONTROL ==="
+          ls -lh $GITHUB_WORKSPACE/work/msm-kernel/out/arch/arm64/boot/Image || echo "❌ Image bulunamadı!"
+          
+          echo "=== DTB/DTBO KONTROL ==="
+          find $GITHUB_WORKSPACE/work/msm-kernel/out/arch/arm64/boot/dts/vendor/qcom/ -name "*.dtb" -o -name "*.dtbo" || echo "⚠️ DTB/DTBO bulunamadı!"
