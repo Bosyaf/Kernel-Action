@@ -49,16 +49,37 @@ jobs:
       - name: 4. Klasör Düzenini Hazırla (Xiaomi Symlink Uyumu)
         run: |
           cd $GITHUB_WORKSPACE/work
-          
-          # qcom/proprietary/devicetree yolunu ayarla
-          mkdir -p qcom/proprietary
-          # Repodaki qcom klasörünü ana qcom altına taşıyoruz
-          cp -a devicetrees/qcom/proprietary/devicetree qcom/proprietary/
 
-          # vendor/qcom/opensource yolunu ayarla
+          echo "[*] Preparing source layout..."
+
+          # qcom/proprietary/devicetree
+          mkdir -p qcom/proprietary/devicetree
+
+          if [ -d devicetrees/qcom ]; then
+          cp -a devicetrees/qcom/* qcom/proprietary/devicetree/
+          elif [ -d devicetrees/proprietary/devicetree ]; then
+          cp -a devicetrees/proprietary/devicetree/* qcom/proprietary/devicetree/
+          else
+          echo "[-] Could not find devicetree source path"
+          exit 1
+          fi
+
+          # vendor/qcom/opensource
           mkdir -p vendor/qcom/opensource
-          # Modules reposundaki opensource içeriğini buraya taşıyoruz
+
+          if [ -d modules/qcom/opensource ]; then
           cp -a modules/qcom/opensource/* vendor/qcom/opensource/
+          else
+          cp -a modules/* vendor/qcom/opensource/
+          fi
+
+          # sanity checks
+          test -f qcom/proprietary/devicetree/Makefile || { echo "[-] devicetree Makefile missing"; exit 1; }
+          test -d vendor/qcom/opensource/audio-kernel || { echo "[-] audio-kernel missing"; exit 1; }
+          test -d vendor/qcom/opensource/camera-kernel || { echo "[-] camera-kernel missing"; exit 1; }
+          test -d vendor/qcom/opensource/synx-kernel || { echo "[-] synx-kernel missing"; exit 1; }
+
+          echo "[✓] Layout prepared"
 
       - name: 5. Houji Config Merge (Pineapple Tabanlı)
         run: |
