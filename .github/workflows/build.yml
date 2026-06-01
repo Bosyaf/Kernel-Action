@@ -295,10 +295,20 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
             -Wno-error \
             -Wno-format \
             -Wno-format-extra-args \
-            KLDFLAGS="-Wl,--threads=1" \
+            -Wno-constant-logical-operand" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2 \
+            -Wl,--threads=1" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
         
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
