@@ -274,17 +274,39 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image modules dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
+            
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 8. AnyKernel3 (Sadece Image Paketleme)
+
+      - name: 8. AnyKernel3 (Image, Modüller ve DTBO Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          
+          # 1. Ana Çekirdeği (Image) Kopyala
           cp ../common/out/arch/arm64/boot/Image .
+          
+          # 2. Modülleri (.ko) topla ve Zip'in içine koy (WALT dahil her şey)
+          echo "📦 Modüller (.ko) paketleniyor..."
+          mkdir -p modules/vendor/lib/modules
+          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          
+          # 3. WALT modülünün boot sırasında otomatik yüklenmesi için modules.load'a yazdır
+          sed -i '/# end ramdisk changes/i \
+          if [ -f $ramdisk/lib/modules/modules.load ]; then\n  echo "sched-walt.ko" >> $ramdisk/lib/modules/modules.load\nfi\n' anykernel.sh
+          
+          # 4. Cihaz Ağaçlarını (DTB ve DTBO) topla ve Zip'e koy
+          echo "📦 Cihaz Ağaçları (DTB/DTBO) paketleniyor..."
+          mkdir -p dtb
+          find ../common/out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} dtb/ \;
+          find ../common/out/arch/arm64/boot/dts/ -name "dtbo.img" -exec cp {} . \; || true
+          
+          # 5. Her şeyi Zip'le
           zip -r "../Bosyaf.zip" ./*
+
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
