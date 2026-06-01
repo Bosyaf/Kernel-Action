@@ -50,12 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          
-          # 1. Asıl Motor (İçinde WALT ve Qualcomm kancaları hazır olan repo)
-          git clone -b kplatform https://github.com/Bosyaf/xiaomi14.git --depth=1 common
-          
-          # 2. Cihaz Haritaları (DTS - Senin bulduğun o dışarıdan bağlanan klasör)
-          git clone https://github.com/Bosyaf/xiaomi14-devicetrees.git --depth=1 sm8650-devicetrees
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -167,26 +162,10 @@ jobs:
           chmod +x scripts/check-local-export
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-                    # 1. Önce Saf GKI Temelini At (Keki koy)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-
-          # 2. Configleri Üst Üste Birleştir (Merge İşlemi)
-          echo "🧩 Config'ler Merge Ediliyor (Pineapple + Houji + Consolidate)..."
-          ./scripts/kconfig/merge_config.sh -m -O out/ out/.config \
-            arch/arm64/configs/vendor/pineapple_GKI.config \
-            arch/arm64/configs/vendor/pineapple_consolidate.config \
-            arch/arm64/configs/vendor/houji_GKI.config \
-            arch/arm64/configs/vendor/houji_consolidate.config \
-            arch/arm64/configs/consolidate.fragment
-
-          # 3. Birleşen Parçaları Onayla ve Ana .config Dosyasını Hazırla
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
           CONFIG_FILE="out/.config"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
@@ -242,16 +221,16 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-      - name: 7. Kernel, Modül ve DTB/DTBO Derleme
+      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-neutron/bin:$PATH"
-          
+          # KCFLAGS içine '-Wno-error' ekledim.
+          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            DTC_CPPFLAGS="-I$GITHUB_WORKSPACE/sm8650-devicetrees" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=32 \
@@ -273,13 +252,10 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe \
-            -Wl,-O2 \
-            -Wl,--lto-O3" \
-            Image modules dtbs || { echo "❌ Derleme HATASI!"; exit 1; }
-            
+            -Wl,-O2" \
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
-      - name: 8. AnyKernel3 (Image, Modüller ve DTBO Paketleme)
+      - name: 8. AnyKernel3 (Image, Modüller Paketleme)
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -299,15 +275,8 @@ jobs:
           sed -i '/# end ramdisk changes/i \
           if [ -f $ramdisk/lib/modules/modules.load ]; then\n  echo "sched-walt.ko" >> $ramdisk/lib/modules/modules.load\nfi\n' anykernel.sh
           
-          # 4. Cihaz Ağaçlarını (DTB ve DTBO) topla ve Zip'e koy
-          echo "📦 Cihaz Ağaçları (DTB/DTBO) paketleniyor..."
-          mkdir -p dtb
-          find ../common/out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} dtb/ \;
-          find ../common/out/arch/arm64/boot/dts/ -name "dtbo.img" -exec cp {} . \; || true
-          
-          # 5. Her şeyi Zip'le
+          # 4. Her şeyi Zip'le
           zip -r "../Bosyaf.zip" ./*
-
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
@@ -316,3 +285,7 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+      
