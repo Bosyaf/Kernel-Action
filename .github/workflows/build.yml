@@ -247,7 +247,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
 
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
 
           sed -i 's/check_defconfig//' build.config.gki || true
@@ -273,11 +273,11 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=32 \
             -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
             -fstack-protector \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
-            -ftrivial-auto-var-init=uninitialized \
-            -fno-semantic-interposition \
             -fno-math-errno \
             -Wno-unused-command-line-argument \
             -Wno-error \
@@ -286,10 +286,11 @@ jobs:
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
             -Wno-address-of-packed-member" \
-            KBUILD_LDFLAGS="--as-needed \
-            --strip-debug \
-            --hash-style=gnu \
-            -O2" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
 
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
@@ -315,4 +316,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
-            
+      
