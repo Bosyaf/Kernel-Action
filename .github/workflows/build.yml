@@ -247,11 +247,15 @@ jobs:
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-neutron/bin:$PATH"
           
+          # DTC'nin aradığı klasörleri değişkene atıyoruz (Dışarıdaki devicetrees klasörü)
+          DTC_EXT_DIR="$GITHUB_WORKSPACE/sm8650-devicetrees"
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCPPFLAGS="-I$GITHUB_WORKSPACE/sm8650-devicetrees -I$GITHUB_WORKSPACE/sm8650-devicetrees/qcom" \
+            DTC_FLAGS="-i $DTC_EXT_DIR -i $DTC_EXT_DIR/qcom -i $DTC_EXT_DIR/bindings" \
+            DTC_INCLUDE="$DTC_EXT_DIR:$DTC_EXT_DIR/qcom:$DTC_EXT_DIR/bindings" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=32 \
@@ -315,7 +319,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-
-      
