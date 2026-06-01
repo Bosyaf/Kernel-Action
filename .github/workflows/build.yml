@@ -167,10 +167,26 @@ jobs:
           chmod +x scripts/check-local-export
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
+                    # 1. Önce Saf GKI Temelini At (Keki koy)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
+
+          # 2. Configleri Üst Üste Birleştir (Merge İşlemi)
+          echo "🧩 Config'ler Merge Ediliyor (Pineapple + Houji + Consolidate)..."
+          ./scripts/kconfig/merge_config.sh -m -O out/ out/.config \
+            arch/arm64/configs/vendor/pineapple_GKI.config \
+            arch/arm64/configs/vendor/pineapple_consolidate.config \
+            arch/arm64/configs/vendor/houji_GKI.config \
+            arch/arm64/configs/vendor/houji_consolidate.config \
+            arch/arm64/configs/consolidate.fragment
+
+          # 3. Birleşen Parçaları Onayla ve Ana .config Dosyasını Hazırla
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            olddefconfig
           CONFIG_FILE="out/.config"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
