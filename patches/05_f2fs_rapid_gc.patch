@@ -1,8 +1,0 @@
---- a/fs/f2fs/gc.c
-+++ b/fs/f2fs/gc.c
-@@ -150,7 +150,8 @@
--		if (!force && sbi->gc_mode != GC_URGENT_HIGH)
-+		if (!force && sbi->gc_mode != GC_URGENT_HIGH) {
-+			sbi->gc_thread->gc_wake = 1;
- 			return -ENODATA;
-+		}
