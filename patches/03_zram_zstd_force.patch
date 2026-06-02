@@ -1,5 +1,0 @@
---- a/drivers/block/zram/zram_drv.c
-+++ b/drivers/block/zram/zram_drv.c
-@@ -42,1 +42,1 @@
--static char default_compressor[CRYPTO_MAX_ALG_NAME] = "lzo-rle";
-+static char default_compressor[CRYPTO_MAX_ALG_NAME] = "zstd";
