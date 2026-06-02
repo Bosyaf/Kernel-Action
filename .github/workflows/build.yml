@@ -149,47 +149,6 @@ jobs:
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
-          
-      - name: 🧪 FINAL ULTIMATE WALT FIX (THE NUCLEAR OPTION)
-        run: |
-          cd common
-          # 1. Eksik Header ve Makroları Garantiye Al
-          mkdir -p include/linux
-          cat << 'EOF' > include/linux/qcom-cpufreq-hw.h
-          #ifndef _QCOM_CPUFREQ_HW_H
-          #define _QCOM_CPUFREQ_HW_H
-          static inline unsigned int qcom_cpufreq_hw_get_core_cycle(unsigned int cpu) { return 0; }
-          #endif
-          EOF
-
-          # 2. kernel/sched/sched.h Dosyasını En Sona Include Ekle (Circular Dependency Fix)
-          sed -i '/#include "walt\/walt.h"/d' kernel/sched/sched.h
-          sed -i '/#endif \/\* _KERNEL_SCHED_SCHED_H \*\//i #ifdef CONFIG_SCHED_WALT\n#include "walt/walt.h"\n#endif' kernel/sched/sched.h
-
-          # 3. include/linux/sched.h - wts Yapısını ve Fonksiyonları Göm
-          sed -i '/struct walt_task_struct		wts;/d' include/linux/sched.h
-          sed -i '/struct sched_entity		se;/a #ifdef CONFIG_SCHED_WALT\n	struct walt_task_struct		wts;\n#endif' include/linux/sched.h
-          
-          # Fonksiyonları En Sona At (Incomplete Type Fix)
-          cat << 'EOF' >> include/linux/sched.h
-          #ifdef CONFIG_SCHED_WALT
-          #include <linux/sched/walt.h>
-          static inline bool sched_get_wake_up_idle(struct task_struct *p) { return p->wts.wake_up_idle; }
-          static inline int sched_set_wake_up_idle(struct task_struct *p, bool wake_up_idle) { p->wts.wake_up_idle = wake_up_idle; return 0; }
-          static inline void set_wake_up_idle(bool wui) { current->wts.wake_up_idle = wui; }
-          #endif
-          EOF
-
-          # 4. core.c ve fair.c Kancalarını Tertemiz At
-          sed -i '/if (!(flags & ENQUEUE_NOCLOCK))/a #ifdef CONFIG_SCHED_WALT\n	walt_update_task_ravg(p, rq, TASK_ENQUEUE, rq_clock(rq), 0);\n#endif' kernel/sched/core.c
-          sed -i '/if (!(flags & DEQUEUE_NOCLOCK))/a #ifdef CONFIG_SCHED_WALT\n	walt_update_task_ravg(p, rq, TASK_DEQUEUE, rq_clock(rq), 0);\n#endif' kernel/sched/core.c
-          sed -i '/#include "sched.h"/a #include "walt/walt.h"' kernel/sched/core.c
-
-          # 5. Makefile'ı Zorla Aktif Et
-          sed -i '/obj-y += walt\//d' kernel/sched/Makefile
-          sed -i '$a obj-y += walt/' kernel/sched/Makefile
-          echo "CONFIG_SCHED_WALT=y" >> out/.config || true
-          echo "✅ Nuclear Fix Uygulandı."
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -315,5 +274,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
-
-      
