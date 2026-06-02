@@ -149,6 +149,38 @@ jobs:
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
+      - name: 🛠️ SÜPER HIZLI WALT ENJEKSİYONU (SIFIR HATA)
+        run: |
+          cd common
+          echo "🔥 WALT kancaları sızdırılıyor..."
+
+          # 1. include/linux/sched.h - WTS yapısını göm
+          sed -i '/struct sched_entity		se;/a #ifdef CONFIG_SCHED_WALT\n	struct walt_task_struct		wts;\n#endif' include/linux/sched.h
+          
+          # Dosyanın en sonuna (endif'ten önce) WALT fonksiyonlarını ekle
+          sed -i '$i #ifdef CONFIG_SCHED_WALT\n#include <linux/sched/walt.h>\n#define wts_to_ts(mgr) container_of(mgr, struct task_struct, wts)\nstatic inline bool sched_get_wake_up_idle(struct task_struct *p) { return p->wts.wake_up_idle; }\nstatic inline int sched_set_wake_up_idle(struct task_struct *p, bool wake_up_idle) { p->wts.wake_up_idle = wake_up_idle; return 0; }\nstatic inline void set_wake_up_idle(bool wui) { current->wts.wake_up_idle = wui; }\n#endif' include/linux/sched.h
+
+          # 2. kernel/sched/core.c - Kancaları at
+          sed -i '/#include "sched.h"/a #include "walt/walt.h"' kernel/sched/core.c
+          
+          # Enqueue kancası (Fonksiyonun ilk satırından sonra)
+          sed -i '/enqueue_task(struct rq \*rq, struct task_struct \*p, int flags)/{n;a #ifdef CONFIG_SCHED_WALT\n	walt_update_task_ravg(p, rq, TASK_ENQUEUE, rq_clock(rq), 0);\n#endif\n}' kernel/sched/core.c
+          
+          # Dequeue kancası
+          sed -i '/dequeue_task(struct rq \*rq, struct task_struct \*p, int flags)/{n;a #ifdef CONFIG_SCHED_WALT\n	walt_update_task_ravg(p, rq, TASK_DEQUEUE, rq_clock(rq), 0);\n#endif\n}' kernel/sched/core.c
+
+          # 3. kernel/sched/sched.h - RQ Yapısı ve Include
+          sed -i '/struct dl_rq		dl;/a #ifdef CONFIG_SCHED_WALT\n	u64 walt_stats_cum_window_start, walt_stats_prev_window_size;\n	struct walt_rq walt_rq;\n	u64 old_busy_time, old_busy_time_group, old_exception_flags;\n#endif' kernel/sched/sched.h
+          
+          sed -i '$i #ifdef CONFIG_SCHED_WALT\n#include "walt/walt.h"\n#endif' kernel/sched/sched.h
+
+          # 4. Eksik Header ve Makefile Ayarı
+          mkdir -p include/linux
+          echo -e "#ifndef _QCOM_CPUFREQ_HW_H\n#define _QCOM_CPUFREQ_HW_H\nstatic inline unsigned int qcom_cpufreq_hw_get_core_cycle(unsigned int cpu) { return 0; }\n#endif" > include/linux/qcom-cpufreq-hw.h
+          
+          sed -i '$a obj-y += walt/' kernel/sched/Makefile
+
+          echo "✅ WALT başarıyla enjekte edildi!"
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
