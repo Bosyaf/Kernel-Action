@@ -1,0 +1,164 @@
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -62,6 +62,7 @@
+ struct audit_context;
+ struct backing_dev_info;
+ struct bio_list;
++struct walt_task_struct;
+ struct blk_plug;
+ struct bpf_local_storage;
+ struct bpf_run_ctx;
+@@ -818,6 +819,9 @@
+ 	unsigned int			flags;
+ 
+ 	struct sched_entity		se;
++#ifdef CONFIG_SCHED_WALT
++	struct walt_task_struct		wts;
++#endif
+ 	struct sched_rt_entity		rt;
+ 	struct sched_dl_entity		dl;
+ 
+@@ -2350,4 +2354,23 @@
+ 
+ extern void sched_set_stop_task(int cpu, struct task_struct *stop);
+ 
++#ifdef CONFIG_SCHED_WALT
++#include <linux/sched/walt.h>
++static inline bool sched_get_wake_up_idle(struct task_struct *p)
++{
++	return p->wts.wake_up_idle;
++}
++static inline int sched_set_wake_up_idle(struct task_struct *p, bool wake_up_idle)
++{
++	p->wts.wake_up_idle = wake_up_idle;
++	return 0;
++}
++static inline void set_wake_up_idle(bool wake_up_idle)
++{
++	current->wts.wake_up_idle = wake_up_idle;
++}
++#else
++static inline bool sched_get_wake_up_idle(struct task_struct *p) { return false; }
++static inline int sched_set_wake_up_idle(struct task_struct *p, bool wui) { return 0; }
++static inline void set_wake_up_idle(bool wui) { }
++#endif
++
+ #endif /* _LINUX_SCHED_H */
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -2012,6 +2013,10 @@
+ 	if (!(flags & ENQUEUE_NOCLOCK))
+ 		update_rq_clock(rq);
+ 
++#ifdef CONFIG_SCHED_WALT
++	walt_update_task_ravg(p, rq, TASK_ENQUEUE, rq_clock(rq), 0);
++#endif
++
+ 	if (!(flags & ENQUEUE_RESTORE)) {
+ 		sched_info_enqueue(rq, p);
+ 		psi_enqueue(p, flags & ENQUEUE_WAKEUP);
+@@ -2019,6 +2024,10 @@
+ 
+ 	uclamp_rq_inc(rq, p);
+ 
++#ifdef CONFIG_SCHED_WALT
++	walt_inc_cumulative_runnable_avg(rq, p);
++#endif
++
+ 	trace_android_rvh_enqueue_task(rq, p, flags);
+ 	p->sched_class->enqueue_task(rq, p, flags);
+ 	trace_android_rvh_after_enqueue_task(rq, p, flags);
+@@ -2033,6 +2042,10 @@
+ 	if (!(flags & DEQUEUE_NOCLOCK))
+ 		update_rq_clock(rq);
+ 
++#ifdef CONFIG_SCHED_WALT
++	walt_update_task_ravg(p, rq, TASK_DEQUEUE, rq_clock(rq), 0);
++#endif
++
+ 	if (!(flags & DEQUEUE_SAVE)) {
+ 		sched_info_dequeued(rq, p);
+ 		psi_dequeue(p, flags & DEQUEUE_SLEEP);
+@@ -2040,6 +2053,10 @@
+ 
+ 	uclamp_rq_dec(rq, p);
+ 
++#ifdef CONFIG_SCHED_WALT
++	walt_dec_cumulative_runnable_avg(rq, p);
++#endif
++
+ 	trace_android_rvh_dequeue_task(rq, p, flags);
+ 	p->sched_class->dequeue_task(rq, p, flags);
+ 	trace_android_rvh_after_dequeue_task(rq, p, flags);
+@@ -2526,6 +2543,9 @@
+ 		if (p->sched_class->migrate_task_rq)
+ 			p->sched_class->migrate_task_rq(p, new_cpu);
+ 		p->cpu = new_cpu;
++#ifdef CONFIG_SCHED_WALT
++		walt_fixup_busy_time(p, new_cpu);
++#endif
+ 
+ 		if (p->sched_class->set_cpus_allowed)
+ 			p->sched_class->set_cpus_allowed(p, cpumask_of(new_cpu));
+@@ -5479,6 +5499,9 @@
+ 
+ 	raw_spin_lock(&rq->__lock);
+ 	update_rq_clock(rq);
++#ifdef CONFIG_SCHED_WALT
++	walt_update_task_ravg(curr, rq, TASK_UPDATE, rq_clock(rq), 0);
++#endif
+ 	trace_android_rvh_tick_entry(rq);
+ 
+ 	thermal_pressure = arch_scale_thermal_pressure(cpu_of(rq));
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -3955,6 +3956,12 @@
+ 	u64 now = cfs_rq_clock_pelt(cfs_rq);
+ 	int decayed;
+ 
++#ifdef CONFIG_SCHED_WALT
++	if (entity_is_task(se))
++		walt_update_task_ravg(task_of(se), rq_of(cfs_rq), TASK_UPDATE,
++				     rq_clock(rq_of(cfs_rq)), 0);
++#endif
++
+ 	if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
+ 		__update_load_avg_se(now, cfs_rq, se);
+ 
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -1077,5 +1077,13 @@
+ 	struct cfs_rq		cfs;
+ 	struct rt_rq		rt;
+ 	struct dl_rq		dl;
++#ifdef CONFIG_SCHED_WALT
++	u64			walt_stats_cum_window_start;
++	u64			walt_stats_prev_window_size;
++	struct walt_rq		walt_rq;
++	u64			old_busy_time;
++	u64			old_busy_time_group;
++	u64			old_exception_flags;
++#endif
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED
+@@ -3517,4 +3525,7 @@
+ #endif
+ }
+ 
++#ifdef CONFIG_SCHED_WALT
++#include "walt/walt.h"
++#endif
++
+ #endif /* _KERNEL_SCHED_SCHED_H */
+diff --git a/kernel/sched/Makefile b/kernel/sched/Makefile
+--- a/kernel/sched/Makefile
++++ b/kernel/sched/Makefile
+@@ -30,3 +30,4 @@
+ obj-y += fair.o
+ obj-y += build_policy.o
+ obj-y += build_utility.o
++obj-y += walt/
