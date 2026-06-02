@@ -1,0 +1,13 @@
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -52,6 +52,11 @@
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/vmscan.h>
+ 
++/* Force MGLRU for Better RAM Management on 6.1 GKI */
++unsigned int mglru_max_generations = 8;
++unsigned int mglru_efficiency_pct = 85;
++bool mglru_enabled = true;
++
+ #undef CREATE_TRACE_POINTS
+ #include <trace/hooks/vmscan.h>
