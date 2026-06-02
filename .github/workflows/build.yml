@@ -150,7 +150,7 @@ jobs:
             echo "🎉 Özel yamalar tamamlandı!"
           fi
           
-            - name: 🧪 FINAL ULTIMATE WALT FIX (THE NUCLEAR OPTION)
+      - name: 🧪 FINAL ULTIMATE WALT FIX (THE NUCLEAR OPTION)
         run: |
           cd common
           # 1. Eksik Header ve Makroları Garantiye Al
