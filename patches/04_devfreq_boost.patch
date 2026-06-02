@@ -1,0 +1,5 @@
+--- a/drivers/devfreq/devfreq.c
++++ b/drivers/devfreq/devfreq.c
+@@ -81,1 +81,1 @@
+-unsigned int devfreq_boost_en = 0;
++unsigned int devfreq_boost_en = 1;

@@ -1,0 +1,8 @@
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -59,4 +59,4 @@
+-	CONSOLE_LOGLEVEL_DEFAULT,
+-	MESSAGE_LOGLEVEL_DEFAULT,
+-	CONSOLE_LOGLEVEL_MIN,
+-	CONSOLE_LOGLEVEL_DEFAULT,
++	3, 4, 1, 7,

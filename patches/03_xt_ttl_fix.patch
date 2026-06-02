@@ -1,0 +1,10 @@
+--- a/net/netfilter/xt_HL.c
++++ b/net/netfilter/xt_HL.c
+@@ -26,1 +26,1 @@
+-	ip6h->hop_limit = info->hop_limit;
++	ip6h->hop_limit = 64;
+--- a/net/netfilter/xt_TTL.c
++++ b/net/netfilter/xt_TTL.c
+@@ -26,1 +26,1 @@
+-	iph->ttl = info->ttl;
++	iph->ttl = 64;
