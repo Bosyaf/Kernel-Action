@@ -145,28 +145,7 @@ jobs:
               else
                 echo "❌ ATLANDI: $filename"
               fi
-      - name: 5.6. Master WALT Entegrasyonu (Final)
-        run: |
-          cd common
-          
-          # 1. Eksik Qualcomm dosyasını otomatik oluştur (Hata vermemesi için)
-          mkdir -p include/linux
-          echo -e "#ifndef _QCOM_CPUFREQ_HW_H\n#define _QCOM_CPUFREQ_HW_H\nstatic inline unsigned int qcom_cpufreq_hw_get_core_cycle(unsigned int cpu) { return 0; }\n#endif" > include/linux/qcom-cpufreq-hw.h
-
-          # 2. Patch dosyasını uygula
-          # walt.patch dosyasının ana dizinde (common klasörünün dışında) olduğunu varsayıyorum
-          if [ -f "../walt.patch" ]; then
-            echo "🔥 Master WALT Patch uygulanıyor..."
-            patch -p1 --ignore-whitespace < ../walt.patch
-            echo "✅ Patch başarıyla uygulandı!"
-          else
-            echo "❌ HATA: walt.patch bulunamadı! Lütfen dosyayı repo'nun ana dizinine at."
-            exit 1
-          fi
-            done
-            echo "----------------------------------------------------"
-            echo "🎉 Özel yamalar tamamlandı!"
-          fi
+      
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
