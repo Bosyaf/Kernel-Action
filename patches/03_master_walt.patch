@@ -1,0 +1,108 @@
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -0,0 +1,6 @@
++config SCHED_WALT
++	bool "Window-Assisted Load Tracking (WALT)"
++	depends on SMP
++	default y
++	help
++	  WALT is an alternative load tracking mechanism for the scheduler.
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -62,6 +62,7 @@
+ struct audit_context;
+ struct backing_dev_info;
+ struct bio_list;
++struct walt_task_struct;
+ struct blk_plug;
+ struct bpf_local_storage;
+ struct bpf_run_ctx;
+@@ -818,6 +819,9 @@
+ 	unsigned int			flags;
+ 
+ 	struct sched_entity		se;
++#ifdef CONFIG_SCHED_WALT
++	struct walt_task_struct		wts;
++#endif
+ 	struct sched_rt_entity		rt;
+ 	struct sched_dl_entity		dl;
+@@ -2350,4 +2354,16 @@
+ 
+ extern void sched_set_stop_task(int cpu, struct task_struct *stop);
+ 
++#ifdef CONFIG_SCHED_WALT
++#include <linux/sched/walt.h>
++#define wts_to_ts(mgr) container_of(mgr, struct task_struct, wts)
++static inline bool sched_get_wake_up_idle(struct task_struct *p) { return p->wts.wake_up_idle; }
++static inline int sched_set_wake_up_idle(struct task_struct *p, bool wake_up_idle) { p->wts.wake_up_idle = wake_up_idle; return 0; }
++static inline void set_wake_up_idle(bool wui) { current->wts.wake_up_idle = wui; }
++#else
++static inline bool sched_get_wake_up_idle(struct task_struct *p) { return false; }
++static inline int sched_set_wake_up_idle(struct task_struct *p, bool wui) { return 0; }
++static inline void set_wake_up_idle(bool wui) { }
++#endif
++
+ #endif /* _LINUX_SCHED_H */
+--- a/kernel/sched/Makefile
++++ b/kernel/sched/Makefile
+@@ -30,3 +30,4 @@
+ obj-y += fair.o
+ obj-y += build_policy.o
+ obj-y += build_utility.o
++obj-y += walt/
+--- a/kernel/sched/walt/Makefile
++++ b/kernel/sched/walt/Makefile
+@@ -1,3 +1,6 @@
+-obj-$(CONFIG_SCHED_WALT) += sched-walt.o
+-sched-walt-$(CONFIG_SCHED_WALT) := walt.o boost.o sched_avg.o walt_halt.o core_ctl.o trace.o input-boost.o sysctl.o cpufreq_walt.o fixup.o walt_lb.o walt_rt.o walt_cfs.o walt_tp.o mvp_locking.o
++obj-y += sched-walt.o
++sched-walt-y := walt.o boost.o sched_avg.o walt_halt.o core_ctl.o trace.o input-boost.o sysctl.o cpufreq_walt.o fixup.o walt_lb.o walt_rt.o walt_cfs.o walt_tp.o mvp_locking.o
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -2012,6 +2012,9 @@
+ 	if (!(flags & ENQUEUE_NOCLOCK))
+ 		update_rq_clock(rq);
+ 
++#ifdef CONFIG_SCHED_WALT
++	walt_update_task_ravg(p, rq, TASK_ENQUEUE, rq_clock(rq), 0);
++#endif
+ 	if (!(flags & ENQUEUE_RESTORE)) {
+ 		sched_info_enqueue(rq, p);
+ 		psi_enqueue(p, flags & ENQUEUE_WAKEUP);
+@@ -2019,6 +2022,9 @@
+ 
+ 	uclamp_rq_inc(rq, p);
+ 
++#ifdef CONFIG_SCHED_WALT
++	walt_inc_cumulative_runnable_avg(rq, p);
++#endif
+ 	trace_android_rvh_enqueue_task(rq, p, flags);
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -1077,5 +1077,13 @@
+ 	struct cfs_rq		cfs;
+ 	struct rt_rq		rt;
+ 	struct dl_rq		dl;
++#ifdef CONFIG_SCHED_WALT
++	u64			walt_stats_cum_window_start;
++	u64			walt_stats_prev_window_size;
++	struct walt_rq		walt_rq;
++	u64			old_busy_time;
++	u64			old_busy_time_group;
++	u64			old_exception_flags;
++#endif
+@@ -3517,4 +3525,7 @@
+ #endif
+ }
++#ifdef CONFIG_SCHED_WALT
++#include "walt/walt.h"
++#endif
+ #endif /* _KERNEL_SCHED_SCHED_H */
+--- a/kernel/sched/walt/walt.h
++++ b/kernel/sched/walt/walt.h
+@@ -10,6 +10,11 @@
++#define WALT_NR_CPUS 8
++#define MAX_CLUSTERS 4
++struct rq;
++extern struct rq *cpu_rq(int cpu);
++#define cpu_of(rq) ((rq)->cpu)
