@@ -150,62 +150,46 @@ jobs:
             echo "🎉 Özel yamalar tamamlandı!"
           fi
           
-      - name: 🛠️ WALT "FİNAL" ENJEKSİYONU (V4 - NEUTRON CLANG FİX)
+            - name: 🧪 FINAL ULTIMATE WALT FIX (THE NUCLEAR OPTION)
         run: |
           cd common
-          echo "🔥 Cerrahi temizlik ve enjeksiyon başlıyor..."
+          # 1. Eksik Header ve Makroları Garantiye Al
+          mkdir -p include/linux
+          cat << 'EOF' > include/linux/qcom-cpufreq-hw.h
+          #ifndef _QCOM_CPUFREQ_HW_H
+          #define _QCOM_CPUFREQ_HW_H
+          static inline unsigned int qcom_cpufreq_hw_get_core_cycle(unsigned int cpu) { return 0; }
+          #endif
+          EOF
 
-          # 1. include/linux/sched.h - wts yapısını doğru yere göm
-          # Önceki hatalı sed çıktılarını temizle ve tertemiz ekle
+          # 2. kernel/sched/sched.h Dosyasını En Sona Include Ekle (Circular Dependency Fix)
+          sed -i '/#include "walt\/walt.h"/d' kernel/sched/sched.h
+          sed -i '/#endif \/\* _KERNEL_SCHED_SCHED_H \*\//i #ifdef CONFIG_SCHED_WALT\n#include "walt/walt.h"\n#endif' kernel/sched/sched.h
+
+          # 3. include/linux/sched.h - wts Yapısını ve Fonksiyonları Göm
           sed -i '/struct walt_task_struct		wts;/d' include/linux/sched.h
           sed -i '/struct sched_entity		se;/a #ifdef CONFIG_SCHED_WALT\n	struct walt_task_struct		wts;\n#endif' include/linux/sched.h
           
-          # 2. kernel/sched/walt/walt.h - Hatalı Pointer/Struct kısımlarını temizle
-          # Makro çakışmasını engelle
-          sed -i '/#define MAX_MARGIN_LEVELS 3/d' kernel/sched/walt/walt.h
-          
-          # Hata veren o p->wts;p->wts; saçmalığını ve yanındaki fonksiyonları temizle
-          # Fonksiyonları walt.h içinde sadece 'tanım' (prototip) olarak bırakıyoruz
-          # İçeriklerini sched.h'ın en sonuna Neutron'un göreceği yere taşıyacağız
-          sed -i '/static inline bool sched_get_wake_up_idle/,/}/d' kernel/sched/walt/walt.h
-          sed -i '/static inline int sched_set_wake_up_idle/,/}/d' kernel/sched/walt/walt.h
-          sed -i '/static inline void set_wake_up_idle/,/}/d' kernel/sched/walt/walt.h
-          sed -i '/#define wts_to_ts/d' kernel/sched/walt/walt.h
-
-          # 3. include/linux/sched.h - Fonksiyonları en güvenli (en son) yere taşı
-          # Bu kısım Neutron Clang'in 'incomplete type' hatasını %100 çözer
-          sed -i '/#ifdef CONFIG_SCHED_WALT/,/#endif/d' include/linux/sched.h || true # Eski hatalı bloğu temizle
-          
+          # Fonksiyonları En Sona At (Incomplete Type Fix)
           cat << 'EOF' >> include/linux/sched.h
           #ifdef CONFIG_SCHED_WALT
           #include <linux/sched/walt.h>
-          #define wts_to_ts(mgr) container_of(mgr, struct task_struct, wts)
           static inline bool sched_get_wake_up_idle(struct task_struct *p) { return p->wts.wake_up_idle; }
           static inline int sched_set_wake_up_idle(struct task_struct *p, bool wake_up_idle) { p->wts.wake_up_idle = wake_up_idle; return 0; }
           static inline void set_wake_up_idle(bool wui) { current->wts.wake_up_idle = wui; }
           #endif
           EOF
 
-          # 4. kernel/sched/core.c ve fair.c Kancalarını Tazele
-          sed -i '/#include "walt\/walt.h"/d' kernel/sched/core.c
+          # 4. core.c ve fair.c Kancalarını Tertemiz At
+          sed -i '/if (!(flags & ENQUEUE_NOCLOCK))/a #ifdef CONFIG_SCHED_WALT\n	walt_update_task_ravg(p, rq, TASK_ENQUEUE, rq_clock(rq), 0);\n#endif' kernel/sched/core.c
+          sed -i '/if (!(flags & DEQUEUE_NOCLOCK))/a #ifdef CONFIG_SCHED_WALT\n	walt_update_task_ravg(p, rq, TASK_DEQUEUE, rq_clock(rq), 0);\n#endif' kernel/sched/core.c
           sed -i '/#include "sched.h"/a #include "walt/walt.h"' kernel/sched/core.c
-          
-          # 5. kernel/sched/sched.h - RQ Yapısını ve Include Sırasını Düzelt
-          sed -i '/struct walt_rq walt_rq;/d' kernel/sched/sched.h
-          sed -i '/struct dl_rq		dl;/a #ifdef CONFIG_SCHED_WALT\n	u64 walt_stats_cum_window_start, walt_stats_prev_window_size;\n	struct walt_rq walt_rq;\n	u64 old_busy_time, old_busy_time_group, old_exception_flags;\n#endif' kernel/sched/sched.h
-          
-          sed -i '/#include "walt\/walt.h"/d' kernel/sched/sched.h
-          sed -i '/#endif \/\* _KERNEL_SCHED_SCHED_H \*\//i #ifdef CONFIG_SCHED_WALT\n#include "walt/walt.h"\n#endif' kernel/sched/sched.h
 
-          # 6. Eksik Header Fix
-          mkdir -p include/linux
-          echo -e "#ifndef _QCOM_CPUFREQ_HW_H\n#define _QCOM_CPUFREQ_HW_H\nstatic inline unsigned int qcom_cpufreq_hw_get_core_cycle(unsigned int cpu) { return 0; }\n#endif" > include/linux/qcom-cpufreq-hw.h
-          
-          # 7. Makefile'ı ana klasöre ekle
+          # 5. Makefile'ı Zorla Aktif Et
           sed -i '/obj-y += walt\//d' kernel/sched/Makefile
           sed -i '$a obj-y += walt/' kernel/sched/Makefile
-
-          echo "✅ V4 CERRAHİ İŞLEM TAMAM! Neutron bu sefer Image'ı verecek."
+          echo "CONFIG_SCHED_WALT=y" >> out/.config || true
+          echo "✅ Nuclear Fix Uygulandı."
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
