@@ -276,7 +276,7 @@ jobs:
             -fno-asynchronous-unwind-tables \
             -Wno-error \
             -Wno-format \
-            -Wno-format-extra-args \
+            -Wno-format-extra-args" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
