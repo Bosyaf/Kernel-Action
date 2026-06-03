@@ -1,5 +1,0 @@
---- a/kernel/sched/cpufreq_schedutil.c
-+++ b/kernel/sched/cpufreq_schedutil.c
-@@ -210,1 +210,1 @@
--	if (sugov_iowait_apply(sg_cpu, time, max_cap))
-+	if (0) /* IOWait boost disabled for smoothness */
