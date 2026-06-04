@@ -176,18 +176,25 @@ jobs:
           cd common
           export PATH="$YUKI_BIN:$PATH"
 
+          # TÜM SCRIPTS VE TOOLS DİZİNİNE ÇALIŞTIRMA İZNİ VER
+          find scripts -type f -exec chmod +x {} +
+          [ -d tools ] && find tools -type f -exec chmod +x {} +
+          
+          # Ekstra güvenlik için Makefile ve ana scriptleri de yetkilendir
+          chmod +x Makefile scripts/config scripts/check-local-export 2>/dev/null || true
+
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-
+          
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-
+          
           mkdir -p out
-          [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-
+          
+          # Konfigürasyonu oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
