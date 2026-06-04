@@ -52,7 +52,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b main https://github.com/Bosyaf/unglost-kernel.git --depth=1 common
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -175,25 +175,18 @@ jobs:
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
-          # TÜM SCRIPTS VE TOOLS DİZİNİNE ÇALIŞTIRMA İZNİ VER
-          find scripts -type f -exec chmod +x {} +
-          [ -d tools ] && find tools -type f -exec chmod +x {} +
-          
-          # Ekstra güvenlik için Makefile ve ana scriptleri de yetkilendir
-          chmod +x Makefile scripts/config scripts/check-local-export 2>/dev/null || true
-
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
-          
+
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
-          
+
           mkdir -p out
-          
-          # Konfigürasyonu oluştur
+          [ -x ./scripts/config ] || chmod +x ./scripts/config || true
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -299,6 +292,8 @@ jobs:
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
           cp ../common/out/arch/arm64/boot/Image .
+          mkdir -p modules/vendor/lib/modules
+          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           zip -r "../Bosyaf.zip" ./*
 
       - name: 9. Release Yükle
