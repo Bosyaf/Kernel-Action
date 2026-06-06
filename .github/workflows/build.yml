@@ -277,7 +277,8 @@ jobs:
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fstack-protector \
+            -fno-strict-aliasing
+            -fno-common
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -Wno-error \
