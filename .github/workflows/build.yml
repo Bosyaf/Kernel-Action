@@ -236,7 +236,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_ALL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_HASH
-          ./scripts/config --file $CONFIG_FILE --str "CONFIG_MODULE_SIG_KEY" ""
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_MODULE_SIG_KEY ""
           # ========== MODUL VERSION CHECK KAPAT BITIS ==========
 
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
