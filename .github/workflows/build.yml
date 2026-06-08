@@ -47,30 +47,42 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git --depth=1 common
 
-      - name: 3. Config ve Derleme
+      - name: 3. Config ve Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
+          mkdir -p out
+
+          # 1. Base GKI config'i oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            vendor/pineapple_GKI.config
+            gki_defconfig
 
+          # 2. Vendor fragment ile MERGE et
+          scripts/kconfig/merge_config.sh -m -r -y -O out/ \
+            out/.config arch/arm64/configs/vendor/pineapple_GKI.config
+
+          # 3. Eğer cihaza özel defconfig varsa onu da merge et (opsiyonel)
+          if [ -f "arch/arm64/configs/houji_defconfig" ]; then
+            scripts/kconfig/merge_config.sh -m -r -y -O out/ \
+              out/.config arch/arm64/configs/houji_defconfig
+          fi
+
+          # 4. Modül desteğini zorla
+          ./scripts/config --file out/.config --enable CONFIG_MODULES
+          ./scripts/config --file out/.config --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --file out/.config --enable CONFIG_MODULE_FORCE_LOAD
+          
+          # WALT'ın modül olmasını zorla
+          ./scripts/config --file out/.config --module CONFIG_SCHED_WALT
+
+          # 5. Config'i son haline getir (eksikleri tamamlar)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-Wno-error -Wno-format -Wno-format-extra-args" \
-            Image modules || { echo "❌ HATA!"; exit 1; }
-
-          echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 4. Paketleme
         run: |
           cd AnyKernel3
