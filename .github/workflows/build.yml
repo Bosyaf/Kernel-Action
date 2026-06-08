@@ -70,15 +70,7 @@ jobs:
               out/.config arch/arm64/configs/houji_defconfig
           fi
 
-          # 4. Modül desteğini zorla
-          ./scripts/config --file out/.config --enable CONFIG_MODULES
-          ./scripts/config --file out/.config --enable CONFIG_MODULE_UNLOAD
-          ./scripts/config --file out/.config --enable CONFIG_MODULE_FORCE_LOAD
-          
-          # WALT'ın modül olmasını zorla
-          ./scripts/config --file out/.config --module CONFIG_SCHED_WALT
-
-          # 5. Config'i son haline getir (eksikleri tamamlar)
+          # 4. Config'i son haline getir (eksikleri tamamlar)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
