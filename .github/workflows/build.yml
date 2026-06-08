@@ -70,23 +70,20 @@ jobs:
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
 
-          # 5 tur =m → =y + olddefconfig dongusu
-          # Her turda kalan =m azalir
           for i in 1 2 3 4 5; do
-            COUNT=$(grep -c "=m" out/.config)
+            COUNT=$(grep -c "=m" out/.config || true)
             echo "Tur $i: $COUNT adet =m kaldi"
             [ "$COUNT" -eq 0 ] && break
             sed -i 's/=m$/=y/' out/.config
             make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
           done
 
-          # Son hamle - kalan =m varsa zorla
           sed -i 's/=m$/=y/' out/.config
 
           echo "FINAL =m sayisi:"
           grep -c "=m" out/.config || echo "0"
           echo "FINAL =y sayisi:"
-          grep -c "=y" out/.config
+          grep -c "=y" out/.config || echo "0"
       - name: 4. Kernel Derle
         run: |
           cd common
