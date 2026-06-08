@@ -46,19 +46,24 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git --depth=1 common
 
-      - name: 3. MONOLITHIC Config (houji_defconfig = zaten her sey built-in)
+      - name: 3. GERCEK MONOLITHIC Config
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           mkdir -p out
 
-          # houji_defconfig zaten monolithic (INTEGRATE_MODULES=y)
-          # GKI + pineapple + consolidate + houji hepsi icinde
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            houji_defconfig
+          # houji_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
+
+          # TUM =m → =y (gercek monolithic)
+          sed -i 's/=m$/=y/' out/.config
+
+          # Finalize
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+
+          # Kontrol
+          echo "Kalan modul sayisi:"
+          grep "=m" out/.config | wc -l
 
           echo "CONFIG kontrol:"
           grep "CONFIG_INTEGRATE_MODULES" out/.config
