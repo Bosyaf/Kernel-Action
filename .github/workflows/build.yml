@@ -46,38 +46,25 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git --depth=1 common
 
-      - name: 3. MONOLITHIC Config (consolidate = built-in vendor)
+      - name: 3. MONOLITHIC Config (houji_defconfig = zaten her sey built-in)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           mkdir -p out
 
-          # 1. Base GKI
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          # houji_defconfig zaten monolithic (INTEGRATE_MODULES=y)
+          # GKI + pineapple + consolidate + houji hepsi icinde
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
+            houji_defconfig
 
-          # 2. Pineapple GKI
-          scripts/kconfig/merge_config.sh -m -O out/ \
-            out/.config arch/arm64/configs/vendor/pineapple_GKI.config
+          echo "CONFIG kontrol:"
+          grep "CONFIG_INTEGRATE_MODULES" out/.config
+          grep "CONFIG_ARCH_PINEAPPLE" out/.config
 
-          # 3. CONSOLIDATE - Vendor driver'lari built-in yap (CONFIG_*=y)
-          scripts/kconfig/merge_config.sh -m -O out/ \
-            out/.config arch/arm64/configs/consolidate.fragment
-
-          # 4. Pineapple consolidate config
-          scripts/kconfig/merge_config.sh -m -O out/ \
-            out/.config arch/arm64/configs/vendor/pineapple_consolidate.config
-
-          # 5. Houji device
-          scripts/kconfig/merge_config.sh -m -O out/ \
-            out/.config arch/arm64/configs/vendor/houji_GKI.config
-
-          # 6. Finalize
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-          
-          echo "CONFIG check:"
-          grep -E "CONFIG_QCOM_|CONFIG_MSM_" out/.config | grep "=y" | head -10
-
-      - name: 4. Kernel Derle (Her şey built-in)
+      - name: 4. Kernel Derle
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -85,74 +72,47 @@ jobs:
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
             Image dtbs
 
           if [ ! -f out/arch/arm64/boot/Image ]; then
             echo "HATA!"; exit 1
           fi
-          
-          IMAGE_SIZE=$(stat -c%s out/arch/arm64/boot/Image)
-          echo "Image boyutu: $((IMAGE_SIZE / 1024 / 1024)) MB (buyuk olmali - vendor built-in)"
           ls -lh out/arch/arm64/boot/Image
 
-      - name: 5. AnyKernel3 Vendor Modul Temizleyici Ekle
+      - name: 5. AnyKernel3 Hazırla
         run: |
           cd AnyKernel3
-          
-          # anykernel.sh'a vendor modul temizleme ekle
-          cat >> anykernel.sh << 'EOF'
-
-          # Vendor ramdisk modullerini devre disi birak (monolithic kernel)
-          ui_print " "
-          ui_print "Vendor moduller devre disi birakiliyor..."
-
-          # Vendor lib modules temizle
-          if [ -d /vendor/lib/modules ]; then
-            rm -rf /vendor/lib/modules/*.ko
-            rm -f /vendor/lib/modules/modules.load
-            rm -f /vendor/lib/modules/modules.dep
-            rm -f /vendor/lib/modules/modules.alias
-            echo "# Monolithic kernel - no external modules" > /vendor/lib/modules/modules.load
-          fi
-
-          # Vendor_dlkm mount edilmisse onu da temizle
-          VENDOR_DLKM=$(find /dev/block -name vendor_dlkm 2>/dev/null | head -1)
-          if [ -n "$VENDOR_DLKM" ]; then
-            ui_print "vendor_dlkm partition temizleniyor..."
-            mkdir -p /tmp/vendor_dlkm
-            mount -o rw $VENDOR_DLKM /tmp/vendor_dlkm 2>/dev/null
-            if [ $? -eq 0 ]; then
-              rm -rf /tmp/vendor_dlkm/lib/modules/*.ko
-              echo "# Monolithic kernel" > /tmp/vendor_dlkm/lib/modules/modules.load
-              umount /tmp/vendor_dlkm
-            fi
-          fi
-
-          ui_print "Vendor moduller temizlendi - monolithic kernel aktif"
-          EOF
-
-          # Device info
           sed -i 's/kernel.string=.*/kernel.string=Bosyaf MONOLITHIC/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          cat >> anykernel.sh << 'EOF'
 
-      - name: 6. Paketleme (Sadece Image + DTBs)
+          ui_print " "
+          ui_print "Vendor moduller devre disi birakiliyor..."
+          if [ -d /vendor/lib/modules ]; then
+            rm -rf /vendor/lib/modules/*.ko
+            echo "# Monolithic" > /vendor/lib/modules/modules.load
+          fi
+          VENDOR_DLKM=$(find /dev/block -name vendor_dlkm 2>/dev/null | head -1)
+          if [ -n "$VENDOR_DLKM" ]; then
+            mkdir -p /tmp/vdlkm
+            mount -o rw $VENDOR_DLKM /tmp/vdlkm 2>/dev/null
+            if [ $? -eq 0 ]; then
+              rm -rf /tmp/vdlkm/lib/modules/*.ko
+              echo "# Monolithic" > /tmp/vdlkm/lib/modules/modules.load
+              umount /tmp/vdlkm
+            fi
+          fi
+          ui_print "Vendor moduller temizlendi"
+          EOF
+
+      - name: 6. Paketleme
         run: |
           cd AnyKernel3
-          
-          # Image
           cp ../common/out/arch/arm64/boot/Image .
-          
-          # DTBs
           find ../common/out/arch/arm64/boot/dts/vendor -name "*.dtb" -exec cp {} . \; 2>/dev/null || true
-          
-          # MODUL YOK - hepsi built-in!
-          
-          echo "Paket icerigi:"
-          ls -lh Image *.dtb 2>/dev/null
-          echo "Image boyutu (MB): $(($(stat -c%s Image) / 1024 / 1024))"
-          
           zip -r9 "../Bosyaf-MONOLITHIC-Houji-$(date +%Y%m%d-%H%M).zip" ./*
 
       - name: 7. Release
@@ -160,12 +120,6 @@ jobs:
         with:
           tag_name: "houji-mono-$(date +%Y%m%d-%H%M)"
           name: "Bosyaf MONOLITHIC - Houji"
-          body: |
-            ### Mi 14 Houji - MONOLITHIC Kernel
-            ⚠️ Vendor ramdisk modulleri devre disi - TUM driver'lar built-in
-            - Consolidate build - vendor drivers Image icinde
-            - Vendor modulleri otomatik temizlenir
-            - OTA sonrasi yeniden flash gerekebilir
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
