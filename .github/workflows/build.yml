@@ -102,34 +102,34 @@ jobs:
           # anykernel.sh'a vendor modul temizleme ekle
           cat >> anykernel.sh << 'EOF'
 
-# Vendor ramdisk modullerini devre disi birak (monolithic kernel)
-ui_print " "
-ui_print "Vendor moduller devre disi birakiliyor..."
+          # Vendor ramdisk modullerini devre disi birak (monolithic kernel)
+          ui_print " "
+          ui_print "Vendor moduller devre disi birakiliyor..."
 
-# Vendor lib modules temizle
-if [ -d /vendor/lib/modules ]; then
-  rm -rf /vendor/lib/modules/*.ko
-  rm -f /vendor/lib/modules/modules.load
-  rm -f /vendor/lib/modules/modules.dep
-  rm -f /vendor/lib/modules/modules.alias
-  echo "# Monolithic kernel - no external modules" > /vendor/lib/modules/modules.load
-fi
+          # Vendor lib modules temizle
+          if [ -d /vendor/lib/modules ]; then
+            rm -rf /vendor/lib/modules/*.ko
+            rm -f /vendor/lib/modules/modules.load
+            rm -f /vendor/lib/modules/modules.dep
+            rm -f /vendor/lib/modules/modules.alias
+            echo "# Monolithic kernel - no external modules" > /vendor/lib/modules/modules.load
+          fi
 
-# Vendor_dlkm mount edilmisse onu da temizle
-VENDOR_DLKM=$(find /dev/block -name vendor_dlkm 2>/dev/null | head -1)
-if [ -n "$VENDOR_DLKM" ]; then
-  ui_print "vendor_dlkm partition temizleniyor..."
-  mkdir -p /tmp/vendor_dlkm
-  mount -o rw $VENDOR_DLKM /tmp/vendor_dlkm 2>/dev/null
-  if [ $? -eq 0 ]; then
-    rm -rf /tmp/vendor_dlkm/lib/modules/*.ko
-    echo "# Monolithic kernel" > /tmp/vendor_dlkm/lib/modules/modules.load
-    umount /tmp/vendor_dlkm
-  fi
-fi
+          # Vendor_dlkm mount edilmisse onu da temizle
+          VENDOR_DLKM=$(find /dev/block -name vendor_dlkm 2>/dev/null | head -1)
+          if [ -n "$VENDOR_DLKM" ]; then
+            ui_print "vendor_dlkm partition temizleniyor..."
+            mkdir -p /tmp/vendor_dlkm
+            mount -o rw $VENDOR_DLKM /tmp/vendor_dlkm 2>/dev/null
+            if [ $? -eq 0 ]; then
+              rm -rf /tmp/vendor_dlkm/lib/modules/*.ko
+              echo "# Monolithic kernel" > /tmp/vendor_dlkm/lib/modules/modules.load
+              umount /tmp/vendor_dlkm
+            fi
+          fi
 
-ui_print "Vendor moduller temizlendi - monolithic kernel aktif"
-EOF
+          ui_print "Vendor moduller temizlendi - monolithic kernel aktif"
+          EOF
 
           # Device info
           sed -i 's/kernel.string=.*/kernel.string=Bosyaf MONOLITHIC/' anykernel.sh
