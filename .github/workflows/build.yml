@@ -34,7 +34,6 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA!"; exit 1; }
           mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
@@ -47,59 +46,123 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git --depth=1 common
 
-      - name: 3. Config ve Derleme Hazırlığı
+      - name: 3. Repo İçeriğini Kontrol Et
+        run: |
+          cd common
+          echo "📂 Dizin yapısı:"
+          ls -la
+          echo ""
+          echo "📂 Techpack içeriği:"
+          ls -la techpack/ 2>/dev/null || echo "techpack yok"
+          echo ""
+          echo "📂 Config dosyaları:"
+          find arch/arm64/configs -type f -name "*defconfig" -o -name "*.config" -o -name "*.fragment" | head -20
+          echo ""
+          echo "📂 Vendor configs:"
+          find arch/arm64/configs/vendor -type f 2>/dev/null | head -20 || echo "vendor configs yok"
+
+      - name: 4. Monolithic Config Oluştur
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-
           mkdir -p out
-
-          # 1. Base GKI config'i oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-
-          # 2. Vendor fragment ile MERGE et
-          scripts/kconfig/merge_config.sh -m -r -y -O out/ \
-            out/.config arch/arm64/configs/vendor/pineapple_GKI.config
-
-          # 3. Eğer cihaza özel defconfig varsa onu da merge et (opsiyonel)
-          if [ -f "arch/arm64/configs/houji_defconfig" ]; then
-            scripts/kconfig/merge_config.sh -m -r -y -O out/ \
-              out/.config arch/arm64/configs/houji_defconfig
+          
+          # Hangi config dosyaları var kontrol et
+          echo "🔍 Mevcut config dosyaları:"
+          ls -la arch/arm64/configs/ | grep -E "gki|pineapple|houji|consolidate|monolithic"
+          
+          # Base GKI defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          
+          # Vendor pineapple GKI config varsa merge et
+          if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
+            echo "✅ pineapple_GKI.config bulundu, merge ediliyor..."
+            scripts/kconfig/merge_config.sh -m -O out/ \
+              out/.config arch/arm64/configs/vendor/pineapple_GKI.config
           fi
+          
+          # Consolidate fragment varsa merge et
+          if [ -f "arch/arm64/configs/consolidate.fragment" ]; then
+            echo "✅ consolidate.fragment bulundu, merge ediliyor..."
+            scripts/kconfig/merge_config.sh -m -O out/ \
+              out/.config arch/arm64/configs/consolidate.fragment
+          fi
+          
+          # Vendor consolidate varsa merge et
+          if [ -f "arch/arm64/configs/vendor/pineapple_consolidate.config" ]; then
+            echo "✅ pineapple_consolidate.config bulundu, merge ediliyor..."
+            scripts/kconfig/merge_config.sh -m -O out/ \
+              out/.config arch/arm64/configs/vendor/pineapple_consolidate.config
+          fi
+          
+          # Houji device config varsa merge et
+          if [ -f "arch/arm64/configs/vendor/houji.config" ]; then
+            echo "✅ houji.config bulundu, merge ediliyor..."
+            scripts/kconfig/merge_config.sh -m -O out/ \
+              out/.config arch/arm64/configs/vendor/houji.config
+          elif [ -f "arch/arm64/configs/vendor/xiaomi/houji.config" ]; then
+            echo "✅ xiaomi/houji.config bulundu, merge ediliyor..."
+            scripts/kconfig/merge_config.sh -m -O out/ \
+              out/.config arch/arm64/configs/vendor/xiaomi/houji.config
+          fi
+          
+          # Final config
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          
+          echo "✅ Config başarıyla oluşturuldu"
 
-          # 4. Config'i son haline getir (eksikleri tamamlar)
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-      - name: 4. Paketleme
+      - name: 5. Kernel Derle
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
+            OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            Image modules dtbs
+          
+          if [ ! -f "out/arch/arm64/boot/Image" ]; then
+            echo "❌ HATA: Image oluşmadı!"
+            exit 1
+          fi
+          
+          echo "✅ Kernel derlendi"
+          ls -lh out/arch/arm64/boot/Image
+          find out -name "*.ko" | wc -l
+
+      - name: 6. Paketleme
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=Bosyaf Monolithic/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=Bosyaf Monolithic Houji/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-
+          
           cp ../common/out/arch/arm64/boot/Image .
+          
+          # DTBs varsa kopyala
+          find ../common/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} . \; 2>/dev/null || true
+          
+          # Modüller varsa kopyala
+          mkdir -p modules/vendor/lib/modules
+          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \; 2>/dev/null || true
+          
+          echo "📦 Paket içeriği:"
+          ls -lh Image
+          echo "Modül sayısı: $(find modules -name '*.ko' 2>/dev/null | wc -l)"
+          
+          zip -r9 "../Bosyaf-Houji-$(date +%Y%m%d-%H%M).zip" ./*
 
-          mkdir -p modules
-          find ../common/out -name "*.ko" -exec cp {} modules/ \;
-
-          echo "📦 Modül sayısı:"
-          ls modules/*.ko 2>/dev/null | wc -l
-          echo "📦 Modül listesi:"
-          ls modules/*.ko 2>/dev/null
-
-          zip -r "../Bosyaf.zip" ./*
-
-      - name: 5. Release
+      - name: 7. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "Bosyaf Monolithic"
+          tag_name: "houji-$(date +%Y%m%d-%H%M)"
+          name: "Bosyaf Monolithic - Houji $(date +%Y-%m-%d)"
+          body: |
+            ### Xiaomi Mi 14 (Houji) - Monolithic Build
+            - Platform: Pineapple (SM8650)
+            - Compiler: ZyC Clang 22.0.0
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
