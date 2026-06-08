@@ -62,7 +62,7 @@ jobs:
           grep "pp_cfg = NULL" techpack/display/msm/sde/sde_rm.c | head -1
           grep "name = NULL" drivers/input/misc/qcom-hv-haptics.c | head -1
 
-      - name: 3. MONOLITHIC Config
+      - name: 3. GERCEK MONOLITHIC Config
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -70,14 +70,23 @@ jobs:
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 houji_defconfig
 
-          # TUM =m → =y (gercek monolithic)
+          # 5 tur =m → =y + olddefconfig dongusu
+          # Her turda kalan =m azalir
+          for i in 1 2 3 4 5; do
+            COUNT=$(grep -c "=m" out/.config)
+            echo "Tur $i: $COUNT adet =m kaldi"
+            [ "$COUNT" -eq 0 ] && break
+            sed -i 's/=m$/=y/' out/.config
+            make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          done
+
+          # Son hamle - kalan =m varsa zorla
           sed -i 's/=m$/=y/' out/.config
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-
-          echo "Modul sayisi (0 olmali):"
-          grep "=m" out/.config | wc -l
-
+          echo "FINAL =m sayisi:"
+          grep -c "=m" out/.config || echo "0"
+          echo "FINAL =y sayisi:"
+          grep -c "=y" out/.config
       - name: 4. Kernel Derle
         run: |
           cd common
