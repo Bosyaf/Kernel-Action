@@ -1,4 +1,4 @@
-name: Bosyaf Monolithic Build
+name: Bosyaf GKI + Vendor DLKM Build
 
 permissions:
   contents: write
@@ -46,123 +46,93 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git --depth=1 common
 
-      - name: 3. Repo İçeriğini Kontrol Et
-        run: |
-          cd common
-          echo "📂 Dizin yapısı:"
-          ls -la
-          echo ""
-          echo "📂 Techpack içeriği:"
-          ls -la techpack/ 2>/dev/null || echo "techpack yok"
-          echo ""
-          echo "📂 Config dosyaları:"
-          find arch/arm64/configs -type f -name "*defconfig" -o -name "*.config" -o -name "*.fragment" | head -20
-          echo ""
-          echo "📂 Vendor configs:"
-          find arch/arm64/configs/vendor -type f 2>/dev/null | head -20 || echo "vendor configs yok"
-
-      - name: 4. Monolithic Config Oluştur
+      - name: 3. GKI Config (NO Consolidate - Modular)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           mkdir -p out
-          
-          # Hangi config dosyaları var kontrol et
-          echo "🔍 Mevcut config dosyaları:"
-          ls -la arch/arm64/configs/ | grep -E "gki|pineapple|houji|consolidate|monolithic"
-          
-          # Base GKI defconfig
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
-          
-          # Vendor pineapple GKI config varsa merge et
-          if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
-            echo "✅ pineapple_GKI.config bulundu, merge ediliyor..."
-            scripts/kconfig/merge_config.sh -m -O out/ \
-              out/.config arch/arm64/configs/vendor/pineapple_GKI.config
-          fi
-          
-          # Consolidate fragment varsa merge et
-          if [ -f "arch/arm64/configs/consolidate.fragment" ]; then
-            echo "✅ consolidate.fragment bulundu, merge ediliyor..."
-            scripts/kconfig/merge_config.sh -m -O out/ \
-              out/.config arch/arm64/configs/consolidate.fragment
-          fi
-          
-          # Vendor consolidate varsa merge et
-          if [ -f "arch/arm64/configs/vendor/pineapple_consolidate.config" ]; then
-            echo "✅ pineapple_consolidate.config bulundu, merge ediliyor..."
-            scripts/kconfig/merge_config.sh -m -O out/ \
-              out/.config arch/arm64/configs/vendor/pineapple_consolidate.config
-          fi
-          
-          # Houji device config varsa merge et
-          if [ -f "arch/arm64/configs/vendor/houji.config" ]; then
-            echo "✅ houji.config bulundu, merge ediliyor..."
-            scripts/kconfig/merge_config.sh -m -O out/ \
-              out/.config arch/arm64/configs/vendor/houji.config
-          elif [ -f "arch/arm64/configs/vendor/xiaomi/houji.config" ]; then
-            echo "✅ xiaomi/houji.config bulundu, merge ediliyor..."
-            scripts/kconfig/merge_config.sh -m -O out/ \
-              out/.config arch/arm64/configs/vendor/xiaomi/houji.config
-          fi
-          
-          # Final config
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-          
-          echo "✅ Config başarıyla oluşturuldu"
 
-      - name: 5. Kernel Derle
+          # 1. Base GKI
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            gki_defconfig
+
+          # 2. Pineapple platform (vendor modules as MODULES=m)
+          scripts/kconfig/merge_config.sh -m -O out/ \
+            out/.config arch/arm64/configs/vendor/pineapple_GKI.config
+
+          # 3. Houji device config
+          scripts/kconfig/merge_config.sh -m -O out/ \
+            out/.config arch/arm64/configs/vendor/houji_GKI.config
+
+          # NO CONSOLIDATE! Vendor drivers will be .ko modules
+
+          # 4. Finalize
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+
+      - name: 4. Kernel + Modules Derle
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
-            OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            Image modules dtbs
-          
-          if [ ! -f "out/arch/arm64/boot/Image" ]; then
-            echo "❌ HATA: Image oluşmadı!"
-            exit 1
-          fi
-          
-          echo "✅ Kernel derlendi"
-          ls -lh out/arch/arm64/boot/Image
-          find out -name "*.ko" | wc -l
 
-      - name: 6. Paketleme
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            Image modules dtbs
+
+          if [ ! -f out/arch/arm64/boot/Image ]; then
+            echo "HATA!"; exit 1
+          fi
+          echo "Image: $(ls -lh out/arch/arm64/boot/Image | awk '{print $5}')"
+          echo "Modul sayisi: $(find out -name '*.ko' | wc -l)"
+
+      - name: 5. Vendor DLKM Modulleri Topla
+        run: |
+          cd common
+          mkdir -p out/vendor_dlkm/lib/modules/6.6
+          
+          # Vendor modulleri kopyala (techpack, qcom drivers vs)
+          find out -name "*.ko" -exec cp {} out/vendor_dlkm/lib/modules/6.6/ \;
+          
+          # modules.load olustur
+          find out/vendor_dlkm/lib/modules/6.6 -name "*.ko" -exec basename {} \; > out/vendor_dlkm/lib/modules/6.6/modules.load
+          
+          echo "Vendor DLKM modulleri: $(ls out/vendor_dlkm/lib/modules/6.6/*.ko | wc -l)"
+
+      - name: 6. AnyKernel3 Paketleme
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=Bosyaf Monolithic Houji/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=Bosyaf GKI Houji/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          
+
+          # Image
           cp ../common/out/arch/arm64/boot/Image .
-          
-          # DTBs varsa kopyala
-          find ../common/out/arch/arm64/boot/dts -name "*.dtb" -exec cp {} . \; 2>/dev/null || true
-          
-          # Modüller varsa kopyala
-          mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \; 2>/dev/null || true
-          
-          echo "📦 Paket içeriği:"
+
+          # DTBs
+          find ../common/out/arch/arm64/boot/dts/vendor -name "*.dtb" -exec cp {} . \; 2>/dev/null || true
+
+          # Vendor DLKM modulleri
+          mkdir -p modules
+          cp -r ../common/out/vendor_dlkm/* modules/
+
+          echo "Paket:"
           ls -lh Image
-          echo "Modül sayısı: $(find modules -name '*.ko' 2>/dev/null | wc -l)"
-          
-          zip -r9 "../Bosyaf-Houji-$(date +%Y%m%d-%H%M).zip" ./*
+          echo "Modul: $(find modules -name '*.ko' | wc -l)"
+
+          zip -r9 "../Bosyaf-GKI-Houji-$(date +%Y%m%d-%H%M).zip" ./*
 
       - name: 7. Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "houji-$(date +%Y%m%d-%H%M)"
-          name: "Bosyaf Monolithic - Houji $(date +%Y-%m-%d)"
+          tag_name: "houji-gki-$(date +%Y%m%d-%H%M)"
+          name: "Bosyaf GKI + Vendor DLKM - Houji"
           body: |
-            ### Xiaomi Mi 14 (Houji) - Monolithic Build
-            - Platform: Pineapple (SM8650)
-            - Compiler: ZyC Clang 22.0.0
+            ### Mi 14 Houji - GKI + Vendor Modules
+            - GKI Image + Vendor .ko modulleri
+            - Cihazin vendor_boot ile uyumlu
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
