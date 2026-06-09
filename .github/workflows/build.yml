@@ -40,10 +40,11 @@ jobs:
             binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
             pkg-config zstd
           mkdir -p "$GITHUB_WORKSPACE/clang"
-          curl -fsSL "https://android.googlesource.com/platform//prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz" -o clang.tar.gz
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
-          rm -f clang.tar.gz
+          curl -fL "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.2/clang+llvm-17.0.2-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
+          tar -xf clang.tar.xz -C "$GITHUB_WORKSPACE/clang" --strip-components=1
+          rm -f clang.tar.xz
           echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
+          "$GITHUB_WORKSPACE/clang/bin/clang" --version
       - name: Clone sources
         run: |
           git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
@@ -80,7 +81,7 @@ jobs:
       - name: Configure houji monolithic
         run: |
           cd common
-          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           mkdir -p out
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
