@@ -67,17 +67,7 @@ jobs:
           sed -i 's/struct synx_map_entry \*map_entry;/struct synx_map_entry *map_entry = NULL;/' \
             techpack/synx-kernel/msm/synx/synx.c
 
-          # ============================================
-          # WLAN TAMAMEN DEVRE DISI - DERLENMEYECEK
-          # ============================================
-          rm -rf techpack/wlan
-          mkdir -p techpack/wlan
-          echo "# WLAN disabled" > techpack/wlan/Kbuild
-          echo "# WLAN disabled" > techpack/wlan/Makefile
-
-          echo "WLAN dizini devre disi birakildi"
-
-      - name: Configure (Modular, WLAN kapalı)
+      - name: Configure (Modular, WLAN disabled)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -90,15 +80,19 @@ jobs:
             HOSTCC=gcc HOSTCXX=g++ \
             houji_defconfig
 
-          # WLAN config kapat
           scripts/config --file out/.config \
-            -d QCA_CLD_WLAN \
-            -d CNSS2 \
-            -d CNSS_QCA6750 \
-            -d WCNSS_MEM_PRE_ALLOC \
             -e MODULES \
             -e MODULE_UNLOAD \
-            -e MODVERSIONS
+            -e MODVERSIONS \
+            -d QCA_CLD_WLAN \
+            -d CNSS2 \
+            -d CNSS_GENL \
+            -d CNSS_UTILS \
+            -d ICNSS2 \
+            -d WCNSS_MEM_PRE_ALLOC \
+            -d CNSS_QCA6750 \
+            -d CNSS_QMI_SVC \
+            -d CNSS_PLAT_IPC_QMI_SVC
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
@@ -107,13 +101,8 @@ jobs:
             HOSTCC=gcc HOSTCXX=g++ \
             olddefconfig
 
-          echo "=== CONFIG DURUMU ==="
-          echo "WLAN:"
-          grep "CONFIG_QCA_CLD_WLAN" out/.config || echo "WLAN YOK (iyi)"
-          echo "MODULES:"
-          grep "^CONFIG_MODULES=" out/.config
-          echo "Modul sayisi (=m):"
-          grep -c "=m" out/.config || echo "0"
+          echo "=== WLAN durumu ==="
+          grep -E 'CONFIG_(QCA_CLD_WLAN|CNSS2|CNSS_GENL|CNSS_UTILS|ICNSS2|WCNSS_MEM_PRE_ALLOC)=' out/.config || true
 
       - name: Build kernel + modules (WLAN hariç)
         run: |
