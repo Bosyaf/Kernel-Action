@@ -1,4 +1,4 @@
-name: Bosyaf Houji (Modüler Build)
+name: Bosyaf Houji (WLAN Hariç)
 
 permissions:
   contents: write
@@ -40,186 +40,153 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
             pkg-config zstd pahole
-          mkdir -p "$GITHUB_WORKSPACE/clang"
-          curl -fL "https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.2/clang+llvm-17.0.2-x86_64-linux-gnu-ubuntu-22.04.tar.xz" -o clang.tar.xz
-          tar -xf clang.tar.xz -C "$GITHUB_WORKSPACE/clang" --strip-components=1
-          rm -f clang.tar.xz
-          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-          "$GITHUB_WORKSPACE/clang/bin/clang" --version
+
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          curl -fL "$CLANG_URL" -o clang.tar.gz
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          rm -f clang.tar.gz
+          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
 
       - name: Clone sources
         run: |
           git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-          git clone --depth 1 --single-branch -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git common
+          git clone --depth 1 -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git common
 
-      - name: Patch source for clang
+      - name: Patch sources (WLAN HARIC)
         run: |
           cd common
-          # Uninitialized variable fix
+
+          # Clang uninitialized fix
           sed -i 's/const struct sde_pingpong_cfg \*pp_cfg;/const struct sde_pingpong_cfg *pp_cfg = NULL;/' \
             techpack/display/msm/sde/sde_rm.c
+
           sed -i 's/const char \*name;/const char *name = NULL;/' \
             drivers/input/misc/qcom-hv-haptics.c
+
           sed -i 's/struct synx_map_entry \*map_entry;/struct synx_map_entry *map_entry = NULL;/' \
             techpack/synx-kernel/msm/synx/synx.c
 
-      - name: WLAN Patch
+          # ============================================
+          # WLAN TAMAMEN DEVRE DISI - DERLENMEYECEK
+          # ============================================
+          rm -rf techpack/wlan
+          mkdir -p techpack/wlan
+          echo "# WLAN disabled" > techpack/wlan/Kbuild
+          echo "# WLAN disabled" > techpack/wlan/Makefile
+
+          echo "WLAN dizini devre disi birakildi"
+
+      - name: Configure (Modular, WLAN kapalı)
         run: |
           cd common
-          # cfg80211 API fix
-          WLAN_CFG="techpack/wlan/qcacld-3.0/cmn/os_if/linux/wlan_cfg80211.h"
-          sed -i 's/cfg80211_ch_switch_notify(dev, chandef);/cfg80211_ch_switch_notify(dev, chandef, 0, 0);/g' "$WLAN_CFG"
-          sed -i 's/cfg80211_ch_switch_started_notify(dev, chandef, count);/cfg80211_ch_switch_started_notify(dev, chandef, 0, count, false, 0);/g' "$WLAN_CFG"
-
-          # IOMMU compat
-          IOMMU_FILE="techpack/wlan/qcacld-3.0/cmn/qdf/linux/src/i_qdf_mem.h"
-          sed -i '1i\
-          #ifndef QCOM_IOMMU_MAPPING_CONF_S1_BYPASS\
-          #define QCOM_IOMMU_MAPPING_CONF_S1_BYPASS 0\
-          #define QCOM_IOMMU_MAPPING_CONF_ATOMIC    1\
-          #define QCOM_IOMMU_MAPPING_CONF_FAST      2\
-          static inline int qcom_iommu_get_mappings_configuration(void *d) { return QCOM_IOMMU_MAPPING_CONF_FAST; }\
-          #endif' "$IOMMU_FILE"
-
-          # GCC-only warning flagleri kaldir (Clang tanimiyor)
-          find techpack/wlan -type f \( -name "Makefile" -o -name "Kbuild" -o -name "*.mk" \) | xargs sed -i \
-            -e 's/-Wno-multistatement-macros//g' \
-            -e 's/-Wno-enum-int-mismatch//g' \
-            -e 's/-Werror=multistatement-macros//g' \
-            -e 's/-Werror=enum-int-mismatch//g'
-
-          # WLAN PATCH 3: Clang bilinmeyen warning flagleri kaldir
-          grep -rn "multistatement-macros\|enum-int-mismatch" techpack/wlan/ || true
-          find techpack/wlan -type f | xargs sed -i \
-          -e 's/-W[a-z-]*multistatement-macros//g' \
-          -e 's/-W[a-z-]*enum-int-mismatch//g'
-          echo "WLAN patchleri tamam"
-
-      - name: Configure (MODULLU - =m kalsin)
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           mkdir -p out
 
-          # houji_defconfig (base)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            KCFLAGS="-Wno-error" HOSTCFLAGS="-Wno-error" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            HOSTCC=gcc HOSTCXX=g++ \
             houji_defconfig
 
-          # MODUL DESTEKLEME AÇ (houji_defconfig kapatıyor)
+          # WLAN config kapat
           scripts/config --file out/.config \
+            -d QCA_CLD_WLAN \
+            -d CNSS2 \
+            -d CNSS_QCA6750 \
+            -d WCNSS_MEM_PRE_ALLOC \
             -e MODULES \
             -e MODULE_UNLOAD \
             -e MODVERSIONS
 
-          # pineapple GKI + vendor GKI fragment
-          scripts/kconfig/merge_config.sh -m -O out/ \
-            out/.config arch/arm64/configs/vendor/pineapple_GKI.config
-
-          # Finalize
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            KCFLAGS="-Wno-error" HOSTCFLAGS="-Wno-error" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            HOSTCC=gcc HOSTCXX=g++ \
             olddefconfig
 
-          echo "=== Config Durumu ==="
+          echo "=== CONFIG DURUMU ==="
+          echo "WLAN:"
+          grep "CONFIG_QCA_CLD_WLAN" out/.config || echo "WLAN YOK (iyi)"
+          echo "MODULES:"
           grep "^CONFIG_MODULES=" out/.config
-          echo "=m sayisi:"
-          grep -c '=m' out/.config || echo "0"
-          echo "=y sayisi:"
-          grep -c '=y' out/.config || echo "0"
+          echo "Modul sayisi (=m):"
+          grep -c "=m" out/.config || echo "0"
 
-      - name: Build kernel + modules + dtbs
+      - name: Build kernel + modules (WLAN hariç)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
 
           make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            HOSTCC=clang HOSTCXX=clang++ HOSTLD=ld.lld \
-            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            KCFLAGS="-Wno-error" HOSTCFLAGS="-Wno-error" \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            HOSTCC=gcc HOSTCXX=g++ \
             Image modules dtbs
 
           test -f out/arch/arm64/boot/Image
 
-          echo "=== Sonuc ==="
+          echo "=== BUILD SONUCU ==="
           echo "Image:"
           ls -lh out/arch/arm64/boot/Image
-          echo "KO sayisi:"
+
+          echo "Toplam KO sayisi:"
           find out -name "*.ko" | wc -l
-          echo "KO list (ilk 30):"
-          find out -name "*.ko" | head -30
 
-      - name: Collect modules
-        run: |
-          cd common
-          mkdir -p modules_list
-          find out -name "*.ko" -exec cp {} modules_list/ \;
-          find out -name "*.ko" -exec basename {} \; | sort > ../modules.load
-
-          echo "Toplanan modul sayisi:"
-          ls modules_list/*.ko 2>/dev/null | wc -l
+          echo "Techpack modulleri:"
+          find out -path "*/techpack/*" -name "*.ko" | head -20
 
       - name: Prepare AnyKernel3
         run: |
           cd AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=Bosyaf Houji/' anykernel.sh
+
+          sed -i 's/kernel.string=.*/kernel.string=Bosyaf Houji (WLAN stock)/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
-      - name: Package zip (kernel + modules)
+      - name: Package zip
         run: |
           cd AnyKernel3
 
-          # Kernel Image
           cp ../common/out/arch/arm64/boot/Image .
 
-          # DTB/DTBO
           find ../common/out/arch/arm64/boot/dts -type f \( -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} . \; 2>/dev/null || true
 
-          # Moduller -> modules/vendor/lib/modules
+          # Moduller (WLAN haric)
           mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          find ../common/out -name "*.ko" ! -path "*wlan*" -exec cp {} modules/vendor/lib/modules/ \;
+
           find modules/vendor/lib/modules -name "*.ko" -exec basename {} \; | sort > modules/vendor/lib/modules/modules.load
 
-          # modules.dep oluştur
-          depmod -b modules/vendor/lib 6.1.68 2>/dev/null || true
+          echo "=== PAKET ICERIGI ==="
+          echo "Image: $(ls -lh Image | awk '{print $5}')"
+          echo "DTB/DTBO: $(ls *.dtb *.dtbo 2>/dev/null | wc -l)"
+          echo "Modul (WLAN haric): $(find modules -name '*.ko' | wc -l)"
 
-          echo "=== Paket Icerigi ==="
-          ls -lh Image
-          echo "Modul sayisi:"
-          find modules -name "*.ko" | wc -l
+          zip -r9 "../Bosyaf-Houji-NoWLAN-${BUILD_TS}.zip" ./*
 
-          zip -r9 "../Bosyaf-Houji-${BUILD_TS}.zip" ./*
-
-      - name: Upload debug artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: houji-debug-${{ env.BUILD_TS }}
+          name: houji-nowlan-${{ env.BUILD_TS }}
           path: |
-            modules.load
-            Bosyaf-Houji-${{ env.BUILD_TS }}.zip
+            common/out/arch/arm64/boot/Image
+            Bosyaf-Houji-NoWLAN-*.zip
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: houji-${{ env.BUILD_TS }}
-          name: Bosyaf Houji (Modular) - ${{ env.BUILD_TS }}
+          tag_name: houji-nowlan-${{ env.BUILD_TS }}
+          name: Bosyaf Houji (WLAN Stock) - ${{ env.BUILD_TS }}
           body: |
-            ### Mi 14 Houji - Modüler Kernel
-            - Kernel + vendor .ko modüller
-            - WLAN + tüm donanım driver'ları dahil
-            - Stock vendor_boot ile uyumlu
-          files: Bosyaf-Houji-${{ env.BUILD_TS }}.zip
+            ### Xiaomi 14 (Houji) - WLAN Hariç Build
+            - Kernel Image + techpack modülleri (camera, audio, display vs.)
+            - WLAN modülü YOK - stock vendor_boot'taki kullanılacak
+            - Diğer tüm donanım modülleri dahil
+          files: Bosyaf-Houji-NoWLAN-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
