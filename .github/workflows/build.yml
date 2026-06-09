@@ -53,20 +53,7 @@ jobs:
           git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
           git clone --depth 1 -b monolithic-test-2 https://github.com/Bosyaf/xiaomi14.git common
 
-      - name: Patch sources (WLAN HARIC)
-        run: |
-          cd common
-
-          # Clang uninitialized fix
-          sed -i 's/const struct sde_pingpong_cfg \*pp_cfg;/const struct sde_pingpong_cfg *pp_cfg = NULL;/' \
-            techpack/display/msm/sde/sde_rm.c
-
-          sed -i 's/const char \*name;/const char *name = NULL;/' \
-            drivers/input/misc/qcom-hv-haptics.c
-
-          sed -i 's/struct synx_map_entry \*map_entry;/struct synx_map_entry *map_entry = NULL;/' \
-            techpack/synx-kernel/msm/synx/synx.c
-
+      
       - name: Configure (Modular, WLAN disabled)
         run: |
           cd common
@@ -78,21 +65,7 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             CROSS_COMPILE=aarch64-linux-gnu- \
             HOSTCC=gcc HOSTCXX=g++ \
-            houji_defconfig
-
-          scripts/config --file out/.config \
-            -e MODULES \
-            -e MODULE_UNLOAD \
-            -e MODVERSIONS \
-            -d QCA_CLD_WLAN \
-            -d CNSS2 \
-            -d CNSS_GENL \
-            -d CNSS_UTILS \
-            -d ICNSS2 \
-            -d WCNSS_MEM_PRE_ALLOC \
-            -d CNSS_QCA6750 \
-            -d CNSS_QMI_SVC \
-            -d CNSS_PLAT_IPC_QMI_SVC
+            gki_defconfig
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
@@ -100,10 +73,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             HOSTCC=gcc HOSTCXX=g++ \
             olddefconfig
-
-          echo "=== WLAN durumu ==="
-          grep -E 'CONFIG_(QCA_CLD_WLAN|CNSS2|CNSS_GENL|CNSS_UTILS|ICNSS2|WCNSS_MEM_PRE_ALLOC)=' out/.config || true
-
+            
       - name: Build kernel + modules (WLAN hariç)
         run: |
           cd common
@@ -114,19 +84,7 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             CROSS_COMPILE=aarch64-linux-gnu- \
             HOSTCC=gcc HOSTCXX=g++ \
-            Image modules dtbs
-
-          test -f out/arch/arm64/boot/Image
-
-          echo "=== BUILD SONUCU ==="
-          echo "Image:"
-          ls -lh out/arch/arm64/boot/Image
-
-          echo "Toplam KO sayisi:"
-          find out -name "*.ko" | wc -l
-
-          echo "Techpack modulleri:"
-          find out -path "*/techpack/*" -name "*.ko" | head -20
+            Image
 
       - name: Prepare AnyKernel3
         run: |
@@ -142,20 +100,6 @@ jobs:
           cd AnyKernel3
 
           cp ../common/out/arch/arm64/boot/Image .
-
-          find ../common/out/arch/arm64/boot/dts -type f \( -name "*.dtb" -o -name "*.dtbo" \) -exec cp {} . \; 2>/dev/null || true
-
-          # Moduller (WLAN haric)
-          mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" ! -path "*wlan*" -exec cp {} modules/vendor/lib/modules/ \;
-
-          find modules/vendor/lib/modules -name "*.ko" -exec basename {} \; | sort > modules/vendor/lib/modules/modules.load
-
-          echo "=== PAKET ICERIGI ==="
-          echo "Image: $(ls -lh Image | awk '{print $5}')"
-          echo "DTB/DTBO: $(ls *.dtb *.dtbo 2>/dev/null | wc -l)"
-          echo "Modul (WLAN haric): $(find modules -name '*.ko' | wc -l)"
-
           zip -r9 "../Bosyaf-Houji-NoWLAN-${BUILD_TS}.zip" ./*
 
       - name: Upload artifacts
