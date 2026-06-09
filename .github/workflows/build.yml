@@ -59,15 +59,26 @@ jobs:
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            CROSS_COMPILE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            HOSTCC=gcc HOSTCXX=g++ \
             houji_defconfig
 
-          scripts/config --file out/.config -d DEBUG_INFO_BTF -d DEBUG_INFO_BTF_MODULES
+          # MODULLERI AC (WLAN test icin sart)
+          scripts/config --file out/.config \
+            -e MODULES \
+            -e MODULE_UNLOAD \
+            -e MODVERSIONS
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            CROSS_COMPILE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            HOSTCC=gcc HOSTCXX=g++ \
             olddefconfig
+
+          echo "Config hazir!"
+          grep "CONFIG_MODULES=" out/.config
 
       - name: 6. Prepare
         run: |
