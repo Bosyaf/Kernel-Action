@@ -39,12 +39,11 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
             pkg-config zstd
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fL "$CLANG_URL" -o clang.tar.gz
-          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          mkdir -p "$GITHUB_WORKSPACE/clang"
+          curl -fsSL "https://android.googlesource.com/platform//prebuilts/clang/host/linux-x86/+archive/788f1e86014660a5230ba4e9f52c39d5b393cd2b/clang-r487747.tar.gz" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang"
           rm -f clang.tar.gz
-          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
       - name: Clone sources
         run: |
           git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
@@ -81,7 +80,7 @@ jobs:
       - name: Configure houji monolithic
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
           mkdir -p out
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
@@ -123,7 +122,7 @@ jobs:
       - name: Build kernel
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
           make -j"$(nproc --all)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
