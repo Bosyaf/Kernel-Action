@@ -88,6 +88,11 @@ jobs:
             -e 's/-Werror=multistatement-macros//g' \
             -e 's/-Werror=enum-int-mismatch//g'
 
+          # WLAN PATCH 3: Clang bilinmeyen warning flagleri kaldir
+          grep -rn "multistatement-macros\|enum-int-mismatch" techpack/wlan/ || true
+          find techpack/wlan -type f | xargs sed -i \
+          -e 's/-W[a-z-]*multistatement-macros//g' \
+          -e 's/-W[a-z-]*enum-int-mismatch//g'
           echo "WLAN patchleri tamam"
 
       - name: Configure (MODULLU - =m kalsin)
