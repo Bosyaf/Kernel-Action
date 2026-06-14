@@ -61,6 +61,7 @@ jobs:
           echo "📦 mkbootimg çekiliyor..."
           rm -rf mkbootimg
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg
+      
       - name: 3. Kaynak Kodu Hata Düzeltmeleri
         run: |
           cd kernel
@@ -74,7 +75,8 @@ jobs:
 
           echo "🔧 Genel enum warning suppress (Makefile)..."
           if [ -f Makefile ]; then
-          sed -i '/^KBUILD_CFLAGS +=/a KBUILD_CFLAGS += -Wno-enum-enum-conversion -Wno-enum-conversion' Makefile
+            sed -i '/^KBUILD_CFLAGS +=/a KBUILD_CFLAGS += -Wno-enum-enum-conversion -Wno-enum-conversion' Makefile
+          fi
 
           echo "🔧 check-local-export bypass..."
           cat << 'SCRIPTEOF' > scripts/check-local-export
@@ -82,6 +84,8 @@ jobs:
           exit 0
           SCRIPTEOF
           chmod +x scripts/check-local-export
+
+          echo "✅ Tüm kaynak düzeltmeleri tamamlandı!"
 
       - name: 4. Full Kernel Config & Derleme Hazırlığı
         run: |
