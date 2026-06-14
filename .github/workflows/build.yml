@@ -74,8 +74,7 @@ jobs:
 
           echo "🔧 Genel enum warning suppress (Makefile)..."
           if [ -f Makefile ]; then
-            sed -i '/^KBUILD_CFLAGS +=/a KBUILD_CFLAGS += -Wno-enum-enum-conversion -Wno-enum-conversion -Wno-enum-int-conversion' Makefile
-          fi
+          sed -i '/^KBUILD_CFLAGS +=/a KBUILD_CFLAGS += -Wno-enum-enum-conversion -Wno-enum-conversion' Makefile
 
           echo "🔧 check-local-export bypass..."
           cat << 'SCRIPTEOF' > scripts/check-local-export
@@ -172,8 +171,7 @@ jobs:
             -Wno-format \
             -Wno-format-extra-args \
             -Wno-enum-enum-conversion \
-            -Wno-enum-conversion \
-            -Wno-enum-int-conversion" \
+            -Wno-enum-conversion
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
