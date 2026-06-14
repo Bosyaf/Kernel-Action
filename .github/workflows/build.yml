@@ -26,34 +26,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve AOSP Clang 17
+      - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
-            rsync unzip bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd device-tree-compiler lz4 dwarves libzstd-dev
-
-          echo "🔧 AOSP Clang 17.0.4 (Android U release) indiriliyor..."
-          mkdir -p "$GITHUB_WORKSPACE/clang-aosp"
-          wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz" -O /tmp/clang.tar.gz
-          tar -xzf /tmp/clang.tar.gz -C "$GITHUB_WORKSPACE/clang-aosp"
-          rm -f /tmp/clang.tar.gz
-          echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> "$GITHUB_PATH"
-
-          # Clang versiyon kontrolü
-          $GITHUB_WORKSPACE/clang-aosp/bin/clang --version
-          echo "✅ AOSP Clang 17 hazır!"
-
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            pkg-config zstd device-tree-compiler lz4 pahole
+          echo "🔥 ZyC Clang 22 (Eylül 2025 - ARMv9-a)"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL patlak!"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          rm -f clang.tar.gz
+          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
+          echo "✅ Clang hazır!"
       - name: 2. Kaynakları Çek
         run: |
           echo "📦 CodeLinaro SM8650 kernel çekiliyor..."
           git clone -b linaro/tracking-qcomlt-sm8650 --depth=1 \
             https://git.codelinaro.org/clo/la/kernel/qcom.git kernel
-
           echo "📦 AnyKernel3 çekiliyor..."
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
+          echo "📦 mkbootimg çekiliyor..."
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg
+          git clone --depth=1 https://android.googlesource.com/platform/system/libbase mkbootimg/libs/libbase
+          echo "=== Mevcut defconfig'ler ==="
+          ls kernel/arch/arm64/configs/ | grep -iE "qcom|sm8650|pineapple|houji|defconfig" || true
+          echo "=== Mevcut DTS dosyaları ==="
+          find kernel/arch/arm64/boot/dts -name "*sm8650*" -o -name "*pineapple*" 2>/dev/null | head -20 || true
+
 
           echo "📦 mkbootimg çekiliyor..."
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg
