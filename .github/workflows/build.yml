@@ -52,13 +52,11 @@ jobs:
           git clone -b linaro/tracking-qcomlt-sm8650 --depth=1 \
             https://git.codelinaro.org/clo/la/kernel/qcom.git kernel
           
-          # ⚠️ GÜNCEL mkbootimg (vendor_ramdisk_type desteği var)
-          echo "📦 Mkbootimg (Güncel)..."
+          echo "📦 Mkbootimg (mkdtboimg.py dahil)..."
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg
           
-          # ⚠️ mkdtboimg.py AYRI ÇEKİLİYOR
-          echo "📦 Mkdtboimg..."
-          git clone https://android.googlesource.com/platform/system/tools/mkdtboimg
+          echo "=== Mkbootimg İçeriği ==="
+          ls -la mkbootimg/*.py
 
       - name: 3. Source Fixes
         run: |
@@ -135,7 +133,6 @@ jobs:
           cd kernel
           mkdir -p dtb_out dtbo_out
 
-          # ⚠️ SADECE SM8650 ve HOUJI DTB'leri (Diğer cihazları filtrele)
           echo "📦 SM8650/Houji DTB'leri seçiliyor..."
           find out/arch/arm64/boot/dts -name "*sm8650*houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*sm8650-mtp*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
@@ -143,12 +140,10 @@ jobs:
           find out/arch/arm64/boot/dts -name "*sm8650*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*pineapple*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
 
-          # Eğer hala yoksa qcom klasöründeki sm8650'leri al
           if [ -z "$(ls dtb_out/*.dtb 2>/dev/null)" ]; then
             find out/arch/arm64/boot/dts/qcom -name "*sm8650*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           fi
 
-          # ⚠️ SADECE QCOM DTBO'ları (TI, Rockchip vb. atla)
           echo "📦 QCOM DTBO'ları seçiliyor..."
           find out/arch/arm64/boot/dts/qcom -name "*.dtbo" -exec cp -v {} dtbo_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -path "*/qcom/*.dtbo" -exec cp -v {} dtbo_out/ \; 2>/dev/null || true
@@ -163,9 +158,11 @@ jobs:
           DTBO_COUNT=$(ls dtbo_out/*.dtbo 2>/dev/null | wc -l)
           if [ "$DTBO_COUNT" -gt 0 ]; then
             echo "📦 DTBO Image oluşturuluyor ($DTBO_COUNT dosya)..."
-            # ⚠️ DOĞRU mkdtboimg.py YOLU
-            python3 ../mkdtboimg/mkdtboimg.py create dtbo_out/dtbo.img dtbo_out/*.dtbo || \
-            echo "⚠️ DTBO oluşturulamadı"
+            python3 ../mkbootimg/mkdtboimg.py create dtbo_out/dtbo.img dtbo_out/*.dtbo || {
+              echo "⚠️ DTBO oluşturulamadı"
+              exit 1
+            }
+            ls -lh dtbo_out/dtbo.img
           else
             echo "⚠️ DTBO dosyası bulunamadı!"
           fi
@@ -175,13 +172,11 @@ jobs:
           cd kernel
           export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
           
-          # ⚠️ DOĞRU mkbootimg.py YOLU
           MKBOOTIMG="$GITHUB_WORKSPACE/mkbootimg/mkbootimg.py"
           
           VENDOR_RAMDISK="/tmp/vendor_ramdisk"
           mkdir -p $VENDOR_RAMDISK/lib/modules
           
-          # ⚠️ SADECE .ko DOSYALARINI KOPYALA (modules.order değil!)
           echo "📦 Modüller (.ko) vendor_ramdisk'e kopyalanıyor..."
           if [ -d out/modules ]; then
             find out/modules -name "*.ko" -exec cp -v {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
@@ -190,15 +185,12 @@ jobs:
             find out/lib/modules -name "*.ko" -exec cp -v {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
           fi
           
-          # modules.* dosyaları
           find out -maxdepth 2 -name "modules.*" -exec cp -v {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
 
-          # Ramdisk oluştur
           cd $VENDOR_RAMDISK
           find . | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/vendor_ramdisk.cpio.gz
           cd $GITHUB_WORKSPACE/kernel
 
-          # ⚠️ DOĞRU DTB SEÇİMİ (houji öncelikli)
           DTB_FILE=""
           if [ -f "dtb_out/sm8650-houji.dtb" ]; then
             DTB_FILE="dtb_out/sm8650-houji.dtb"
@@ -218,7 +210,6 @@ jobs:
           
           echo "📦 Kullanılan DTB: $DTB_FILE"
 
-          # vendor_boot oluştur
           if [ -f "$MKBOOTIMG" ]; then
             echo "📦 vendor_boot.img oluşturuluyor..."
             python3 "$MKBOOTIMG" \
@@ -229,7 +220,10 @@ jobs:
               --vendor_ramdisk_type platform \
               --pagesize 4096 \
               --header_version 4 \
-              --cmdline "console=ttyMSM0,115200n8 androidboot.bootdevice=1e00000.ufshc"
+              --cmdline "console=ttyMSM0,115200n8 androidboot.bootdevice=1e00000.ufshc" || {
+                echo "❌ vendor_boot oluşturma hatası!"
+                exit 1
+              }
             
             ls -lh out/vendor_boot.img
           else
@@ -241,8 +235,8 @@ jobs:
         run: |
           mkdir -p output
           
-          cp kernel/out/vendor_boot.img output/ 2>/dev/null || echo "⚠️ vendor_boot.img yok!"
-          cp kernel/dtbo_out/dtbo.img output/ 2>/dev/null || echo "⚠️ dtbo.img yok!"
+          cp kernel/out/vendor_boot.img output/ 2>/dev/null || { echo "⚠️ vendor_boot.img yok!"; exit 1; }
+          cp kernel/dtbo_out/dtbo.img output/ 2>/dev/null || { echo "⚠️ dtbo.img yok!"; exit 1; }
           cp -r kernel/dtb_out output/dtb 2>/dev/null || true
           
           cd output
