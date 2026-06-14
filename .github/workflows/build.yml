@@ -26,33 +26,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve Toolchain
+      - name: 1. Paketler ve AOSP Clang 17
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd device-tree-compiler lz4 \
-            libdwarf-dev libelf-dev libzstd-dev
+            pkg-config zstd device-tree-compiler lz4 dwarves libzstd-dev
 
-          # ===== DWARVES / PAHOLE (BTF için source build) =====
-          echo "🔨 dwarves/pahole source derleniyor (BTF desteği için)..."
-          git clone --depth=1 https://github.com/acmel/dwarves.git /tmp/dwarves-src
-          cd /tmp/dwarves-src
-          mkdir build && cd build
-          cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
-          make -j$(nproc) 2>/dev/null || make -j1
-          sudo make install
-          sudo ldconfig
-          echo "PAHOLE=$(which pahole)" >> $GITHUB_ENV
-          pahole --version
-          echo "✅ pahole kuruldu!"
-
-          # ===== AOSP Clang 17.0.4 (clang-r487747c - Android U) =====
           echo "🔧 AOSP Clang 17.0.4 (Android U release) indiriliyor..."
           mkdir -p "$GITHUB_WORKSPACE/clang-aosp"
-          wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz" -O /tmp/clang.tar.gz || \
           wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz" -O /tmp/clang.tar.gz
           tar -xzf /tmp/clang.tar.gz -C "$GITHUB_WORKSPACE/clang-aosp"
           rm -f /tmp/clang.tar.gz
@@ -74,110 +58,20 @@ jobs:
           echo "📦 mkbootimg çekiliyor..."
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg
 
-          echo "=== Mevcut defconfig'ler ==="
-          ls kernel/arch/arm64/configs/ | grep -iE "qcom|sm8650|pineapple|houji|defconfig" || true
-
-          echo "=== Mevcut DTS dosyaları ==="
-          find kernel/arch/arm64/boot/dts -name "*sm8650*" -o -name "*pineapple*" 2>/dev/null | head -20 || true
-
-      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
-        run: |
-          cd kernel
-          echo "📦 KernelSU-Next kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd kernel/KernelSU-Next
-          echo "🔥 Multi-manager patchi uygulanıyor..."
-          patch -p1 --forward < "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" || echo "⚠️ Başarısız"
-          echo "✅ Multi-manager desteği eklendi!"
-
-      - name: 4. SUSFS4KSU Kurulumu
-        run: |
-          cd kernel
-          echo "📦 SUSFS4KSU kuruluyor..."
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-          echo "📦 SUSFS dosyaları kopyalanıyor..."
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/ 2>/dev/null || true
-          cp -R susfs4ksu/kernel_patches/include/* ./include/ 2>/dev/null || true
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then
-            echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
-            patch -p1 < "$SUSFS_PATCH" || true
-          else
-            echo "  ⚠️ Patch dosyası bulunamadı"
-          fi
-          echo "📦 namespace.c SUSFS patch..."
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
-          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then
-            patch -p1 < fs_namespace.patch || true
-          fi
-          rm -f fs_namespace.patch
-          echo "🛡️ SUSFS Dentry Check Fix..."
-          if [ -f fs/susfs.c ]; then
-            sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
-            sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
-          fi
-          find . -name "*.rej" -delete 2>/dev/null || true
-
-      - name: 4.5. KernelSU-Next Multi Manager Patch
-        run: |
-          cd kernel
-          if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
-            patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
-          fi
-          if [ -f "drivers/kernelsu/supercalls.c" ]; then
-            sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ DISABLED to fix build \*\//' drivers/kernelsu/supercalls.c || true
-          fi
-          if [ -f "drivers/kernelsu/extras.c" ]; then
-            if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
-              if ! grep -q "__attribute__((weak))" drivers/kernelsu/extras.c; then
-                printf '\n#ifdef CONFIG_KSU_SUSFS\n#ifndef susfs_avc_log_spoofing_key_true\n__attribute__((weak))\nstruct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;\n#endif\n#endif\n' >> drivers/kernelsu/extras.c
-              fi
-            fi
-          fi
-
-      - name: 5. Baseband Guard + Özel Yamalar
-        run: |
-          cd kernel
-          echo "📦 Baseband Guard..."
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
-          echo "🔥 Özel yamalar uygulanıyor..."
-          PATCH_DIR="../patches"
-          if [ -d "$PATCH_DIR" ]; then
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              [ -f "$patch_file" ] || continue
-              filename=$(basename "$patch_file")
-              echo "📦 İşleniyor: $filename"
-              patch -p1 --forward < "$patch_file" && echo "✅ $filename" || echo "❌ Atlandı: $filename"
-            done
-          else
-            echo "⚠️ patches/ dizini bulunamadı, atlanıyor"
-          fi
-
-      - name: 5.5. Kaynak Kodu Hata Düzeltmeleri
+      - name: 3. Kaynak Kodu Hata Düzeltmeleri
         run: |
           cd kernel
 
-          echo "🔧 RTAX_FEATURE_ECN_LOW fix (6.1'de tanımsız)..."
+          echo "🔧 RTAX_FEATURE_ECN_LOW fix..."
           if grep -q "RTAX_FEATURE_ECN_LOW" include/net/tcp.h 2>/dev/null; then
             if ! grep -q "RTAX_FEATURE_ECN_LOW" include/uapi/linux/rtnetlink.h 2>/dev/null; then
-              echo "  → RTAX_FEATURE_ECN_LOW tanımı ekleniyor..."
               sed -i '/RTAX_FEATURE_TIMESTAMP/a #define RTAX_FEATURE_ECN_LOW	(1U << 0)' include/uapi/linux/rtnetlink.h
-              echo "  ✅ Eklendi"
-            else
-              echo "  ✅ Zaten tanımlı"
             fi
           fi
 
           echo "🔧 Genel enum warning suppress (Makefile)..."
           if [ -f Makefile ]; then
             sed -i '/^KBUILD_CFLAGS +=/a KBUILD_CFLAGS += -Wno-enum-enum-conversion -Wno-enum-conversion -Wno-enum-int-conversion' Makefile
-            echo "  ✅ Global enum warning suppress eklendi"
           fi
 
           echo "🔧 check-local-export bypass..."
@@ -187,19 +81,10 @@ jobs:
           SCRIPTEOF
           chmod +x scripts/check-local-export
 
-          echo "🔧 pahole yolunu ayarla..."
-          export PAHOLE=$(which pahole)
-          echo "PAHOLE=$PAHOLE"
-          pahole --version
-
-          echo "✅ Tüm kaynak düzeltmeleri tamamlandı!"
-
-      - name: 6. Full Kernel Config & Derleme Hazırlığı
+      - name: 4. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd kernel
           export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
-          export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
-          export PAHOLE=$(which pahole)
 
           # Defconfig tespiti
           DEFCONFIG=""
@@ -211,7 +96,6 @@ jobs:
             fi
           done
           if [ -z "$DEFCONFIG" ]; then
-            echo "⚠️ Özel defconfig bulunamadı, defconfig kullanılıyor"
             DEFCONFIG="defconfig"
           fi
           echo "DEFCONFIG=$DEFCONFIG" >> $GITHUB_ENV
@@ -225,142 +109,55 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            PAHOLE="$PAHOLE" \
             $DEFCONFIG
 
           CONFIG_FILE="out/.config"
 
-          # ========== TEMEL AYARLAR ==========
+          # ========== BTF HATASINI KÖKTEN ÇÖZEN KISIM ==========
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_BTF_MODULES
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PAHOLE_HAS_SPLIT_BTF
+          # =======================================================
+
+          # TEMEL AYARLAR
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
 
-          # ========== HZ ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-
-          # ========== PREEMPT ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-
-          # ========== SCHEDULER ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UCLAMP_TASK_GROUP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-
-          # ========== THERMAL ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-
-          # ========== LTO ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-
-          # ========== DEBUG + BTF (Xiaomi boot için BTF gerekli!) ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_NONE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_BTF_MODULES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PAHOLE_HAS_SPLIT_BTF
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
-
-          # ========== AĞ ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-
-          # ========== QCOM / SM8650 ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_QCOM_CPUFREQ_HW
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_KGSL 2>/dev/null || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_THERMAL 2>/dev/null || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MSM_ADRENO_GPU 2>/dev/null || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_SCM 2>/dev/null || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPROC 2>/dev/null || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_PDC 2>/dev/null || true
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_QCOM_RPMH 2>/dev/null || true
-
-          # ========== ZRAM ==========
+          # ZRAM
           ./scripts/config --file $CONFIG_FILE --module CONFIG_ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_ZSTD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSTD_COMPRESS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSTD_DECOMPRESS
 
-          # ========== IO ==========
+          # IO & MODULLER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_DEADLINE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_KYBER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOSCHED_BFQ
-
-          # ========== MODULLER ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_FORCE_UNLOAD
 
-          # ========== KERNELSU & SUSFS ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-
-          # ========== LOCALVERSION ==========
+          # LOCALVERSION
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Earendil+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
 
-          # olddefconfig ile çöz
+          # Config'i kaydet
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            PAHOLE="$PAHOLE" \
             olddefconfig
 
-          echo "=== Final .config özeti ==="
-          grep -E "CONFIG_LOCALVERSION|CONFIG_SCHED_WALT|CONFIG_MODULES|CONFIG_MODVERSIONS|CONFIG_LTO|CONFIG_HZ|CONFIG_PREEMPT|CONFIG_DEBUG_INFO_BTF|CONFIG_PAHOLE" out/.config || true
-
-      - name: 7. Kernel Derleme (Image + Modules + DTBs)
+      - name: 5. Kernel Derleme (Image + Modules + DTBs)
         run: |
           cd kernel
           export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
-          export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
-          export PAHOLE=$(which pahole)
 
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            PAHOLE="$PAHOLE" \
             KCFLAGS="-O2 \
-            -march=armv8.9-a+crypto+crc+dotprod+rcpc+lse+sha3 \
-            -falign-functions=16 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -381,145 +178,80 @@ jobs:
             -Wl,-O2" \
             Image dtbs modules || { echo "❌ Derleme HATASI!"; exit 1; }
 
-          echo "✅ Derleme başarılı!"
-          echo "=== Image ==="
-          ls -lh out/arch/arm64/boot/Image 2>/dev/null || true
-          echo "=== DTBs ==="
-          find out/arch/arm64/boot/dts -name "*.dtb" 2>/dev/null | wc -l
-          echo "=== Modules ==="
-          find out -name "*.ko" 2>/dev/null | wc -l
-
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 8. Modülleri ve DTB'leri Topla
+      - name: 6. Modülleri ve DTB'leri Topla
         run: |
           cd kernel
-          echo "📦 Modüller yükleniyor..."
           mkdir -p modules_out
           make O=out INSTALL_MOD_PATH=modules_out INSTALL_MOD_STRIP=1 modules_install
 
-          echo "📦 KO dosyaları:"
-          find modules_out -name "*.ko" | wc -l
-
-          echo "📦 modules.load oluşturuluyor..."
           find modules_out -name "*.ko" -printf "%P\n" | sort > modules_out/modules.load
-
-          echo "📦 modules.dep oluşturuluyor..."
           find modules_out -name "*.ko" -printf "%P: \n" | sort > modules_out/modules.dep
-
-          echo "📦 modules.alias oluşturuluyor..."
           if [ -f modules_out/lib/modules/*/modules.alias ]; then
             cp modules_out/lib/modules/*/modules.alias modules_out/modules.alias 2>/dev/null || true
           fi
 
-          echo "📦 SM8650 DTB'leri toplanıyor..."
           mkdir -p dtb_out
           find out/arch/arm64/boot/dts -name "*sm8650*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*pineapple*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -path "*/qcom/*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
 
-          echo "=== DTB dosyaları ==="
-          ls -lh dtb_out/ 2>/dev/null || echo "DTB bulunamadı"
-          echo "=== modules.load ==="
-          cat modules_out/modules.load 2>/dev/null | head -20
-
-      - name: 9. DTBO Image Oluştur
+      - name: 7. DTBO Image Oluştur
         run: |
           cd kernel
-          echo "📦 DTBO image oluşturuluyor..."
           mkdir -p dtbo_out
           find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp -v {} dtbo_out/ \; 2>/dev/null || true
 
           if [ "$(ls dtbo_out/*.dtbo 2>/dev/null | wc -l)" -gt 0 ]; then
-            echo "✅ $(ls dtbo_out/*.dtbo | wc -l) adet DTBO bulundu"
-            # mkdtboimg ile dtbo.img oluştur
             if command -v mkdtboimg &> /dev/null; then
               mkdtboimg create dtbo_out/dtbo.img dtbo_out/*.dtbo
-            else
-              echo "⚠️ mkdtboimg bulunamadı, DTBO'lar raw olarak paketlenecek"
             fi
-          else
-            echo "⚠️ DTBO dosyası bulunamadı"
           fi
 
-      - name: 10. vendor_boot Image Oluştur
+      - name: 8. vendor_boot Image Oluştur
         run: |
           cd kernel
-          echo "📦 vendor_boot image oluşturuluyor..."
-
           PYTHONPATH="$GITHUB_WORKSPACE/mkbootimg:$PYTHONPATH"
           export PYTHONPATH
-
           MKBOOTIMG="$GITHUB_WORKSPACE/mkbootimg/mkbootimg.py"
-          [ ! -f "$MKBOOTIMG" ] && MKBOOTIMG=$(find $GITHUB_WORKSPACE/mkbootimg -name "mkbootimg.py" | head -1)
 
-          # vendor ramdisk oluştur
           VENDOR_RAMDISK_DIR="/tmp/vendor_ramdisk"
           mkdir -p $VENDOR_RAMDISK_DIR/lib/modules
+          mkdir -p $VENDOR_RAMDISK_DIR/first_stage_ramdisk
+          mkdir -p $VENDOR_RAMDISK_DIR/mnt
 
-          # KO modüllerini kopyala
           find modules_out -name "*.ko" -exec cp -v {} $VENDOR_RAMDISK_DIR/lib/modules/ \; 2>/dev/null || true
           cp modules_out/modules.load $VENDOR_RAMDISK_DIR/lib/modules/ 2>/dev/null || true
           cp modules_out/modules.dep $VENDOR_RAMDISK_DIR/lib/modules/ 2>/dev/null || true
           cp modules_out/modules.alias $VENDOR_RAMDISK_DIR/lib/modules/ 2>/dev/null || true
 
-          mkdir -p $VENDOR_RAMDISK_DIR/first_stage_ramdisk
-          mkdir -p $VENDOR_RAMDISK_DIR/mnt
-
-          echo "📦 Vendor ramdisk içeriği:"
-          find $VENDOR_RAMDISK_DIR -type f | head -20
-          echo "Toplam KO: $(ls $VENDOR_RAMDISK_DIR/lib/modules/*.ko 2>/dev/null | wc -l)"
-
-          # Ramdisk'i cpio+gzip ile paketle
           cd $VENDOR_RAMDISK_DIR
           find . | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/vendor_ramdisk.img
           cd $GITHUB_WORKSPACE/kernel
 
-          # DTB bul
-          DTB_FILE=""
-          for dtb in dtb_out/sm8650-mtp.dtb dtb_out/sm8650-qrd.dtb dtb_out/sm8650-hdk.dtb; do
-            if [ -f "$dtb" ]; then
-              DTB_FILE="$dtb"
-              break
-            fi
-          done
-          if [ -z "$DTB_FILE" ] && [ "$(ls dtb_out/*.dtb 2>/dev/null | wc -l)" -gt 0 ]; then
-            DTB_FILE=$(ls dtb_out/*.dtb | head -1)
-          fi
-
-          if [ -n "$DTB_FILE" ]; then
-            echo "✅ DTB kullanılıyor: $DTB_FILE"
-          else
+          DTB_FILE=$(ls dtb_out/*.dtb 2>/dev/null | head -1)
+          if [ -z "$DTB_FILE" ]; then
             echo -n "" > /tmp/dummy_dtb
-            echo "⚠️ DTB bulunamadı"
+            DTB_FILE="/tmp/dummy_dtb"
           fi
 
           echo "" > /tmp/bootconfig
 
           if [ -f "$MKBOOTIMG" ]; then
-            echo "📦 mkbootimg ile vendor_boot oluşturuluyor..."
             python3 "$MKBOOTIMG" \
               --kernel_cmdline "console=ttyMSM0,115200n8 bootconfig" \
               --ramdisk /tmp/vendor_ramdisk.img \
-              --dtb "${DTB_FILE:-/tmp/dummy_dtb}" \
+              --dtb "$DTB_FILE" \
               --vendor_boot out/vendor_boot.img \
               --vendor_ramdisk_type platform \
               --bootconfig /tmp/bootconfig \
               --pagesize 4096 \
-              --header_version 4 \
-              || echo "⚠️ vendor_boot.img oluşturma başarısız"
-          else
-            echo "⚠️ mkbootimg bulunamadı, vendor_boot.img atlanıyor"
+              --header_version 4 || true
           fi
 
-          if [ -f out/vendor_boot.img ]; then
-            echo "✅ vendor_boot.img oluşturuldu: $(ls -lh out/vendor_boot.img)"
-          else
-            echo "⚠️ vendor_boot.img oluşturulamadı"
-          fi
-
-      - name: 11. AnyKernel3 Paketleme
+      - name: 9. AnyKernel3 Paketleme
         run: |
           cd AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=Earendil Full Kernel/' anykernel.sh
@@ -527,38 +259,21 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
 
-          # Kernel Image
           cp ../kernel/out/arch/arm64/boot/Image .
-
-          # DTB dosyaları
-          mkdir -p dtb
+          mkdir -p dtb dtbo modules
+          
           cp ../kernel/dtb_out/*.dtb dtb/ 2>/dev/null || true
-
-          # DTBO dosyaları
-          mkdir -p dtbo
           cp ../kernel/dtbo_out/*.dtbo dtbo/ 2>/dev/null || true
           cp ../kernel/dtbo_out/dtbo.img . 2>/dev/null || true
-
-          # vendor_boot.img
           cp ../kernel/out/vendor_boot.img . 2>/dev/null || true
 
-          # Modüller
-          mkdir -p modules
           find ../kernel/modules_out -name "*.ko" -exec cp {} modules/ \; 2>/dev/null || true
           cp ../kernel/modules_out/modules.load . 2>/dev/null || true
           cp ../kernel/modules_out/modules.dep . 2>/dev/null || true
 
-          echo "=== Paket İçeriği ==="
-          echo "Image: $(ls Image 2>/dev/null && echo VAR || echo YOK)"
-          echo "DTB sayısı: $(ls dtb/*.dtb 2>/dev/null | wc -l)"
-          echo "DTBO sayısı: $(ls dtbo/*.dtbo 2>/dev/null | wc -l)"
-          echo "dtbo.img: $(ls dtbo.img 2>/dev/null && echo VAR || echo YOK)"
-          echo "vendor_boot.img: $(ls vendor_boot.img 2>/dev/null && echo VAR || echo YOK)"
-          echo "KO modül sayısı: $(ls modules/*.ko 2>/dev/null | wc -l)"
-
           zip -r "../Earendil-houji-full.zip" ./*
 
-      - name: 12. Release Yükle
+      - name: 10. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
@@ -566,4 +281,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          
