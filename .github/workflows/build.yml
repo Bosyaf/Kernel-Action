@@ -1,4 +1,4 @@
-name: Earendil Full Kernel - Mi 14 houji (SM8650)
+name: Mi 14 Houji - Vendor Boot & DTBO Builder
 
 permissions:
   contents: write
@@ -8,13 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build-vendor:
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
       KBUILD_BUILD_USER: "Earendil"
       KBUILD_BUILD_HOST: "GitHub-Actions"
-      CLANG_DIR: "clang-zyc"
 
     steps:
       - name: Maximize Build Space
@@ -24,49 +23,47 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Install Dependencies & Download Clang
+      - name: 1. Install Dependencies & LLVM 17.0.2
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
             python3 git curl libelf-dev build-essential flex bison \
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd device-tree-compiler lz4 pahole libfdt-dev
+            pkg-config zstd device-tree-compiler lz4 pahole libfdt-dev kmod
 
-          echo "🔥 Downloading ZyC Clang (Stable LLVM 18)..."
-          # URL güncellendi (2025 tarihi geçersizdi, stabil sürüm kullanıldı)
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/18.0.0git-20240325-release/Clang-18.0.0git-20240325.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "❌ Clang indirme hatası!"; exit 1; }
+          echo "🔥 Downloading Official LLVM 17.0.2..."
+          LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.2/clang+llvm-17.0.2-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
+          wget -q --show-progress "$LLVM_URL" -O llvm.tar.xz || { echo "❌ LLVM indirme hatası!"; exit 1; }
           
-          mkdir -p "$GITHUB_WORKSPACE/$CLANG_DIR"
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/$CLANG_DIR"
-          rm -f clang.tar.gz
+          mkdir -p "$GITHUB_WORKSPACE/llvm-17"
+          tar -xf llvm.tar.xz -C "$GITHUB_WORKSPACE/llvm-17" --strip-components=1
+          rm -f llvm.tar.xz
           
-          # PATH'e ekle
-          echo "$GITHUB_WORKSPACE/$CLANG_DIR/bin" >> "$GITHUB_PATH"
-          echo "✅ Clang hazır: $(clang --version | head -n1)"
+          echo "$GITHUB_WORKSPACE/llvm-17/bin" >> "$GITHUB_PATH"
+          echo "✅ LLVM Hazır: $(clang --version | head -n1)"
+          echo "✅ PAHOLE: $(pahole --version)"
 
-      - name: 2. Download Sources (Kernel, AnyKernel, Mkbootimg)
+      - name: 2. Download CodeLinaro Kernel Source
         run: |
           echo "📦 CodeLinaro SM8650 Kernel..."
           git clone -b linaro/tracking-qcomlt-sm8650 --depth=1 \
             https://git.codelinaro.org/clo/la/kernel/qcom.git kernel
           
-          echo "📦 AnyKernel3..."
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
-          
           echo "📦 Mkbootimg Tools..."
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg
-          # Libbase bağımlılığı (mkbootimg için gerekebilir)
           git clone --depth=1 https://android.googlesource.com/platform/system/libbase mkbootimg/libs/libbase 2>/dev/null || true
 
-          echo "=== Defconfig Kontrol ==="
-          ls kernel/arch/arm64/configs/ | grep -iE "houji|pineapple|sm8650" || echo "Özel defconfig bulunamadı, varsayılan denenecek."
+          echo "=== Mevcut Config Dosyaları ==="
+          ls -la kernel/arch/arm64/configs/
 
-      - name: 3. Source Code Fixes & Patches
+          echo "=== Mevcut DTS Dosyaları (houji/sm8650) ==="
+          find kernel/arch/arm64/boot/dts -type f \( -name "*houji*" -o -name "*sm8650*" -o -name "*pineapple*" \) 2>/dev/null | head -30 || true
+
+      - name: 3. Source Fixes
         run: |
           cd kernel
           
@@ -82,56 +79,58 @@ jobs:
             sed -i '/^KBUILD_CFLAGS +=/a KBUILD_CFLAGS += -Wno-enum-enum-conversion -Wno-enum-conversion -Wno-macro-redefined' Makefile
           fi
 
-          # Check-local-export bypass (Derleme hatasını önler)
+          # check-local-export bypass
           cat > scripts/check-local-export << 'EOF'
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
 
-          echo "✅ Kaynak kodu yamalandı."
+          # .scmversion (GKI için gerekli)
+          touch .scmversion
 
-      - name: 4. Configure Kernel
+          echo "✅ Kaynak kodu hazırlandı."
+
+      - name: 4. Kernel Config (defconfig - Mevcut Olan)
         run: |
           cd kernel
-          export PATH="$GITHUB_WORKSPACE/$CLANG_DIR/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
 
-          # Defconfig Bulma
-          DEFCONFIG="pineapple_defconfig" # SM8650 platformu genelde pineapple'dır
-          if [ -f "arch/arm64/configs/houji_defconfig" ]; then
-            DEFCONFIG="houji_defconfig"
-          elif [ -f "arch/arm64/configs/sm8650_defconfig" ]; then
-            DEFCONFIG="sm8650_defconfig"
-          fi
-          echo "Kullanılacak Defconfig: $DEFCONFIG"
-          echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
-
-          touch .scmversion
+          # ⚠️ SADECE MEVCUT defconfig KULLANILIYOR
+          echo "📦 defconfig yükleniyor..."
+          
           mkdir -p out
 
-          # LLVM ile config oluştur
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
-            $DEFCONFIG
+            defconfig
 
           CONFIG_FILE="out/.config"
 
-          # Kernel Config Özelleştirmeleri
+          # BTF'yi KAPATMA! (Kullanıcı istedi - boot engelliyor dedi)
+          # Sadece gerekli GKI ayarları
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Earendil-Houji"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          
+          # Modül desteği (vendor_boot için kritik)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
+          
+          # ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_ZSTD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KPROBES
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
-          
+
           # Kaydet
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 5. Build Kernel (Image + Modules + DTBs)
+          echo "✅ Config: $(grep CONFIG_LOCALVERSION $CONFIG_FILE)"
+
+      - name: 5. Build DTBs + Modules (NO Boot Image)
         run: |
           cd kernel
-          export PATH="$GITHUB_WORKSPACE/$CLANG_DIR/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
+          
           export CC="clang"
           export LD="ld.lld"
           export AR="llvm-ar"
@@ -139,88 +138,103 @@ jobs:
           export OBJCOPY="llvm-objcopy"
           export OBJDUMP="llvm-objdump"
           export STRIP="llvm-strip"
-          
-          # KCFLAGS ve LDFLAGS ayrı export edilerek tırnak hatası önlendi
-          export KCFLAGS="-O2 -fomit-frame-pointer -fno-strict-aliasing -Wno-format -Wno-enum-enum-conversion"
-          export LDFLAGS="-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-debug"
+          export KCFLAGS="-O2 -fomit-frame-pointer -fno-strict-aliasing"
+          export LDFLAGS="-Wl,--gc-sections -Wl,--as-needed"
 
-          echo "🚀 Derleme Başlıyor (CPU: $(nproc))..."
+          echo "🚀 Derleme: dtbs + modules (vendor_boot için)..."
+          echo "🚀 CPU: $(nproc)"
+          
+          # ⚠️ Image/Image.gz DERLEMİYORUZ - Kullanıcı kendi boot'unu yapıyor
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            Image.gz dtbs modules
+            dtbs modules
 
           echo "✅ Derleme Tamamlandı!"
 
-      - name: 6. Collect Artifacts (Modules & DTBs)
+      - name: 6. Collect DTBs & DTBOs
         run: |
           cd kernel
-          mkdir -p modules_out lib/modules dtb_out dtbo_out
+          mkdir -p dtb_out dtbo_out
 
-          # Modülleri Yükle
-          make O=out INSTALL_MOD_PATH=modules_out INSTALL_MOD_STRIP=1 modules_install
+          # Houji öncelikli
+          find out/arch/arm64/boot/dts -name "*houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
+          find out/arch/arm64/boot/dts -name "*sm8650*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
+          find out/arch/arm64/boot/dts -name "*pineapple*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           
-          # Modül dosyalarını düzleştir (AnyKernel için)
-          if [ -d modules_out/lib/modules ]; then
-            find modules_out/lib/modules -name "*.ko" -exec cp {} modules_out/ \; 2>/dev/null || true
-            find modules_out/lib/modules -name "modules.*" -exec cp {} modules_out/ \; 2>/dev/null || true
-          fi
+          # Qcom klasörü
+          find out/arch/arm64/boot/dts/qcom -name "*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
 
-          # DTB'leri Topla
-          find out/arch/arm64/boot/dts -name "*houji*.dtb" -exec cp {} dtb_out/ \; 2>/dev/null || true
-          find out/arch/arm64/boot/dts -name "*pineapple*.dtb" -exec cp {} dtb_out/ \; 2>/dev/null || true
-          find out/arch/arm64/boot/dts -name "*sm8650*.dtb" -exec cp {} dtb_out/ \; 2>/dev/null || true
-          # Eğer spesifik yoksa tüm qcom dtb'leri
-          if [ -z "$(ls dtb_out/*.dtb 2>/dev/null)" ]; then
-             find out/arch/arm64/boot/dts/qcom -name "*.dtb" -exec cp {} dtb_out/ \; 2>/dev/null || true
-          fi
+          # DTBO'lar
+          find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp -v {} dtbo_out/ \; 2>/dev/null || true
 
-          # DTBO'ları Topla
-          find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp {} dtbo_out/ \; 2>/dev/null || true
+          echo "=== DTB: $(ls dtb_out/*.dtb 2>/dev/null | wc -l) adet ==="
+          echo "=== DTBO: $(ls dtbo_out/*.dtbo 2>/dev/null | wc -l) adet ==="
+          ls -lh dtb_out/ 2>/dev/null || true
+          ls -lh dtbo_out/ 2>/dev/null || true
 
       - name: 7. Create DTBO Image
         run: |
           cd kernel
-          if [ "$(ls dtbo_out/*.dtbo 2>/dev/null | wc -l)" -gt 0 ]; then
-            # mkdtboimg python scriptini kullan
+          DTBO_COUNT=$(ls dtbo_out/*.dtbo 2>/dev/null | wc -l)
+          if [ "$DTBO_COUNT" -gt 0 ]; then
+            echo "📦 DTBO Image oluşturuluyor ($DTBO_COUNT dosya)..."
             python3 mkbootimg/mkdtboimg.py create dtbo_out/dtbo.img dtbo_out/*.dtbo || \
-            (command -v mkdtboimg && mkdtboimg create dtbo_out/dtbo.img dtbo_out/*.dtbo) || \
-            echo "⚠️ DTBO oluşturulamadı, araç eksik."
+            echo "⚠️ DTBO oluşturulamadı"
           else
-            echo "⚠️ DTBO dosyası bulunamadı."
+            echo "⚠️ DTBO dosyası bulunamadı!"
           fi
 
-      - name: 8. Create vendor_boot Image
+      - name: 8. Create vendor_boot Image (GKI Style)
         run: |
           cd kernel
-          export PATH="$GITHUB_WORKSPACE/$CLANG_DIR/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
           MKBOOTIMG="$GITHUB_WORKSPACE/mkbootimg/mkbootimg.py"
           
           VENDOR_RAMDISK="/tmp/vendor_ramdisk"
           mkdir -p $VENDOR_RAMDISK/lib/modules
           
-          # Modülleri ramdisk'e kopyala
-          find modules_out -name "*.ko" -exec cp {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
-          cp modules_out/modules.load $VENDOR_RAMDISK/lib/modules/ 2>/dev/null || true
-          cp modules_out/modules.dep $VENDOR_RAMDISK/lib/modules/ 2>/dev/null || true
-          cp modules_out/modules.alias $VENDOR_RAMDISK/lib/modules/ 2>/dev/null || true
+          # ⚠️ GKI YAPISI: Tüm modüller vendor_ramdisk içinde
+          echo "📦 Modüller vendor_ramdisk'e kopyalanıyor..."
           
-          # Ramdisk imajı oluştur
+          if [ -d out/modules ]; then
+            find out/modules -name "*.ko" -exec cp -v {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
+          fi
+          if [ -d out/lib/modules ]; then
+            find out/lib/modules -type d -name "*" -exec mkdir -p $VENDOR_RAMDISK/lib/modules/{} \; 2>/dev/null || true
+            find out/lib/modules -name "*.ko" -exec cp -v {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
+          fi
+          
+          # modules.* dosyaları
+          find out -maxdepth 3 -name "modules.*" -exec cp -v {} $VENDOR_RAMDISK/lib/modules/ \; 2>/dev/null || true
+
+          # Ramdisk oluştur
           cd $VENDOR_RAMDISK
           find . | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/vendor_ramdisk.cpio.gz
           cd $GITHUB_WORKSPACE/kernel
 
-          # DTB Seçimi
-          DTB_FILE=$(ls dtb_out/*.dtb 2>/dev/null | head -1)
+          # DTB Seçimi (houji öncelikli)
+          DTB_FILE=""
+          if [ -f "dtb_out/sm8650-houji.dtb" ]; then
+            DTB_FILE="dtb_out/sm8650-houji.dtb"
+          elif [ -f "dtb_out/sm8650.dtb" ]; then
+            DTB_FILE="dtb_out/sm8650.dtb"
+          else
+            DTB_FILE=$(ls dtb_out/*.dtb 2>/dev/null | head -1)
+          fi
+          
           if [ -z "$DTB_FILE" ]; then
-            echo "⚠️ DTB bulunamadı, dummy kullanılıyor."
+            echo "⚠️ DTB bulunamadı, dummy oluşturuluyor..."
             touch /tmp/dummy.dtb
             DTB_FILE="/tmp/dummy.dtb"
           fi
+          
+          echo "📦 Kullanılan DTB: $DTB_FILE"
 
-          # vendor_boot oluştur
+          # vendor_boot (Header v4 - GKI standardı)
           if [ -f "$MKBOOTIMG" ]; then
+            echo "📦 vendor_boot.img oluşturuluyor..."
             python3 "$MKBOOTIMG" \
-              --kernel out/arch/arm64/boot/Image.gz \
+              --kernel /dev/null \
               --ramdisk /tmp/vendor_ramdisk.cpio.gz \
               --dtb "$DTB_FILE" \
               --vendor_boot out/vendor_boot.img \
@@ -228,55 +242,55 @@ jobs:
               --pagesize 4096 \
               --header_version 4 \
               --cmdline "console=ttyMSM0,115200n8 androidboot.bootdevice=1e00000.ufshc" \
-              || echo "❌ vendor_boot oluşturma hatası!"
+              || { echo "❌ vendor_boot hatası!"; exit 1; }
+            
+            ls -lh out/vendor_boot.img
           else
             echo "❌ mkbootimg.py bulunamadı!"
+            exit 1
           fi
 
-      - name: 9. Package AnyKernel3 Zip
+      - name: 9. Package Output
         run: |
-          cd AnyKernel3
+          mkdir -p output
           
-          # AnyKernel Ayarları
-          sed -i 's/kernel.string=.*/kernel.string=Earendil Kernel Houji/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          cp kernel/out/vendor_boot.img output/ 2>/dev/null || echo "⚠️ vendor_boot.img yok!"
+          cp kernel/dtbo_out/dtbo.img output/ 2>/dev/null || echo "⚠️ dtbo.img yok!"
+          cp -r kernel/dtb_out output/dtb 2>/dev/null || true
+          cp -r kernel/out/modules output/modules 2>/dev/null || true
+          cp -r kernel/out/lib/modules output/lib_modules 2>/dev/null || true
           
-          # Cihaz isimlerini ekle
-          cat >> anykernel.sh << EOF
-          device.name1=houji
-          device.name2=shennong
-          device.name3=aurora
-          device.name4=xiaomi14
-          EOF
-
-          # Dosyaları Kopyala
-          cp ../kernel/out/arch/arm64/boot/Image.gz .
+          cd output
+          zip -r9 "../Earendil-Houji-Vendor-$(date +%Y%m%d-%H%M).zip" ./*
+          echo "ZIP_NAME=Earendil-Houji-Vendor-$(date +%Y%m%d-%H%M).zip" >> $GITHUB_ENV
           
-          mkdir -p dtb dtbo modules
-          cp ../kernel/dtb_out/*.dtb dtb/ 2>/dev/null || true
-          cp ../kernel/dtbo_out/dtbo.img . 2>/dev/null || true
-          cp ../kernel/out/vendor_boot.img . 2>/dev/null || true
-          
-          cp ../kernel/modules_out/*.ko modules/ 2>/dev/null || true
-          cp ../kernel/modules_out/modules.* . 2>/dev/null || true
-
-          # Zip Oluştur
-          zip -r9 "../Earendil-Houji-$(date +%Y%m%d-%H%M).zip" ./*
-          echo "ZIP_NAME=Earendil-Houji-$(date +%Y%m%d-%H%M).zip" >> $GITHUB_ENV
+          echo "=== Çıktı Dosyaları ==="
+          ls -lh ../
 
       - name: 10. Upload Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "Earendil Kernel - Mi 14 Houji (${{ env.DEFCONFIG_NAME }})"
+          tag_name: vendor-${{ github.run_number }}
+          name: "Mi 14 Houji - Vendor Boot & DTBO"
           files: "*.zip"
           body: |
-            **Device:** Xiaomi 14 (houji)
+            **Device:** Xiaomi Mi 14 (houji)
             **Chipset:** SM8650
-            **Kernel:** Earendil Full
-            **Build:** GitHub Actions
+            **Kernel Source:** CodeLinaro (linaro/tracking-qcomlt-sm8650)
+            **LLVM:** 17.0.2 (Official)
+            **Config:** defconfig (mevcut olan)
+            **BTF:** Enabled (kapatılmadı)
             
-            Includes: Image.gz, vendor_boot.img, dtbo.img, Modules.
+            ### İçerik:
+            - vendor_boot.img (tüm modüller ramdisk içinde - GKI)
+            - dtbo.img
+            - dtb/ (yedek DTB dosyaları)
+            - modules/ (yedek modüller)
+            
+            ### ⚠️ Kullanım:
+            - boot.img KENDİ GKI SOURCE'UNUZLA derlenmeli
+            - Bu paket sadece vendor_boot + dtbo içerir
+            - Fastboot: `fastboot flash vendor_boot vendor_boot.img`
+            - Fastboot: `fastboot flash dtbo dtbo.img`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
