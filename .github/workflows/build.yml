@@ -59,8 +59,8 @@ jobs:
 
 
           echo "📦 mkbootimg çekiliyor..."
+          rm -rf mkbootimg
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg
-
       - name: 3. Kaynak Kodu Hata Düzeltmeleri
         run: |
           cd kernel
