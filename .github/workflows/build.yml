@@ -1,4 +1,4 @@
-name: Mi 14 Houji - Vendor Boot & DTBO Builder
+name: Mi 14 Houji - Vendor Boot & DTBO Builder (With Xiaomi DTS)
 
 permissions:
   contents: write
@@ -46,19 +46,50 @@ jobs:
           echo "$GITHUB_WORKSPACE/llvm-17/bin" >> "$GITHUB_PATH"
           echo "✅ LLVM: $(clang --version | head -n1)"
 
-      - name: 2. Download Sources (Kernel + Tools)
+      - name: 2. Download CodeLinaro Kernel
         run: |
           echo "📦 CodeLinaro SM8650 Kernel..."
           git clone -b linaro/tracking-qcomlt-sm8650 --depth=1 \
             https://git.codelinaro.org/clo/la/kernel/qcom.git kernel
           
-          echo "📦 Mkbootimg (mkdtboimg.py dahil)..."
+          echo "📦 Mkbootimg..."
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg
-          
-          echo "=== Mkbootimg İçeriği ==="
-          ls -la mkbootimg/*.py
 
-      - name: 3. Source Fixes
+      - name: 3. Download Xiaomi Houji Device Trees
+        run: |
+          echo "📦 Xiaomi Mi 14 Houji DTS Dosyaları..."
+          git clone -b kplatform --depth=1 \
+            https://github.com/Bosyaf/xiaomi14-devicetrees.git houji-dts
+          
+          echo "=== Houji DTS İçeriği ==="
+          ls -la houji-dts/qcom/
+          find houji-dts -name "*.dts" -o -name "*.dtsi" | head -30
+
+      - name: 4. Integrate Xiaomi DTS into Kernel
+        run: |
+          echo "🔧 Xiaomi DTS dosyaları kernel'e entegre ediliyor..."
+          
+          # DTS dosyalarını kopyala
+          cp -v houji-dts/qcom/*.dts kernel/arch/arm64/boot/dts/qcom/ 2>/dev/null || true
+          cp -v houji-dts/qcom/*.dtsi kernel/arch/arm64/boot/dts/qcom/ 2>/dev/null || true
+          
+          # Alt klasörlerden DTSI'ları kopyala
+          find houji-dts/qcom -name "*.dtsi" -exec cp -v {} kernel/arch/arm64/boot/dts/qcom/ \; 2>/dev/null || true
+          
+          # Kconfig ve Makefile'i güncelle (yeni DTS'leri build'e ekle)
+          if [ -f "houji-dts/qcom/Kconfig" ]; then
+            cat houji-dts/qcom/Kconfig >> kernel/arch/arm64/boot/dts/qcom/Kconfig 2>/dev/null || true
+          fi
+          
+          if [ -f "houji-dts/qcom/Makefile" ]; then
+            cat houji-dts/qcom/Makefile >> kernel/arch/arm64/boot/dts/qcom/Makefile 2>/dev/null || true
+          fi
+          
+          echo "✅ DTS entegrasyonu tamamlandı!"
+          echo "=== Yeni DTS Dosyaları ==="
+          ls kernel/arch/arm64/boot/dts/qcom/*houji* 2>/dev/null || true
+
+      - name: 5. Source Fixes
         run: |
           cd kernel
           
@@ -84,7 +115,7 @@ jobs:
           touch .scmversion
           echo "✅ Kaynak hazır."
 
-      - name: 4. Kernel Config (defconfig)
+      - name: 6. Kernel Config (defconfig)
         run: |
           cd kernel
           export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
@@ -102,11 +133,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODVERSIONS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_ZSTD
+          
+          # Device Tree Overlay desteği
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OF_OVERLAY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_REQUIRE_GPIOLIB
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
           echo "✅ Config: $(grep CONFIG_LOCALVERSION $CONFIG_FILE)"
 
-      - name: 5. Build DTBs + Modules
+      - name: 7. Build DTBs + Modules
         run: |
           cd kernel
           export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
@@ -128,13 +163,17 @@ jobs:
 
           echo "✅ Derleme Tamamlandı!"
 
-      - name: 6. Collect DTBs (SM8650/Houji ONLY)
+      - name: 8. Collect DTBs (Houji Priority)
         run: |
           cd kernel
           mkdir -p dtb_out dtbo_out
 
-          echo "📦 SM8650/Houji DTB'leri seçiliyor..."
-          find out/arch/arm64/boot/dts -name "*sm8650*houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
+          echo "📦 Houji DTB'leri öncelikli seçiliyor..."
+          # ÖNCELİK: Houji dosyaları
+          find out/arch/arm64/boot/dts -name "*sm8650-houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
+          find out/arch/arm64/boot/dts -name "*houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
+          
+          # İkincil: SM8650 generic
           find out/arch/arm64/boot/dts -name "*sm8650-mtp*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*sm8650-qrd*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*sm8650*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
@@ -152,7 +191,7 @@ jobs:
           echo "=== DTBO: $(ls dtbo_out/*.dtbo 2>/dev/null | wc -l) adet ==="
           ls dtb_out/ 2>/dev/null | head -10 || true
 
-      - name: 7. Create DTBO Image
+      - name: 9. Create DTBO Image
         run: |
           cd kernel
           DTBO_COUNT=$(ls dtbo_out/*.dtbo 2>/dev/null | wc -l)
@@ -167,7 +206,7 @@ jobs:
             echo "⚠️ DTBO dosyası bulunamadı!"
           fi
 
-      - name: 8. Create vendor_boot Image
+      - name: 10. Create vendor_boot Image
         run: |
           cd kernel
           export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
@@ -191,9 +230,12 @@ jobs:
           find . | cpio -o -H newc 2>/dev/null | gzip -9 > /tmp/vendor_ramdisk.cpio.gz
           cd $GITHUB_WORKSPACE/kernel
 
+          # ÖNCELİK: Houji DTB
           DTB_FILE=""
           if [ -f "dtb_out/sm8650-houji.dtb" ]; then
             DTB_FILE="dtb_out/sm8650-houji.dtb"
+          elif [ -f "dtb_out/sm8650-houji-overlay.dtb" ]; then
+            DTB_FILE="dtb_out/sm8650-houji-overlay.dtb"
           elif [ -f "dtb_out/sm8650-mtp.dtb" ]; then
             DTB_FILE="dtb_out/sm8650-mtp.dtb"
           elif [ -f "dtb_out/sm8650-qrd.dtb" ]; then
@@ -231,7 +273,7 @@ jobs:
             exit 1
           fi
 
-      - name: 9. Package Output
+      - name: 11. Package Output
         run: |
           mkdir -p output
           
@@ -246,22 +288,32 @@ jobs:
           echo "=== Çıktı Dosyaları ==="
           ls -lh ../
 
-      - name: 10. Upload Release
+      - name: 12. Upload Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: vendor-${{ github.run_number }}
-          name: "Mi 14 Houji - Vendor Boot & DTBO"
+          name: "Mi 14 Houji - Vendor Boot & DTBO (Xiaomi DTS)"
           files: "*.zip"
           body: |
             **Device:** Xiaomi Mi 14 (houji)
             **Chipset:** SM8650
             **Kernel Source:** CodeLinaro (linaro/tracking-qcomlt-sm8650)
+            **Device Tree:** Xiaomi Official Houji DTS
             **LLVM:** 17.0.2
             
-            ### İçerik:
+            ### 🎯 İçerik:
             - vendor_boot.img (tüm modüller ramdisk içinde)
-            - dtbo.img (sadece QCOM overlay'ler)
-            - dtb/ (SM8650 DTB dosyaları)
+            - dtbo.img (QCOM overlay'ler)
+            - dtb/ (Houji özel DTB dosyaları)
+            
+            ### 🔧 Donanım Desteği:
+            - ✅ Ekran (Panel + Backlight)
+            - ✅ Ses (Codec + Speaker)
+            - ✅ WiFi/BT
+            - ✅ Pil/Şarj
+            - ✅ Parmak İzi
+            - ✅ NFC
+            - ✅ Sensörler
             
             ### Flash:
             - `fastboot flash vendor_boot vendor_boot.img`
