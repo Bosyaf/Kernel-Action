@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mike Tipton <mdtipton@codeaurora.org>
+Date: Mon, 2 Nov 2020 15:27:58 -0800
+Subject: NOUPSTREAM: ANDROID: clk: Enable writable debugfs files
+
+Enable writable clock debugfs files which are required for debugging and
+testing. This doesn't introduce security or safety issues for Android
+since debugfs itself is already considered unsafe and mounting it isn't
+allowed on user devices.
+
+[CPNOTE: 06/07/21] Lee: Requested an upstreamable solution
+[CPNOTE: 15/07/21] Lee: Upstream have repeatedly rejected making this a Kconfig option
+
+Bug: 172264964
+Change-Id: I68bd54cfe3765e2b3cbb208383c6117e662054b7
+Signed-off-by: Mike Tipton <mdtipton@codeaurora.org>
+Signed-off-by: Lee Jones <joneslee@google.com>
+---
+ drivers/clk/clk.c                     | 2 +-
+ drivers/interconnect/debugfs-client.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/clk/clk.c b/drivers/clk/clk.c
+--- a/drivers/clk/clk.c
++++ b/drivers/clk/clk.c
+@@ -3509,7 +3509,7 @@ static int clk_dump_show(struct seq_file *s, void *data)
+ }
+ DEFINE_SHOW_ATTRIBUTE(clk_dump);
+ 
+-#undef CLOCK_ALLOW_WRITE_DEBUGFS
++#define CLOCK_ALLOW_WRITE_DEBUGFS
+ #ifdef CLOCK_ALLOW_WRITE_DEBUGFS
+ /*
+  * This can be dangerous, therefore don't provide any real compile time
+diff --git a/drivers/interconnect/debugfs-client.c b/drivers/interconnect/debugfs-client.c
+--- a/drivers/interconnect/debugfs-client.c
++++ b/drivers/interconnect/debugfs-client.c
+@@ -13,7 +13,7 @@
+  * configuration option for this feature.
+  * People who want to use this will need to modify the source code directly.
+  */
+-#undef INTERCONNECT_ALLOW_WRITE_DEBUGFS
++#define INTERCONNECT_ALLOW_WRITE_DEBUGFS
+ 
+ #if defined(INTERCONNECT_ALLOW_WRITE_DEBUGFS) && defined(CONFIG_DEBUG_FS)
+ 

@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Carlos Llamas <cmllamas@google.com>
+Date: Thu, 18 Dec 2025 17:58:06 +0000
+Subject: FROMLIST: kbuild: prefer ${NM} in check-function-names.sh
+
+The check-function-names.sh scripts invokes 'nm' directly and this can
+be problematic during cross-compilation when the toolchain is different
+from the system's default (e.g. LLVM=1).
+
+  scripts/check-function-names.sh: nm: not found
+
+Let's prefer the ${NM} variable which is already set by kbuild. However,
+still fallback to plain 'nm' to ensure the script is still usable when
+called directly.
+
+Fixes: 93863f3f859a ("kbuild: Check for functions with ambiguous -ffunction-sections section names")
+Signed-off-by: Carlos Llamas <cmllamas@google.com>
+
+Link: https://lore.kernel.org/all/20251218175824.3122690-1-cmllamas@google.com/
+Change-Id: Ic374d5064b86ceef080275950b85f9a1b141c218
+Signed-off-by: Carlos Llamas <cmllamas@google.com>
+---
+ scripts/check-function-names.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scripts/check-function-names.sh b/scripts/check-function-names.sh
+--- a/scripts/check-function-names.sh
++++ b/scripts/check-function-names.sh
+@@ -13,7 +13,7 @@ if [ ! -f "$objfile" ]; then
+ 	exit 1
+ fi
+ 
+-bad_symbols=$(nm "$objfile" | awk '$2 ~ /^[TtWw]$/ {print $3}' | grep -E '^(startup|exit|split|unlikely|hot|unknown)(\.|$)')
++bad_symbols=$(${NM:-nm} "$objfile" | awk '$2 ~ /^[TtWw]$/ {print $3}' | grep -E '^(startup|exit|split|unlikely|hot|unknown)(\.|$)')
+ 
+ if [ -n "$bad_symbols" ]; then
+ 	echo "$bad_symbols" | while read -r sym; do

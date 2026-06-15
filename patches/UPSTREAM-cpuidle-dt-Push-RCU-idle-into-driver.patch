@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alexey Klimov <klimova@google.com>
+Date: Mon, 27 Mar 2023 13:17:36 +0000
+Subject: UPSTREAM: cpuidle, dt: Push RCU-idle into driver
+
+Doing RCU-idle outside the driver, only to then temporarily enable it
+again before going idle is suboptimal.
+
+Notably: this converts all dt_init_idle_driver() and
+__CPU_PM_CPU_IDLE_ENTER() users for they are inextrably intertwined.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+Tested-by: Tony Lindgren <tony@atomide.com>
+Tested-by: Ulf Hansson <ulf.hansson@linaro.org>
+Acked-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Acked-by: Frederic Weisbecker <frederic@kernel.org>
+Link: https://lore.kernel.org/r/20230112195540.068981667@infradead.org
+
+Bug: 272060410
+(cherry picked from commit 0c5ffc3d7b15978c6b184938cd6b8af06e436424)
+[alexey: bringing back the upstream change now that the root
+problem for it being reverted is workarounded in exynos-cpupm
+driver. The issue was that one of cpu pm notifiers via cpu_pm_enter()
+didn't allow a CPU to transition into deeper idle state during reboot
+which enabled the kernel to spin in a "loop" trying to put CPU in
+this idle state continuously. This flow is no longer covered by
+ct_cpuidle_{enter,exit}() section and RCU, if required, was waiting
+for synchronization from these CPUs during reboot for a long time
+using rcu_barrier().]
+Signed-off-by: Alexey Klimov <klimova@google.com>
+
+Change-Id: I452cc3c8779b76237b04a0afd5919d3e3d01809c
+---
+ drivers/cpuidle/cpuidle-big_little.c | 12 ++++++++----
+ drivers/cpuidle/dt_idle_states.c     |  2 +-
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle-big_little.c b/drivers/cpuidle/cpuidle-big_little.c
+--- a/drivers/cpuidle/cpuidle-big_little.c
++++ b/drivers/cpuidle/cpuidle-big_little.c
+@@ -64,7 +64,8 @@ static struct cpuidle_driver bl_idle_little_driver = {
+ 		.enter			= bl_enter_powerdown,
+ 		.exit_latency		= 700,
+ 		.target_residency	= 2500,
+-		.flags			= CPUIDLE_FLAG_TIMER_STOP,
++		.flags			= CPUIDLE_FLAG_TIMER_STOP |
++					  CPUIDLE_FLAG_RCU_IDLE,
+ 		.name			= "C1",
+ 		.desc			= "ARM little-cluster power down",
+ 	},
+@@ -85,7 +86,8 @@ static struct cpuidle_driver bl_idle_big_driver = {
+ 		.enter			= bl_enter_powerdown,
+ 		.exit_latency		= 500,
+ 		.target_residency	= 2000,
+-		.flags			= CPUIDLE_FLAG_TIMER_STOP,
++		.flags			= CPUIDLE_FLAG_TIMER_STOP |
++					  CPUIDLE_FLAG_RCU_IDLE,
+ 		.name			= "C1",
+ 		.desc			= "ARM big-cluster power down",
+ 	},
+@@ -120,15 +122,17 @@ static int notrace bl_powerdown_finisher(unsigned long arg)
+  * Called from the CPUidle framework to program the device to the
+  * specified target state selected by the governor.
+  */
+-static int bl_enter_powerdown(struct cpuidle_device *dev,
+-				struct cpuidle_driver *drv, int idx)
++static __cpuidle int bl_enter_powerdown(struct cpuidle_device *dev,
++					struct cpuidle_driver *drv, int idx)
+ {
+ 	cpu_pm_enter();
++	ct_cpuidle_enter();
+ 
+ 	cpu_suspend(0, bl_powerdown_finisher);
+ 
+ 	/* signals the MCPM core that CPU is out of low power state */
+ 	mcpm_cpu_powered_up();
++	ct_cpuidle_exit();
+ 
+ 	cpu_pm_exit();
+ 
+diff --git a/drivers/cpuidle/dt_idle_states.c b/drivers/cpuidle/dt_idle_states.c
+--- a/drivers/cpuidle/dt_idle_states.c
++++ b/drivers/cpuidle/dt_idle_states.c
+@@ -76,7 +76,7 @@ static int init_state_node(struct cpuidle_state *idle_state,
+ 	if (err)
+ 		desc = state_node->name;
+ 
+-	idle_state->flags = 0;
++	idle_state->flags = CPUIDLE_FLAG_RCU_IDLE;
+ 	if (of_property_read_bool(state_node, "local-timer-stop"))
+ 		idle_state->flags |= CPUIDLE_FLAG_TIMER_STOP;
+ 	/*

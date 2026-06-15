@@ -1,0 +1,158 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Neill Kapron <nkapron@google.com>
+Date: Thu, 9 Mar 2023 16:51:37 +0000
+Subject: Revert "exit: Remove profile_task_exit & profile_munmap"
+
+This reverts commit 2d4bcf886e42f0f4846a3d9bdc3a90d278903a2e, which
+removed hooks required for Android uid_sys_stats.c.
+
+Bug: 219790626
+Bug: 315178116
+[nkapron: resolve conflict with 2873cd31a20c exit: Remove profile_handoff_task]
+Signed-off-by: Neill Kapron <nkapron@google.com>
+(cherry picked from https://android-review.googlesource.com/q/commit:bd772a54d267d0c67b9350fb5a0273d1b8f237fd)
+(cherry picked from https://android-review.googlesource.com/q/commit:ac4bfe2bb0eeb3840e29a8bd4ee88aa04a15a7ca)
+Merged-In: Icea00bbf9abe2fb17312b25f2d575d29aa360999
+Change-Id: Icea00bbf9abe2fb17312b25f2d575d29aa360999
+---
+ include/linux/profile.h | 26 ++++++++++++++++++++
+ kernel/exit.c           |  1 +
+ kernel/profile.c        | 53 +++++++++++++++++++++++++++++++++++++++++
+ mm/mmap.c               |  1 +
+ 4 files changed, 81 insertions(+)
+
+diff --git a/include/linux/profile.h b/include/linux/profile.h
+--- a/include/linux/profile.h
++++ b/include/linux/profile.h
+@@ -24,6 +24,11 @@ static inline int create_proc_profile(void)
+ }
+ #endif
+ 
++enum profile_type {
++	PROFILE_TASK_EXIT,
++	PROFILE_MUNMAP
++};
++
+ #ifdef CONFIG_PROFILING
+ 
+ extern int prof_on __read_mostly;
+@@ -54,6 +59,15 @@ static inline void profile_hit(int type, void *ip)
+ struct task_struct;
+ struct mm_struct;
+ 
++/* task is in do_exit() */
++void profile_task_exit(struct task_struct * task);
++
++/* sys_munmap */
++void profile_munmap(unsigned long addr);
++
++int profile_event_register(enum profile_type, struct notifier_block * n);
++int profile_event_unregister(enum profile_type, struct notifier_block * n);
++
+ #else
+ 
+ #define prof_on 0
+@@ -78,6 +92,18 @@ static inline void profile_hit(int type, void *ip)
+ 	return;
+ }
+ 
++static inline int profile_event_register(enum profile_type t, struct notifier_block * n)
++{
++	return -ENOSYS;
++}
++
++static inline int profile_event_unregister(enum profile_type t, struct notifier_block * n)
++{
++	return -ENOSYS;
++}
++
++#define profile_task_exit(a) do { } while (0)
++#define profile_munmap(a) do { } while (0)
+ 
+ #endif /* CONFIG_PROFILING */
+ 
+diff --git a/kernel/exit.c b/kernel/exit.c
+--- a/kernel/exit.c
++++ b/kernel/exit.c
+@@ -903,6 +903,7 @@ void __noreturn do_exit(long code)
+ 	WARN_ON(irqs_disabled());
+ 	WARN_ON(tsk->plug);
+ 
++	profile_task_exit(tsk);
+ 	kcov_task_exit(tsk);
+ 	kmsan_task_exit(tsk);
+ 
+diff --git a/kernel/profile.c b/kernel/profile.c
+--- a/kernel/profile.c
++++ b/kernel/profile.c
+@@ -114,6 +114,59 @@ int __ref profile_init(void)
+ 	return -ENOMEM;
+ }
+ 
++/* Profile event notifications */
++
++static BLOCKING_NOTIFIER_HEAD(task_exit_notifier);
++static BLOCKING_NOTIFIER_HEAD(munmap_notifier);
++
++void profile_task_exit(struct task_struct *task)
++{
++	blocking_notifier_call_chain(&task_exit_notifier, 0, task);
++}
++
++void profile_munmap(unsigned long addr)
++{
++	blocking_notifier_call_chain(&munmap_notifier, 0, (void *)addr);
++}
++
++int profile_event_register(enum profile_type type, struct notifier_block *n)
++{
++	int err = -EINVAL;
++
++	switch (type) {
++	case PROFILE_TASK_EXIT:
++		err = blocking_notifier_chain_register(
++				&task_exit_notifier, n);
++		break;
++	case PROFILE_MUNMAP:
++		err = blocking_notifier_chain_register(
++				&munmap_notifier, n);
++		break;
++	}
++
++	return err;
++}
++EXPORT_SYMBOL_GPL(profile_event_register);
++
++int profile_event_unregister(enum profile_type type, struct notifier_block *n)
++{
++	int err = -EINVAL;
++
++	switch (type) {
++	case PROFILE_TASK_EXIT:
++		err = blocking_notifier_chain_unregister(
++				&task_exit_notifier, n);
++		break;
++	case PROFILE_MUNMAP:
++		err = blocking_notifier_chain_unregister(
++				&munmap_notifier, n);
++		break;
++	}
++
++	return err;
++}
++EXPORT_SYMBOL_GPL(profile_event_unregister);
++
+ static void do_profile_hits(int type, void *__pc, unsigned int nr_hits)
+ {
+ 	unsigned long pc;
+diff --git a/mm/mmap.c b/mm/mmap.c
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -1077,6 +1077,7 @@ EXPORT_SYMBOL(vm_munmap);
+ SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
+ {
+ 	addr = untagged_addr(addr);
++	profile_munmap(addr);
+ 	return __vm_munmap(addr, len, true);
+ }
+ 

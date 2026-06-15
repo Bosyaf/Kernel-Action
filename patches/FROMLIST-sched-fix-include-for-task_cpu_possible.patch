@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Matthias Maennich <maennich@google.com>
+Date: Sun, 29 Sep 2024 23:11:58 +0000
+Subject: FROMLIST: sched: fix include for task_cpu_possible
+
+Commit 2c390dda9e03 ("sched_ext: Make task_can_run_on_remote_rq() use
+common task_allowed_on_cpu()") moved the call for task_cpu_possible from
+kernel/sched/core.c, but did not add an include of linux/mmu_context.h
+where this symbol is defined. Fix that by adding the missing include.
+
+Link: https://lore.kernel.org/all/20240930164455.2060692-2-maennich@google.com/
+Fixes: 2c390dda9e03 ("sched_ext: Make task_can_run_on_remote_rq() use common task_allowed_on_cpu()")
+Signed-off-by: Matthias Maennich <maennich@google.com>
+Change-Id: Idaea82df3eeb7c20a21ebea363596a25fa7aa8d2
+---
+ kernel/sched/sched.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -44,6 +44,7 @@
+ #include <linux/lockdep.h>
+ #include <linux/minmax.h>
+ #include <linux/mm.h>
++#include <linux/mmu_context.h>
+ #include <linux/module.h>
+ #include <linux/mutex_api.h>
+ #include <linux/plist.h>

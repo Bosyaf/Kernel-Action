@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Carlos Llamas <cmllamas@google.com>
+Date: Thu, 31 Jul 2025 22:36:28 +0000
+Subject: Revert "eventpoll: fix sphinx documentation build warning"
+
+This reverts commit ecb6cc0fd8cd2d34b983e118aa61dd8c9b052d0d.
+
+Upstream commit f2e467a48287 ("eventpoll: Fix semi-unbounded recursion")
+caused a regression in LTP test epoll_ctl04. In order to temporarily
+revert such commit cleanly this commit also needs to be reverted. It can
+be reapplied once the fix is determined.
+
+Bug: 435559836
+Link: https://lore.kernel.org/all/aIvusYlauznxttGc@google.com/
+Change-Id: I3aee0d69aebc8e86f6e29766c4441135d8a00755
+Signed-off-by: Carlos Llamas <cmllamas@google.com>
+---
+ fs/eventpoll.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/fs/eventpoll.c b/fs/eventpoll.c
+--- a/fs/eventpoll.c
++++ b/fs/eventpoll.c
+@@ -2103,7 +2103,9 @@ static int ep_loop_check_proc(struct eventpoll *ep, int depth)
+ 	return result;
+ }
+ 
+-/* ep_get_upwards_depth_proc - determine depth of @ep when traversed upwards */
++/**
++ * ep_get_upwards_depth_proc - determine depth of @ep when traversed upwards
++ */
+ static int ep_get_upwards_depth_proc(struct eventpoll *ep, int depth)
+ {
+ 	int result = 0;

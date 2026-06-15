@@ -1,0 +1,159 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Elliot Berman <eberman@codeaurora.org>
+Date: Wed, 7 Apr 2021 08:03:11 -0700
+Subject: NOUPSTREAM: ANDROID: Kbuild: Add support for KBUILD_MIXED_TREE
+
+When KBUILD_MIXED_TREE points to the output folder of another kernel's
+build output, Kbuild can compile a complete kernel tree's modules
+against that other kernel tree's vmlinux. This is useful when two
+kernel trees exist: a "Generic Kernel Image" tree and a "device kernel"
+tree.  Both trees are complete kernel source trees, and the "Generic
+Kernel Image" should provide the kernel Image and device kernel tree
+provides device driver modules.
+
+To accomplish this, references to vmlinux.symvers in the device kernel
+should point to the generic kernel's vmlinux.symvers and the device
+kernel should skip compilation of built-in files.
+
+[CPNOTE: 03/06/21] Lee: Not suitable for Mainline
+
+Squash:
+  ANDROID: Add clang-tidy/clang-analyzer support for mixed build environment
+
+Bug: 178469391
+Bug: 233781076
+Change-Id: I614f3e87519236c4e2c5da74937cb0ecd98a278a
+Signed-off-by: Elliot Berman <eberman@codeaurora.org>
+Signed-off-by: Lee Jones <joneslee@google.com>
+---
+ Makefile                  | 24 +++++++++++++++++++++---
+ scripts/Makefile.modfinal |  2 +-
+ scripts/Makefile.modpost  | 14 ++++++++++++++
+ 3 files changed, 36 insertions(+), 4 deletions(-)
+
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -151,6 +151,20 @@ endif
+ 
+ export KBUILD_EXTMOD
+ 
++# ANDROID: set up mixed-build support. mixed-build allows device kernel modules
++# to be compiled against a GKI kernel. This approach still uses the headers and
++# Kbuild from device kernel, so care must be taken to ensure that those headers match.
++ifdef KBUILD_MIXED_TREE
++# Need vmlinux.symvers for modpost and System.map for depmod, check whether they exist in KBUILD_MIXED_TREE
++required_mixed_files=vmlinux.symvers System.map
++$(if $(filter-out $(words $(required_mixed_files)), \
++		$(words $(wildcard $(add-prefix $(KBUILD_MIXED_TREE)/,$(required_mixed_files))))),,\
++	$(error KBUILD_MIXED_TREE=$(KBUILD_MIXED_TREE) doesn't contain $(required_mixed_files)))
++endif
++
++mixed-build-prefix = $(if $(KBUILD_MIXED_TREE),$(KBUILD_MIXED_TREE)/)
++export KBUILD_MIXED_TREE
++
+ ifeq ("$(origin W)", "command line")
+   KBUILD_EXTRA_WARN := $(W)
+ endif
+@@ -793,11 +807,13 @@ drivers-y	:=
+ libs-y		:= lib/
+ endif # KBUILD_EXTMOD
+ 
++ifndef KBUILD_MIXED_TREE
+ # The all: target is the default when no target is given on the
+ # command line.
+ # This allow a user to issue only 'make' to build a kernel including modules
+ # Defaults to vmlinux, but the arch makefile usually adds further targets
+ all: vmlinux
++endif
+ 
+ CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage
+ ifdef CONFIG_CC_IS_GCC
+@@ -1236,6 +1252,7 @@ targets += vmlinux.a
+ vmlinux.a: $(KBUILD_VMLINUX_OBJS) scripts/head-object-list.txt FORCE
+ 	$(call if_changed,ar_vmlinux.a)
+ 
++ifndef KBUILD_MIXED_TREE
+ PHONY += vmlinux_o
+ vmlinux_o: vmlinux.a $(KBUILD_VMLINUX_LIBS)
+ 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.vmlinux_o
+@@ -1258,6 +1275,7 @@ vmlinux: private _LDFLAGS_vmlinux := $(LDFLAGS_vmlinux)
+ vmlinux: export LDFLAGS_vmlinux = $(_LDFLAGS_vmlinux)
+ vmlinux: vmlinux.o $(KBUILD_LDS) modpost
+ 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.vmlinux
++endif
+ 
+ # The actual objects are generated when descending,
+ # make sure no implicit rule kicks in
+@@ -1981,7 +1999,7 @@ KBUILD_MODULES :=
+ endif # CONFIG_MODULES
+ 
+ PHONY += modpost
+-modpost: $(if $(single-build),, $(if $(KBUILD_BUILTIN), vmlinux.o)) \
++modpost: $(if $(single-build),, $(if $(KBUILD_MIXED_TREE), vmlinux.symvers, $(if $(KBUILD_BUILTIN), vmlinux.o))) \
+ 	 $(if $(KBUILD_MODULES), modules_check)
+ 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost
+ 
+@@ -2033,7 +2051,7 @@ prepare: outputmakefile
+ # Error messages still appears in the original language
+ PHONY += $(build-dir)
+ $(build-dir): prepare
+-	$(Q)$(MAKE) $(build)=$@ need-builtin=1 need-modorder=1 $(single-goals)
++	$(Q)$(MAKE) $(build)=$@ $(if $(KBUILD_MIXED_TREE),,need-builtin=1) need-modorder=1 $(single-goals)
+ 
+ clean-dirs := $(addprefix _clean_, $(clean-dirs))
+ PHONY += $(clean-dirs) clean
+@@ -2097,7 +2115,7 @@ quiet_cmd_gen_compile_commands = GEN     $@
+       cmd_gen_compile_commands = $(PYTHON3) $< -a $(AR) -o $@ $(filter-out $<, $(real-prereqs))
+ 
+ compile_commands.json: $(srctree)/scripts/clang-tools/gen_compile_commands.py \
+-	$(if $(KBUILD_EXTMOD),, vmlinux.a $(KBUILD_VMLINUX_LIBS)) \
++	$(if $(KBUILD_EXTMOD)$(KBUILD_MIXED_TREE),, vmlinux.a $(KBUILD_VMLINUX_LIBS)) \
+ 	$(if $(CONFIG_MODULES), modules.order) FORCE
+ 	$(call if_changed,gen_compile_commands)
+ 
+diff --git a/scripts/Makefile.modfinal b/scripts/Makefile.modfinal
+--- a/scripts/Makefile.modfinal
++++ b/scripts/Makefile.modfinal
+@@ -52,7 +52,7 @@ if_changed_except = $(if $(call newer_prereqs_except,$(2))$(cmd-check),      \
+ 	printf '%s\n' 'savedcmd_$@ := $(make-cmd)' > $(dot-target).cmd, @:)
+ 
+ # Re-generate module BTFs if either module's .ko or vmlinux changed
+-%.ko: %.o %.mod.o .module-common.o $(objtree)/scripts/module.lds $(and $(CONFIG_DEBUG_INFO_BTF_MODULES),$(KBUILD_BUILTIN),$(objtree)/vmlinux) FORCE
++%.ko: %.o %.mod.o $(extmod_prefix).module-common.o $(objtree)/scripts/module.lds $(and $(CONFIG_DEBUG_INFO_BTF_MODULES),$(KBUILD_BUILTIN),$(objtree)/vmlinux) FORCE
+ 	+$(call if_changed_except,ld_ko_o,$(objtree)/vmlinux)
+ ifdef CONFIG_DEBUG_INFO_BTF_MODULES
+ 	+$(if $(newer-prereqs),$(call cmd,btf_ko))
+diff --git a/scripts/Makefile.modpost b/scripts/Makefile.modpost
+--- a/scripts/Makefile.modpost
++++ b/scripts/Makefile.modpost
+@@ -38,6 +38,8 @@ __modpost:
+ include $(objtree)/include/config/auto.conf
+ include $(srctree)/scripts/Kbuild.include
+ 
++mixed-build-prefix = $(if $(KBUILD_MIXED_TREE),$(KBUILD_MIXED_TREE)/)
++
+ MODPOST = $(objtree)/scripts/mod/modpost
+ 
+ modpost-args =										\
+@@ -129,8 +131,20 @@ modpost-deps += $(ksym-wl)
+ endif
+ 
+ ifeq ($(wildcard vmlinux.o),)
++
++# ANDROID: Use vmlinux.symvers from base build when doing mixed build
++ifneq ($(wildcard vmlinux.symvers),)
++modpost-args += -i vmlinux.symvers
++# Not adding vmlinux.symvers to modpost-deps to avoid dependency on
++#   .vmlinux.objs. Just use the one from base build.
++# Note: we don't want to include the vmlinux symbols here because we want to be
++# sure we only use the vmlinux symbols from the GKI kernel.
++output-symdump := modules-only.symvers
++else # vmlinux.symvers does not exist
+ missing-input := vmlinux.o
+ output-symdump := modules-only.symvers
++endif # whether vmlinux.symvers exists
++
+ else
+ modpost-args += vmlinux.o
+ modpost-deps += vmlinux.o

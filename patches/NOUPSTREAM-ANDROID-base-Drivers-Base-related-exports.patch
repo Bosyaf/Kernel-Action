@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mark Salyzyn <salyzyn@google.com>
+Date: Wed, 19 Aug 2020 05:29:01 -0700
+Subject: NOUPSTREAM: ANDROID: base: Drivers Base related exports
+
+[CPNOTE: 17/06/21] Lee: Vendor related code - maintain forever
+
+Squash:
+  ANDROID: arch_topology: Export thermal pressure symbol
+
+Bug: 175847109
+Signed-off-by: Mark Salyzyn <salyzyn@google.com>
+Fixes: 27dbc542f651ed09de910f274b32634904103774 ("PM / devfreq: Use PM QoS for sysfs min/max_freq")
+Bug: 165523817
+Change-Id: I6837f8d75a61faf8bf18d1b9a37419632e5c7134
+(cherry picked from commit dc32196ca1bf69f0040e0a8732179dd9cc3d8f30)
+Signed-off-by: Will McVicker <willmcvicker@google.com>
+(cherry picked from commit d13ee33d477989a1171194e8df94711546a565c8)
+Signed-off-by: Will McVicker <willmcvicker@google.com>
+Signed-off-by: Lee Jones <joneslee@google.com>
+---
+ drivers/base/arch_topology.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/base/arch_topology.c b/drivers/base/arch_topology.c
+--- a/drivers/base/arch_topology.c
++++ b/drivers/base/arch_topology.c
+@@ -209,6 +209,8 @@ static void update_topology_flags_workfn(struct work_struct *work);
+ static DECLARE_WORK(update_topology_flags_work, update_topology_flags_workfn);
+ 
+ static int update_topology;
++bool topology_update_done;
++EXPORT_SYMBOL_GPL(topology_update_done);
+ 
+ int topology_update_cpu_topology(void)
+ {
+@@ -223,6 +225,7 @@ static void update_topology_flags_workfn(struct work_struct *work)
+ {
+ 	update_topology = 1;
+ 	rebuild_sched_domains();
++	topology_update_done = true;
+ 	trace_android_vh_update_topology_flags_workfn(NULL);
+ 	pr_debug("sched_domain hierarchy rebuilt, flags updated\n");
+ 	update_topology = 0;

@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Greg Kroah-Hartman <gregkh@google.com>
+Date: Tue, 20 Oct 2020 19:46:17 +0200
+Subject: NOUPSTREAM: ANDROID: arm64: ARM64 Exports
+
+Export dump_backtrace symbol for modules to reference.
+
+[added again as it moved around in 5.10-rc1]
+
+[CPNOTE: 03/06/21] Lee: Pinged Greg for status
+[CPNOTE: 05/08/21] Lee: GKI export
+
+Squash:
+  NOUPSTREAM: ANDROID: arm64: debug-monitors: export break hook APIs
+  NOUPSTREAM: ANDROID: arm64: allow hooks into ipi
+  NOUPSTREAM: ANDROID: arm64: Export show_regs for vendor module usage
+  NOUPSTREAM: ANDROID: ipi: Add function to return nr_ipi and ipi_desc
+
+Bug: 169899018
+Bug: 172588415
+Bug: 177348820
+Bug: 177393446
+Bug: 169899018
+Change-Id: I8448584ed8af204deaa991c5a60b04a39b47ac2f
+Signed-off-by: Lee Jones <lee.jones@linaro.org>
+Signed-off-by: Lee Jones <joneslee@google.com>
+---
+ arch/arm64/kernel/cpufeature.c | 1 +
+ arch/arm64/kernel/process.c    | 1 +
+ arch/arm64/kernel/smp.c        | 4 ++++
+ arch/arm64/kernel/stacktrace.c | 2 ++
+ 4 files changed, 8 insertions(+)
+
+diff --git a/arch/arm64/kernel/cpufeature.c b/arch/arm64/kernel/cpufeature.c
+--- a/arch/arm64/kernel/cpufeature.c
++++ b/arch/arm64/kernel/cpufeature.c
+@@ -1666,6 +1666,7 @@ const struct cpumask *system_32bit_el0_cpumask(void)
+ 
+ 	return cpu_possible_mask;
+ }
++EXPORT_SYMBOL_GPL(system_32bit_el0_cpumask);
+ 
+ const struct cpumask *task_cpu_fallback_mask(struct task_struct *p)
+ {
+diff --git a/arch/arm64/kernel/process.c b/arch/arm64/kernel/process.c
+--- a/arch/arm64/kernel/process.c
++++ b/arch/arm64/kernel/process.c
+@@ -249,6 +249,7 @@ void show_regs(struct pt_regs *regs)
+ 	__show_regs(regs);
+ 	dump_backtrace(regs, NULL, KERN_DEFAULT);
+ }
++EXPORT_SYMBOL_GPL(show_regs);
+ 
+ static void tls_thread_flush(void)
+ {
+diff --git a/arch/arm64/kernel/smp.c b/arch/arm64/kernel/smp.c
+--- a/arch/arm64/kernel/smp.c
++++ b/arch/arm64/kernel/smp.c
+@@ -57,6 +57,10 @@
+ #undef CREATE_TRACE_POINTS
+ #include <trace/hooks/debug.h>
+ 
++EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_raise);
++EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_entry);
++EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_exit);
++
+ /*
+  * as from 2.5, kernels no longer have an init_tasks structure
+  * so we need some other way of telling a new secondary core
+diff --git a/arch/arm64/kernel/stacktrace.c b/arch/arm64/kernel/stacktrace.c
+--- a/arch/arm64/kernel/stacktrace.c
++++ b/arch/arm64/kernel/stacktrace.c
+@@ -444,6 +444,7 @@ noinline noinstr void arch_bpf_stack_walk(bool (*consume_entry)(void *cookie, u6
+ 
+ 	kunwind_stack_walk(arch_bpf_unwind_consume_entry, &data, current, NULL);
+ }
++EXPORT_SYMBOL_GPL(arch_stack_walk);
+ 
+ static const char *state_source_string(const struct kunwind_state *state)
+ {
+@@ -493,6 +494,7 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
+ 
+ 	put_task_stack(tsk);
+ }
++EXPORT_SYMBOL_GPL(dump_backtrace);
+ 
+ void show_stack(struct task_struct *tsk, unsigned long *sp, const char *loglvl)
+ {

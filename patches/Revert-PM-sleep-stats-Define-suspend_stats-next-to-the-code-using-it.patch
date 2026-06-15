@@ -1,0 +1,237 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lee Jones <joneslee@google.com>
+Date: Mon, 8 Apr 2024 15:28:26 +0100
+Subject: Revert "PM: sleep: stats: Define suspend_stats next to the code using
+ it"
+
+This reverts commit 9ff544fa5f94fe07f99a36d2138075b322067546.
+
+suspend_stats is still used in our out-of-tree wakeup-reasons
+implementation in kernel/power/suspend.c.
+
+Signed-off-by: Lee Jones <joneslee@google.com>
+Change-Id: Icc259a3e8ea2857024b1ad3b477fb105e1752091
+---
+ drivers/base/power/main.c |  1 +
+ include/linux/suspend.h   | 71 ++++++++++++++++++++++++++++--------
+ kernel/power/main.c       | 76 +++++++--------------------------------
+ kernel/power/power.h      |  2 --
+ kernel/power/suspend.c    |  7 +++-
+ 5 files changed, 76 insertions(+), 81 deletions(-)
+
+diff --git a/drivers/base/power/main.c b/drivers/base/power/main.c
+--- a/drivers/base/power/main.c
++++ b/drivers/base/power/main.c
+@@ -57,6 +57,7 @@ static LIST_HEAD(dpm_suspended_list);
+ static LIST_HEAD(dpm_late_early_list);
+ static LIST_HEAD(dpm_noirq_list);
+ 
++struct suspend_stats suspend_stats;
+ static DEFINE_MUTEX(dpm_list_mtx);
+ static pm_message_t pm_transition;
+ 
+diff --git a/include/linux/suspend.h b/include/linux/suspend.h
+--- a/include/linux/suspend.h
++++ b/include/linux/suspend.h
+@@ -40,6 +40,62 @@ typedef int __bitwise suspend_state_t;
+ #define PM_SUSPEND_MIN		PM_SUSPEND_TO_IDLE
+ #define PM_SUSPEND_MAX		((__force suspend_state_t) 4)
+ 
++enum suspend_stat_step {
++	SUSPEND_WORKING = 0,
++	SUSPEND_FREEZE,
++	SUSPEND_PREPARE,
++	SUSPEND_SUSPEND,
++	SUSPEND_SUSPEND_LATE,
++	SUSPEND_SUSPEND_NOIRQ,
++	SUSPEND_RESUME_NOIRQ,
++	SUSPEND_RESUME_EARLY,
++	SUSPEND_RESUME
++};
++
++#define SUSPEND_NR_STEPS	SUSPEND_RESUME
++
++struct suspend_stats {
++	unsigned int step_failures[SUSPEND_NR_STEPS];
++	unsigned int success;
++	unsigned int fail;
++#define	REC_FAILED_NUM	2
++	int	last_failed_dev;
++	char	failed_devs[REC_FAILED_NUM][40];
++	int	last_failed_errno;
++	int	errno[REC_FAILED_NUM];
++	int	last_failed_step;
++	u64	last_hw_sleep;
++	u64	total_hw_sleep;
++	u64	max_hw_sleep;
++	enum suspend_stat_step	failed_steps[REC_FAILED_NUM];
++};
++
++extern struct suspend_stats suspend_stats;
++
++static inline void dpm_save_failed_dev(const char *name)
++{
++	strscpy(suspend_stats.failed_devs[suspend_stats.last_failed_dev],
++		name,
++		sizeof(suspend_stats.failed_devs[0]));
++	suspend_stats.last_failed_dev++;
++	suspend_stats.last_failed_dev %= REC_FAILED_NUM;
++}
++
++static inline void dpm_save_failed_errno(int err)
++{
++	suspend_stats.errno[suspend_stats.last_failed_errno] = err;
++	suspend_stats.last_failed_errno++;
++	suspend_stats.last_failed_errno %= REC_FAILED_NUM;
++}
++
++static inline void dpm_save_failed_step(enum suspend_stat_step step)
++{
++	suspend_stats.step_failures[step-1]++;
++	suspend_stats.failed_steps[suspend_stats.last_failed_step] = step;
++	suspend_stats.last_failed_step++;
++	suspend_stats.last_failed_step %= REC_FAILED_NUM;
++}
++
+ /**
+  * struct platform_suspend_ops - Callbacks for managing platform dependent
+  *	system sleep states.
+@@ -589,19 +645,4 @@ static inline void queue_up_suspend_work(void) {}
+ 
+ #endif /* !CONFIG_PM_AUTOSLEEP */
+ 
+-enum suspend_stat_step {
+-	SUSPEND_WORKING = 0,
+-	SUSPEND_FREEZE,
+-	SUSPEND_PREPARE,
+-	SUSPEND_SUSPEND,
+-	SUSPEND_SUSPEND_LATE,
+-	SUSPEND_SUSPEND_NOIRQ,
+-	SUSPEND_RESUME_NOIRQ,
+-	SUSPEND_RESUME_EARLY,
+-	SUSPEND_RESUME
+-};
+-
+-void dpm_save_failed_dev(const char *name);
+-void dpm_save_failed_step(enum suspend_stat_step step);
+-
+ #endif /* _LINUX_SUSPEND_H */
+diff --git a/kernel/power/main.c b/kernel/power/main.c
+--- a/kernel/power/main.c
++++ b/kernel/power/main.c
+@@ -165,6 +165,19 @@ int unregister_pm_notifier(struct notifier_block *nb)
+ }
+ EXPORT_SYMBOL_GPL(unregister_pm_notifier);
+ 
++void pm_report_hw_sleep_time(u64 t)
++{
++	suspend_stats.last_hw_sleep = t;
++	suspend_stats.total_hw_sleep += t;
++}
++EXPORT_SYMBOL_GPL(pm_report_hw_sleep_time);
++
++void pm_report_max_hw_sleep(u64 t)
++{
++	suspend_stats.max_hw_sleep = t;
++}
++EXPORT_SYMBOL_GPL(pm_report_max_hw_sleep);
++
+ int pm_notifier_call_chain_robust(unsigned long val_up, unsigned long val_down)
+ {
+ 	int ret;
+@@ -384,69 +397,6 @@ static ssize_t pm_test_store(struct kobject *kobj, struct kobj_attribute *attr,
+ power_attr(pm_test);
+ #endif /* CONFIG_PM_SLEEP_DEBUG */
+ 
+-#define SUSPEND_NR_STEPS	SUSPEND_RESUME
+-#define REC_FAILED_NUM		2
+-
+-struct suspend_stats {
+-	unsigned int step_failures[SUSPEND_NR_STEPS];
+-	unsigned int success;
+-	unsigned int fail;
+-	int last_failed_dev;
+-	char failed_devs[REC_FAILED_NUM][40];
+-	int last_failed_errno;
+-	int errno[REC_FAILED_NUM];
+-	int last_failed_step;
+-	u64 last_hw_sleep;
+-	u64 total_hw_sleep;
+-	u64 max_hw_sleep;
+-	enum suspend_stat_step failed_steps[REC_FAILED_NUM];
+-};
+-
+-static struct suspend_stats suspend_stats;
+-
+-void dpm_save_failed_dev(const char *name)
+-{
+-	strscpy(suspend_stats.failed_devs[suspend_stats.last_failed_dev],
+-		name, sizeof(suspend_stats.failed_devs[0]));
+-	suspend_stats.last_failed_dev++;
+-	suspend_stats.last_failed_dev %= REC_FAILED_NUM;
+-}
+-
+-void dpm_save_failed_step(enum suspend_stat_step step)
+-{
+-	suspend_stats.step_failures[step-1]++;
+-	suspend_stats.failed_steps[suspend_stats.last_failed_step] = step;
+-	suspend_stats.last_failed_step++;
+-	suspend_stats.last_failed_step %= REC_FAILED_NUM;
+-}
+-
+-void dpm_save_errno(int err)
+-{
+-	if (!err) {
+-		suspend_stats.success++;
+-		return;
+-	}
+-
+-	suspend_stats.fail++;
+-
+-	suspend_stats.errno[suspend_stats.last_failed_errno] = err;
+-	suspend_stats.last_failed_errno++;
+-	suspend_stats.last_failed_errno %= REC_FAILED_NUM;
+-}
+-
+-void pm_report_hw_sleep_time(u64 t)
+-{
+-	suspend_stats.last_hw_sleep = t;
+-	suspend_stats.total_hw_sleep += t;
+-}
+-EXPORT_SYMBOL_GPL(pm_report_hw_sleep_time);
+-
+-void pm_report_max_hw_sleep(u64 t)
+-{
+-	suspend_stats.max_hw_sleep = t;
+-}
+-EXPORT_SYMBOL_GPL(pm_report_max_hw_sleep);
+-
+ static const char * const suspend_step_names[] = {
+ 	[SUSPEND_WORKING] = "",
+ 	[SUSPEND_FREEZE] = "freeze",
+diff --git a/kernel/power/power.h b/kernel/power/power.h
+--- a/kernel/power/power.h
++++ b/kernel/power/power.h
+@@ -350,5 +350,3 @@ static inline void pm_sleep_enable_secondary_cpus(void)
+ 	suspend_enable_secondary_cpus();
+ 	cpuidle_resume();
+ }
+-
+-void dpm_save_errno(int err);
+diff --git a/kernel/power/suspend.c b/kernel/power/suspend.c
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -639,7 +639,12 @@ int pm_suspend(suspend_state_t state)
+ 
+ 	pr_info("suspend entry (%s)\n", mem_sleep_labels[state]);
+ 	error = enter_state(state);
+-	dpm_save_errno(error);
++	if (error) {
++		suspend_stats.fail++;
++		dpm_save_failed_errno(error);
++	} else {
++		suspend_stats.success++;
++	}
+ 	pr_info("suspend exit\n");
+ 	return error;
+ }

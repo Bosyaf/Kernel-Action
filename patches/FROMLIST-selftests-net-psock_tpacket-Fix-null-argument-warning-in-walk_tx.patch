@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Wake Liu <wakel@google.com>
+Date: Wed, 24 Sep 2025 11:40:34 +0800
+Subject: FROMLIST: selftests/net: psock_tpacket: Fix null argument warning in
+ walk_tx
+
+The sendto() call in walk_tx() was passing NULL as the buffer argument,
+which can trigger a -Wnonnull warning with some compilers.
+
+Although the size is 0 and no data is actually sent, passing a null
+pointer is technically incorrect.
+
+This commit changes NULL to an empty string literal ("") to satisfy the
+non-null argument requirement and fix the compiler warning.
+
+Bug: 444295917
+Change-Id: If8deb520e65713c1a751ee4aa30ca40cc91168d9
+Link: https://lore.kernel.org/all/20250924044142.540162-1-wakel@google.com/
+Signed-off-by: Wake Liu <wakel@google.com>
+Test: bazel build //common:kernel_aarch64_dist
+---
+ tools/testing/selftests/net/psock_tpacket.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/testing/selftests/net/psock_tpacket.c b/tools/testing/selftests/net/psock_tpacket.c
+--- a/tools/testing/selftests/net/psock_tpacket.c
++++ b/tools/testing/selftests/net/psock_tpacket.c
+@@ -470,7 +470,7 @@ static void walk_tx(int sock, struct ring *ring)
+ 
+ 	bug_on(total_packets != 0);
+ 
+-	ret = sendto(sock, NULL, 0, 0, NULL, 0);
++	ret = sendto(sock, "", 0, 0, NULL, 0);
+ 	if (ret == -1) {
+ 		perror("sendto");
+ 		exit(1);

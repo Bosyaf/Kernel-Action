@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lee Jones <joneslee@google.com>
+Date: Mon, 8 Apr 2024 15:28:10 +0100
+Subject: Revert "PM: sleep: stats: Use locking in dpm_save_failed_dev()"
+
+This reverts commit a6d38e991dc4f1b4a86137177435660df53951c5.
+
+Prereqisite to revert commit 9ff544fa5f94 ("PM: sleep: stats: Define
+suspend_stats next to the code using it").
+
+Signed-off-by: Lee Jones <joneslee@google.com>
+Change-Id: I9a450a9ee1e3ac8e3bbb4121337d3d6db9967482
+---
+ kernel/power/main.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/kernel/power/main.c b/kernel/power/main.c
+--- a/kernel/power/main.c
++++ b/kernel/power/main.c
+@@ -403,18 +403,13 @@ struct suspend_stats {
+ };
+ 
+ static struct suspend_stats suspend_stats;
+-static DEFINE_MUTEX(suspend_stats_lock);
+ 
+ void dpm_save_failed_dev(const char *name)
+ {
+-	mutex_lock(&suspend_stats_lock);
+-
+ 	strscpy(suspend_stats.failed_devs[suspend_stats.last_failed_dev],
+ 		name, sizeof(suspend_stats.failed_devs[0]));
+ 	suspend_stats.last_failed_dev++;
+ 	suspend_stats.last_failed_dev %= REC_FAILED_NUM;
+-
+-	mutex_unlock(&suspend_stats_lock);
+ }
+ 
+ void dpm_save_failed_step(enum suspend_stat_step step)

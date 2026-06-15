@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Amit Pundir <amit.pundir@linaro.org>
+Date: Tue, 2 Sep 2025 21:08:58 +0530
+Subject: Reapply "ANDROID: clk: qcom: Add sync_state = clk_sync_state for
+ db845c clock providers"
+
+This reverts commit a705aafa1058ef63c9e136643982939f05d0696a.
+
+Fixes the following "arm-smmu Unhandled context fault" on Dragonboard845c seen
+with upstream ->sync_state() support added in genpd in v6.17 merge window
+https://lore.kernel.org/all/20250701114733.636510-1-ulf.hansson@linaro.org/
+
+[   17.153738][    C0] arm-smmu 15000000.iommu: Unhandled context fault: fsr=0x402, iova=0x9d598800, fsynr=0xe0020, cbfrsynra=0x880, cb=26
+[   17.153746][    C0] arm-smmu 15000000.iommu: FSR    = 00000402 [Format=2 TF], SID=0x880
+[   17.153754][    C0] arm-smmu 15000000.iommu: FSYNR0 = 000e0020 [S1CBNDX=14 PNU PLVL=0]
+[   17.153786][    C0] Unable to handle kernel NULL pointer dereference at virtual address 000000000000000c
+[   17.153790][    C0] Mem abort info:
+[   17.153793][    C0]   ESR = 0x0000000096000006
+[   17.153796][    C0]   EC = 0x25: DABT (current EL), IL = 32 bits
+[   17.153799][    C0]   SET = 0, FnV = 0
+[   17.153802][    C0]   EA = 0, S1PTW = 0
+[   17.153804][    C0]   FSC = 0x06: level 2 translation fault
+[   17.153808][    C0] Data abort info:
+[   17.153810][    C0]   ISV = 0, ISS = 0x00000006, ISS2 = 0x00000000
+[   17.153813][    C0]   CM = 0, WnR = 0, TnD = 0, TagAccess = 0
+[   17.153816][    C0]   GCS = 0, Overlay = 0, DirtyBit = 0, Xs = 0
+[   17.153820][    C0] user pgtable: 4k pages, 39-bit VAs, pgdp=000000010484d000
+[   17.153824][    C0] [000000000000000c] pgd=0800000104854403, p4d=0800000104854403, pud=0800000104854403, pmd=0000000000000000
+[   17.153839][    C0] Internal error: Oops: 0000000096000006 [#1]  SMP
+[   17.154403][    C0] CPU: 0 UID: 0 PID: 0 Comm: swapper/0 Tainted: G        W           6.16.0-mainline-maybe-dirty-4k #1 PREEMPT  ca0b9bafb70f51878c50e485ec3ebb2d5b5da8fb
+[   17.154412][    C0] Tainted: [W]=WARN
+[   17.154414][    C0] Hardware name: Thundercomm Dragonboard 845c (DT)
+[   17.154419][    C0] pstate: 604000c5 (nZCv daIF +PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+[   17.154425][    C0] pc : do_raw_spin_lock+0x10/0x130
+[   17.154437][    C0] lr : _raw_spin_lock_irqsave+0x74/0xb4
+[   17.154534][    C0] Call trace:
+[   17.154538][    C0]  do_raw_spin_lock+0x10/0x130 (P)
+[   17.154544][    C0]  _raw_spin_lock_irqsave+0x74/0xb4
+[   17.154552][    C0]  kthread_queue_work+0x24/0xa0
+[   17.154560][    C0]  msm_disp_snapshot_state+0x24/0x44 [msm 23b4fb9b31e94eb908ea985b91fe2ebf510131ec]
+[   17.154753][    C0]  msm_kms_fault_handler+0x24/0x68 [msm 23b4fb9b31e94eb908ea985b91fe2ebf510131ec]
+[   17.154944][    C0]  msm_disp_fault_handler+0x40/0x58 [msm 23b4fb9b31e94eb908ea985b91fe2ebf510131ec]
+[   17.155131][    C0]  report_iommu_fault+0x54/0x138
+[   17.155139][    C0]  arm_smmu_context_fault+0x74/0x1bc [arm_smmu fd2bfbc82e2ce2512b5a5febf5d05774b2854c65]
+[   17.155164][    C0]  __handle_irq_event_percpu+0xfc/0x33c
+[   17.155173][    C0]  handle_irq_event+0x40/0xac
+[   17.155180][    C0]  handle_fasteoi_irq+0xdc/0x260
+[   17.155187][    C0]  generic_handle_domain_irq+0x58/0x80
+[   17.155194][    C0]  gic_handle_irq+0x1f8/0x454
+[   17.155202][    C0]  call_on_irq_stack+0x48/0x8c
+[   17.155211][    C0]  do_interrupt_handler+0x4c/0x84
+[   17.155217][    C0]  el1_interrupt+0x44/0x94
+[   17.155226][    C0]  el1h_64_irq_handler+0x18/0x24
+[   17.155232][    C0]  el1h_64_irq+0x84/0x88
+[   17.155238][    C0]  arch_local_irq_enable+0x8/0x1c (P)
+[   17.155249][    C0]  cpuidle_enter+0x38/0x54
+[   17.155256][    C0]  do_idle+0x1d0/0x2f0
+[   17.155263][    C0]  cpu_startup_entry+0x34/0x3c
+[   17.155269][    C0]  rest_init+0x1b4/0x1b8
+[   17.155276][    C0]  start_kernel+0x37c/0x49c
+[   17.155285][    C0]  __primary_switched+0x90/0x9c
+[   17.155297][    C0] Code: f800865e a9be7bfd a9014ff4 910003fd (b9400408)
+[   17.155302][    C0] ---[ end trace 0000000000000000 ]---
+[   17.155307][    C0] Kernel panic - not syncing: Oops: Fatal exception in interrupt
+[   17.155311][    C0] SMP: stopping secondary CPUs
+[   18.196993][    C0] SMP: failed to stop secondary CPUs 5
+[   18.397036][    C0] Kernel Offset: 0xfb5200000 from 0xffffffc080000000
+[   18.397040][    C0] PHYS_OFFSET: 0x80000000
+[   18.397043][    C0] CPU features: 0x00000,00009200,10023141,0400721b
+[   18.397046][    C0] Memory Limit: none
+
+Bug: 146449535
+Change-Id: I11a270ef2486148b359b7d5ddaf582c1aab701b7
+Signed-off-by: Amit Pundir <amit.pundir@linaro.org>
+Signed-off-by: Lee Jones <joneslee@google.com>
+---
+ drivers/clk/qcom/dispcc-sdm845.c  | 2 ++
+ drivers/clk/qcom/gcc-msm8998.c    | 1 +
+ drivers/clk/qcom/gcc-sdm845.c     | 1 +
+ drivers/clk/qcom/gpucc-sdm845.c   | 1 +
+ drivers/clk/qcom/videocc-sdm845.c | 1 +
+ 5 files changed, 6 insertions(+)
+
+diff --git a/drivers/clk/qcom/dispcc-sdm845.c b/drivers/clk/qcom/dispcc-sdm845.c
+--- a/drivers/clk/qcom/dispcc-sdm845.c
++++ b/drivers/clk/qcom/dispcc-sdm845.c
+@@ -3,6 +3,7 @@
+  * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+  */
+ 
++#include <linux/clk.h>
+ #include <linux/clk-provider.h>
+ #include <linux/mod_devicetable.h>
+ #include <linux/module.h>
+@@ -871,6 +872,7 @@ static struct platform_driver disp_cc_sdm845_driver = {
+ 	.driver		= {
+ 		.name	= "disp_cc-sdm845",
+ 		.of_match_table = disp_cc_sdm845_match_table,
++		.sync_state = clk_sync_state,
+ 	},
+ };
+ 
+diff --git a/drivers/clk/qcom/gcc-msm8998.c b/drivers/clk/qcom/gcc-msm8998.c
+--- a/drivers/clk/qcom/gcc-msm8998.c
++++ b/drivers/clk/qcom/gcc-msm8998.c
+@@ -3368,6 +3368,7 @@ static struct platform_driver gcc_msm8998_driver = {
+ 	.driver		= {
+ 		.name	= "gcc-msm8998",
+ 		.of_match_table = gcc_msm8998_match_table,
++		.sync_state = clk_sync_state,
+ 	},
+ };
+ 
+diff --git a/drivers/clk/qcom/gcc-sdm845.c b/drivers/clk/qcom/gcc-sdm845.c
+--- a/drivers/clk/qcom/gcc-sdm845.c
++++ b/drivers/clk/qcom/gcc-sdm845.c
+@@ -4014,6 +4014,7 @@ static struct platform_driver gcc_sdm845_driver = {
+ 	.driver		= {
+ 		.name	= "gcc-sdm845",
+ 		.of_match_table = gcc_sdm845_match_table,
++		.sync_state = clk_sync_state,
+ 	},
+ };
+ 
+diff --git a/drivers/clk/qcom/gpucc-sdm845.c b/drivers/clk/qcom/gpucc-sdm845.c
+--- a/drivers/clk/qcom/gpucc-sdm845.c
++++ b/drivers/clk/qcom/gpucc-sdm845.c
+@@ -201,6 +201,7 @@ static struct platform_driver gpu_cc_sdm845_driver = {
+ 	.driver = {
+ 		.name = "sdm845-gpucc",
+ 		.of_match_table = gpu_cc_sdm845_match_table,
++		.sync_state = clk_sync_state,
+ 	},
+ };
+ 
+diff --git a/drivers/clk/qcom/videocc-sdm845.c b/drivers/clk/qcom/videocc-sdm845.c
+--- a/drivers/clk/qcom/videocc-sdm845.c
++++ b/drivers/clk/qcom/videocc-sdm845.c
+@@ -337,6 +337,7 @@ static struct platform_driver video_cc_sdm845_driver = {
+ 	.driver		= {
+ 		.name	= "sdm845-videocc",
+ 		.of_match_table = video_cc_sdm845_match_table,
++		.sync_state = clk_sync_state,
+ 	},
+ };
+ 

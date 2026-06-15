@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Carlos Llamas <cmllamas@google.com>
+Date: Tue, 2 Sep 2025 22:29:58 +0000
+Subject: Reapply "ANDROID: kheader: kheaders: Follow symlinks to source files"
+
+This reverts commit 54568b8fa00c4669c48d53a427f233402ae56c76.
+
+Reapply after merge upstream changes to kbuild. Note there is now a make
+${TAR} variable, so in theory we could remove this patch and instead use
+the new environment variable as such:
+
+  $ make TAR="tar --dereference"
+
+Bug: 276339429
+Cc: Yifan Hong <elsk@google.com>
+Change-Id: Ic4edc024e8ca18bbd7b71ff5475c91d47cdc1e1f
+Signed-off-by: Carlos Llamas <cmllamas@google.com>
+---
+ kernel/gen_kheaders.sh | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/gen_kheaders.sh b/kernel/gen_kheaders.sh
+--- a/kernel/gen_kheaders.sh
++++ b/kernel/gen_kheaders.sh
+@@ -30,8 +30,8 @@ rm -rf "${tmpdir}"
+ mkdir "${tmpdir}"
+ 
+ # shellcheck disable=SC2154 # srctree is passed as an env variable
+-sed "s:^${srctree}/::" "${srclist}" | ${TAR} -c -f - -C "${srctree}" -T - | ${TAR} -xf - -C "${tmpdir}"
+-${TAR} -c -f - -T "${objlist}" | ${TAR} -xf - -C "${tmpdir}"
++sed "s:^${srctree}/::" "${srclist}" | ${TAR} -c --dereference -f - -C "${srctree}" -T - | ${TAR} -xf - -C "${tmpdir}"
++${TAR} -c --dereference -f - -T "${objlist}" | ${TAR} -xf - -C "${tmpdir}"
+ 
+ # Remove comments except SDPX lines
+ # Use a temporary file to store directory contents to prevent find/xargs from

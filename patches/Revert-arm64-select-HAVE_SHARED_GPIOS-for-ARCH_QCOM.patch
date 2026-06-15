@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Carlos Llamas <cmllamas@google.com>
+Date: Wed, 31 Dec 2025 17:25:53 +0000
+Subject: Revert "arm64: select HAVE_SHARED_GPIOS for ARCH_QCOM"
+
+This reverts commit e511d484cbe44fe48a1b9f621f6a947c72503f9e.
+
+It breaks Pixel 6 boot. Possibly an incompatibility between the
+CONFIG_GPIO_SHARED and the device-tree. Let's temporarily revert this
+non-optional selection of HAVE_SHARED_GPIOS, until the boot issue is
+resolved, then we can bring back this patch.
+
+Bug: 472699692
+Change-Id: Ic51ac0f788ae46321ef8333d44f499ce4180d072
+Signed-off-by: Carlos Llamas <cmllamas@google.com>
+---
+ arch/arm64/Kconfig.platforms | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/arm64/Kconfig.platforms b/arch/arm64/Kconfig.platforms
+--- a/arch/arm64/Kconfig.platforms
++++ b/arch/arm64/Kconfig.platforms
+@@ -316,7 +316,6 @@ config ARCH_QCOM
+ 	select GPIOLIB
+ 	select PINCTRL
+ 	select HAVE_PWRCTRL if PCI
+-	select HAVE_SHARED_GPIOS
+ 	help
+ 	  This enables support for the ARMv8 based Qualcomm chipsets.
+ 

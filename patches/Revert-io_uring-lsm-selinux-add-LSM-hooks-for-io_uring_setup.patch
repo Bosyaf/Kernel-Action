@@ -1,0 +1,144 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tudor Ambarus <tudordana@google.com>
+Date: Thu, 17 Apr 2025 15:52:39 +0000
+Subject: Revert "io_uring,lsm,selinux: add LSM hooks for io_uring_setup()"
+
+This reverts commit c6ad9fdbd44b78f51fa50138247694774ab99e97.
+
+It makes pixel6 to hang when trying to get to fastboot. Revert it
+temporarily until we identify a fix.
+
+Bug: 411388912
+Test: TH
+Link: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=c6ad9fdbd44b
+Change-Id: I739106b0d90bc4604cf018a7e1f88540747518d1
+Signed-off-by: Tudor Ambarus <tudordana@google.com>
+---
+ include/linux/lsm_hook_defs.h       |  1 -
+ include/linux/security.h            |  5 -----
+ io_uring/io_uring.c                 |  5 ++---
+ security/security.c                 | 12 ------------
+ security/selinux/hooks.c            | 14 --------------
+ security/selinux/include/classmap.h |  2 +-
+ 6 files changed, 3 insertions(+), 36 deletions(-)
+
+diff --git a/include/linux/lsm_hook_defs.h b/include/linux/lsm_hook_defs.h
+--- a/include/linux/lsm_hook_defs.h
++++ b/include/linux/lsm_hook_defs.h
+@@ -457,7 +457,6 @@ LSM_HOOK(int, 0, perf_event_write, struct perf_event *event)
+ LSM_HOOK(int, 0, uring_override_creds, const struct cred *new)
+ LSM_HOOK(int, 0, uring_sqpoll, void)
+ LSM_HOOK(int, 0, uring_cmd, struct io_uring_cmd *ioucmd)
+-LSM_HOOK(int, 0, uring_allowed, void)
+ #endif /* CONFIG_IO_URING */
+ 
+ LSM_HOOK(void, LSM_RET_VOID, initramfs_populated, void)
+diff --git a/include/linux/security.h b/include/linux/security.h
+--- a/include/linux/security.h
++++ b/include/linux/security.h
+@@ -2377,7 +2377,6 @@ static inline int security_perf_event_write(struct perf_event *event)
+ extern int security_uring_override_creds(const struct cred *new);
+ extern int security_uring_sqpoll(void);
+ extern int security_uring_cmd(struct io_uring_cmd *ioucmd);
+-extern int security_uring_allowed(void);
+ #else
+ static inline int security_uring_override_creds(const struct cred *new)
+ {
+@@ -2391,10 +2390,6 @@ static inline int security_uring_cmd(struct io_uring_cmd *ioucmd)
+ {
+ 	return 0;
+ }
+-extern int security_uring_allowed(void)
+-{
+-	return 0;
+-}
+ #endif /* CONFIG_SECURITY */
+ #endif /* CONFIG_IO_URING */
+ 
+diff --git a/io_uring/io_uring.c b/io_uring/io_uring.c
+--- a/io_uring/io_uring.c
++++ b/io_uring/io_uring.c
+@@ -3724,7 +3724,7 @@ static inline int io_uring_allowed(void)
+ 		return -EPERM;
+ 
+ 	if (disabled == 0 || capable(CAP_SYS_ADMIN))
+-		goto allowed_lsm;
++		return 0;
+ 
+ 	io_uring_group = make_kgid(&init_user_ns, sysctl_io_uring_group);
+ 	if (!gid_valid(io_uring_group))
+@@ -3733,8 +3733,7 @@ static inline int io_uring_allowed(void)
+ 	if (!in_group_p(io_uring_group))
+ 		return -EPERM;
+ 
+-allowed_lsm:
+-	return security_uring_allowed();
++	return 0;
+ }
+ 
+ SYSCALL_DEFINE2(io_uring_setup, u32, entries,
+diff --git a/security/security.c b/security/security.c
+--- a/security/security.c
++++ b/security/security.c
+@@ -5570,18 +5570,6 @@ int security_uring_cmd(struct io_uring_cmd *ioucmd)
+ {
+ 	return call_int_hook(uring_cmd, ioucmd);
+ }
+-
+-/**
+- * security_uring_allowed() - Check if io_uring_setup() is allowed
+- *
+- * Check whether the current task is allowed to call io_uring_setup().
+- *
+- * Return: Returns 0 if permission is granted.
+- */
+-int security_uring_allowed(void)
+-{
+-	return call_int_hook(uring_allowed);
+-}
+ #endif /* CONFIG_IO_URING */
+ 
+ /**
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -7277,19 +7277,6 @@ static int selinux_uring_cmd(struct io_uring_cmd *ioucmd)
+ 	return avc_has_perm(current_sid(), isec->sid,
+ 			    SECCLASS_IO_URING, IO_URING__CMD, &ad);
+ }
+-
+-/**
+- * selinux_uring_allowed - check if io_uring_setup() can be called
+- *
+- * Check to see if the current task is allowed to call io_uring_setup().
+- */
+-static int selinux_uring_allowed(void)
+-{
+-	u32 sid = current_sid();
+-
+-	return avc_has_perm(sid, sid, SECCLASS_IO_URING, IO_URING__ALLOWED,
+-			    NULL);
+-}
+ #endif /* CONFIG_IO_URING */
+ 
+ static const struct lsm_id selinux_lsmid = {
+@@ -7542,7 +7529,6 @@ static struct security_hook_list selinux_hooks[] __ro_after_init = {
+ 	LSM_HOOK_INIT(uring_override_creds, selinux_uring_override_creds),
+ 	LSM_HOOK_INIT(uring_sqpoll, selinux_uring_sqpoll),
+ 	LSM_HOOK_INIT(uring_cmd, selinux_uring_cmd),
+-	LSM_HOOK_INIT(uring_allowed, selinux_uring_allowed),
+ #endif
+ 
+ 	/*
+diff --git a/security/selinux/include/classmap.h b/security/selinux/include/classmap.h
+--- a/security/selinux/include/classmap.h
++++ b/security/selinux/include/classmap.h
+@@ -177,7 +177,7 @@ const struct security_class_mapping secclass_map[] = {
+ 	{ "perf_event",
+ 	  { "open", "cpu", "kernel", "tracepoint", "read", "write", NULL } },
+ 	{ "anon_inode", { COMMON_FILE_PERMS, NULL } },
+-	{ "io_uring", { "override_creds", "sqpoll", "cmd", "allowed", NULL } },
++	{ "io_uring", { "override_creds", "sqpoll", "cmd", NULL } },
+ 	{ "user_namespace", { "create", NULL } },
+ 	{ "memfd_file",
+ 	  { COMMON_FILE_PERMS, "execute_no_trans", "entrypoint", NULL } },
