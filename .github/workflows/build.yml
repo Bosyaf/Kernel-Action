@@ -51,7 +51,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
           
           # CodeLinaro Android14 6.1.174 Sourceunu "common" klasörüne çekme
-          git clone -b aosp-new/android14-6.1-lts --depth=1 https://git.codelinaro.org/clo/la/kernel/common.git common
+          git clone -b aosp-new/upstream-master --depth=1 https://git.codelinaro.org/clo/la/kernel/common.git common
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
