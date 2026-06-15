@@ -1,0 +1,207 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sai Harshini Nimmala <quic_snimmala@quicinc.com>
+Date: Thu, 3 Oct 2024 14:02:50 -0700
+Subject: ANDROID: GKI: CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE vendor padding
+ hacks
+
+[...]
+
+ANDROID: GKI: Enable the option to alter task_struct size dynamically
+
+Enable the config option that allows for dynamic sizing of the
+task_struct. Once config option is enabled, ensure that
+arch_task_struct_size is initialized to hold a valid task_struct size.
+The motivation behind this change is to reduce the static memory added to
+the task_struct to accommodate vendor data.
+
+Bug: 233921394
+Signed-off-by: Sai Harshini Nimmala <quic_snimmala@quicinc.com>
+Change-Id: Iebc422ba4c650864f470078220b99546e56302f3
+
+ANDROID: GKI: Add padding after init_task structure
+
+To reduce static memory allocated in the task_struct to accommodate
+vendor data, the move to a dynamically sized task_struct is being made.
+As part of this effort, add padding after the init_task structure.
+This has to be done because init_task is statically allocated and hence
+will not benefit from the dynamic addition of size to all task_structs.
+
+Bug: 233921394
+Signed-off-by: Sai Harshini Nimmala <quic_snimmala@quicinc.com>
+Change-Id: I737f951d57a5c19ff6474d4243a22f5f9cfbfa8b
+
+ANDROID: GKI: Add to task_struct size via cmdline
+
+To reduce the size of vendor data allocated in the task_struct, from 512
+bytes to a significantly lower 48 bytes, the move to a dynamically sized
+task_struct is being made.
+As part of this effort, provide means for vendors to pass a size value
+via kernel cmdline. Use the passed value to dynamically add to the
+task_struct size to accommodate vendor data.
+The cmdline parameter to be used is 'android_task_struct_vendor_size'.
+For eg., vendors can add the following to the bootargs section of their
+devicetree to add an extra 512 bytes to the task_struct:
+"android_task_struct_vendor_size=512"
+To access this additional memory, use the android_task_vendor_data
+function provided.
+
+Bug: 233921394
+Change-Id: I6d5ab92080b82f29bbe9735d40f7d0b1e5bb5913
+Signed-off-by: Sai Harshini Nimmala <quic_snimmala@quicinc.com>
+
+ANDROID: GKI: Put vendor_data_pad behind CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
+
+vendor_data_pad uses CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX, which is
+only defined when CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE is enabled,
+resulting in build failures when it is not:
+
+  In file included from arch/arm/kernel/asm-offsets.c:12:
+  In file included from include/linux/mm.h:1120:
+  In file included from include/linux/huge_mm.h:8:
+  In file included from include/linux/fs.h:33:
+  In file included from include/linux/percpu-rwsem.h:7:
+  In file included from include/linux/rcuwait.h:6:
+  In file included from include/linux/sched/signal.h:9:
+  include/linux/sched/task.h:59:28: error: use of undeclared identifier 'CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX'
+     59 | extern u64 vendor_data_pad[CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX / sizeof(u64)];
+        |                            ^
+  1 error generated.
+
+Place all instances of vendor_data_pad behind
+CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE to address the build failures.
+
+Fixes: 1827ee5e5a2de3 ("ANDROID: GKI: Add padding after init_task structure")
+Fixes: 5e9a8cb7144f7d ("ANDROID: GKI: Add to task_struct size via cmdline")
+Change-Id: I7f5dcdd0aaffc5af3063a1b2ca4c1a3517043378
+Signed-off-by: Nathan Chancellor <nathan@kernel.org>
+---
+ arch/x86/kernel/fpu/init.c |  4 ++++
+ include/linux/sched/task.h | 22 ++++++++++++++++++++++
+ init/init_task.c           |  5 +++++
+ init/main.c                | 28 ++++++++++++++++++++++++++++
+ kernel/fork.c              |  2 +-
+ 5 files changed, 60 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kernel/fpu/init.c b/arch/x86/kernel/fpu/init.c
+--- a/arch/x86/kernel/fpu/init.c
++++ b/arch/x86/kernel/fpu/init.c
+@@ -174,6 +174,10 @@ static void __init fpu__init_task_struct_size(void)
+ 	 */
+ 	CHECK_MEMBER_AT_END_OF(struct fpu, __fpstate);
+ 
++	if (arch_task_struct_size > sizeof(struct task_struct)) {
++		pr_warn("WARNING: Extra space requested by android_arch_task_struct_size overwritten by %s\n",
++			__func__);
++	}
+ 	arch_task_struct_size = task_size;
+ }
+ 
+diff --git a/include/linux/sched/task.h b/include/linux/sched/task.h
+--- a/include/linux/sched/task.h
++++ b/include/linux/sched/task.h
+@@ -57,6 +57,9 @@ extern spinlock_t mmlist_lock;
+ 
+ extern union thread_union init_thread_union;
+ extern struct task_struct init_task;
++#ifdef CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
++extern u64 vendor_data_pad[CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX / sizeof(u64)];
++#endif
+ 
+ extern int lockdep_tasklist_lock_is_held(void);
+ 
+@@ -225,4 +228,23 @@ static inline void task_unlock(struct task_struct *p)
+ 
+ DEFINE_GUARD(task_lock, struct task_struct *, task_lock(_T), task_unlock(_T))
+ 
++#ifdef CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
++static inline void *android_task_vendor_data(struct task_struct *p)
++{
++	if (p == &init_task)
++		return &vendor_data_pad[0];
++
++	return p + 1;
++}
++
++static inline void android_init_dynamic_vendor_data(struct task_struct *p)
++{
++	if (arch_task_struct_size > sizeof(struct task_struct))
++		memset((void *)android_task_vendor_data(p), 0x0,
++		       arch_task_struct_size - sizeof(struct task_struct));
++}
++#else /* !CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE */
++static inline void android_init_dynamic_vendor_data(struct task_struct *p) {}
++#endif /* CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE */
++
+ #endif /* _LINUX_SCHED_TASK_H */
+diff --git a/init/init_task.c b/init/init_task.c
+--- a/init/init_task.c
++++ b/init/init_task.c
+@@ -256,6 +256,11 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
+ };
+ EXPORT_SYMBOL(init_task);
+ 
++#ifdef CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
++u64 vendor_data_pad[CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX / sizeof(u64)];
++EXPORT_SYMBOL_GPL(vendor_data_pad);
++#endif
++
+ /*
+  * Initial thread structure. Alignment of this is handled by a special
+  * linker map entry.
+diff --git a/init/main.c b/init/main.c
+--- a/init/main.c
++++ b/init/main.c
+@@ -906,6 +906,31 @@ static void __init early_numa_node_init(void)
+ #endif
+ }
+ 
++#ifdef CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
++static void __init setup_arch_task_struct_size(void)
++{
++	arch_task_struct_size = sizeof(struct task_struct);
++}
++
++static int __init task_struct_vendor_size_setup(char *str)
++{
++	u64 size;
++
++	if (!str)
++		return -EINVAL;
++
++	size = memparse(str, &str);
++
++	if (size < 0 || size > CONFIG_GKI_TASK_STRUCT_VENDOR_SIZE_MAX)
++		return -EINVAL;
++
++	arch_task_struct_size = sizeof(struct task_struct) + size;
++
++	return 0;
++}
++early_param("android_arch_task_struct_size", task_struct_vendor_size_setup);
++#endif
++
+ asmlinkage __visible __init __no_sanitize_address __noreturn __no_stack_protector
+ void start_kernel(void)
+ {
+@@ -929,6 +954,9 @@ void start_kernel(void)
+ 	boot_cpu_init();
+ 	page_address_init();
+ 	pr_notice("%s", linux_banner);
++#ifdef CONFIG_GKI_DYNAMIC_TASK_STRUCT_SIZE
++	setup_arch_task_struct_size();
++#endif
+ 	setup_arch(&command_line);
+ 	/* Static keys and static calls are needed by LSMs */
+ 	jump_label_init();
+diff --git a/kernel/fork.c b/kernel/fork.c
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -967,7 +967,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
+ #endif
+ 	android_init_vendor_data(tsk, 1);
+ 	android_init_oem_data(tsk, 1);
+-
++	android_init_dynamic_vendor_data(tsk);
+ 	trace_android_vh_dup_task_struct(tsk, orig);
+ 	return tsk;
+ 

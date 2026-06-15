@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Guangming Cao <Guangming.Cao@mediatek.com>
+Date: Thu, 3 Jun 2021 10:21:51 +0800
+Subject: ANDROID: dma-heap: Let dma heap use dma_map_attrs to map & unmap iova
+
+For dma-heap users, they can't bypass cache sync when map/unmap iova
+with dma heap. But they can do it by adding DMA_ATTR_SKIP_CPU_SYNC
+into dma_alloc_attrs.
+
+To keep alignment, at dma_heap side, also use
+dma_buf_attachment.dma_map_attrs to do iova map & unmap.
+
+This patch is a little different with linux patch, because ACK
+has cached heap, and linux doesn't have it
+
+Bug: 229794062
+Link: https://lore.kernel.org/patchwork/patch/1455032/
+Signed-off-by: Guangming Cao <Guangming.Cao@mediatek.com>
+(cherry picked from commit 9d3a91652bb1a762312051fdbb403cd5dec58e05)
+Change-Id: Idbd96c8486ad752d88d93b204daaefc605261845
+---
+ drivers/dma-buf/heaps/cma_heap.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/dma-buf/heaps/cma_heap.c b/drivers/dma-buf/heaps/cma_heap.c
+--- a/drivers/dma-buf/heaps/cma_heap.c
++++ b/drivers/dma-buf/heaps/cma_heap.c
+@@ -119,9 +119,10 @@ static struct sg_table *cma_heap_map_dma_buf(struct dma_buf_attachment *attachme
+ {
+ 	struct dma_heap_attachment *a = attachment->priv;
+ 	struct sg_table *table = &a->table;
++	int attrs = attachment->dma_map_attrs;
+ 	int ret;
+ 
+-	ret = dma_map_sgtable(attachment->dev, table, direction, 0);
++	ret = dma_map_sgtable(attachment->dev, table, direction, attrs);
+ 	if (ret)
+ 		return ERR_PTR(-ENOMEM);
+ 	a->mapped = true;
+@@ -133,9 +134,10 @@ static void cma_heap_unmap_dma_buf(struct dma_buf_attachment *attachment,
+ 				   enum dma_data_direction direction)
+ {
+ 	struct dma_heap_attachment *a = attachment->priv;
++	int attrs = attachment->dma_map_attrs;
+ 
+ 	a->mapped = false;
+-	dma_unmap_sgtable(attachment->dev, table, direction, 0);
++	dma_unmap_sgtable(attachment->dev, table, direction, attrs);
+ }
+ 
+ static int cma_heap_dma_buf_begin_cpu_access(struct dma_buf *dmabuf,

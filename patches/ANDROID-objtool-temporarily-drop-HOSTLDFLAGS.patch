@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Carlos Llamas <cmllamas@google.com>
+Date: Thu, 18 Dec 2025 01:24:22 +0000
+Subject: ANDROID: objtool: temporarily drop HOSTLDFLAGS
+
+This flag usage was introduced in commit 31eca25f3a3b ("objtool: Clean
+up compiler flag usage"). However, this breaks our x86_64 builds as the
+environment variable, defined by kleaf, has some unexpected contents.
+
+In order to move forward with the mainline merges, let's temporarily
+remove the flag and instead use the previous KBUILD_HOSTLDFLAGS flag.
+This patch can be reverted after our tooling is fixed.
+
+Bug: 469861635
+Cc: HONG Yifan <elsk@google.com>
+Fixes: 31eca25f3a3b ("objtool: Clean up compiler flag usage")
+Change-Id: I7c63f4ef1e77eb707428f7a7fa729f831bbec642
+Signed-off-by: Carlos Llamas <cmllamas@google.com>
+---
+ tools/objtool/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/objtool/Makefile b/tools/objtool/Makefile
+--- a/tools/objtool/Makefile
++++ b/tools/objtool/Makefile
+@@ -61,7 +61,7 @@ INCLUDES := -I$(srctree)/tools/include \
+ OBJTOOL_CFLAGS  := -std=gnu11 -fomit-frame-pointer -O2 -g $(WARNINGS)	\
+ 		   $(INCLUDES) $(LIBELF_FLAGS) $(LIBXXHASH_CFLAGS) $(HOSTCFLAGS)
+ 
+-OBJTOOL_LDFLAGS := $(LIBSUBCMD) $(LIBELF_LIBS) $(LIBXXHASH_LIBS) $(HOSTLDFLAGS)
++OBJTOOL_LDFLAGS := $(LIBSUBCMD) $(LIBELF_LIBS) $(LIBXXHASH_LIBS) $(KBUILD_HOSTLDFLAGS)
+ 
+ # Allow old libelf to be used:
+ elfshdr := $(shell echo '$(pound)include <libelf.h>' | $(HOSTCC) $(OBJTOOL_CFLAGS) -x c -E - 2>/dev/null | grep elf_getshdr)

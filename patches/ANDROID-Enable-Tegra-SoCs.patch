@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lee Jones <joneslee@google.com>
+Date: Mon, 29 Dec 2025 15:30:34 +0000
+Subject: ANDROID: Enable Tegra SoCs
+
+Signed-off-by: Lee Jones <joneslee@google.com>
+Change-Id: Iec32859b9b5b7212efa9e8db8f183ce18bf483ef
+---
+ drivers/amba/Kconfig        | 2 +-
+ drivers/cpufreq/Kconfig.arm | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/amba/Kconfig b/drivers/amba/Kconfig
+--- a/drivers/amba/Kconfig
++++ b/drivers/amba/Kconfig
+@@ -6,7 +6,7 @@ if ARM_AMBA
+ 
+ config TEGRA_AHB
+ 	bool
+-	default y if ARCH_TEGRA
++	default y if ARCH_TEGRA && !GKI_HACKS_TO_FIX
+ 	help
+ 	  Adds AHB configuration functionality for NVIDIA Tegra SoCs,
+ 	  which controls AHB bus master arbitration and some performance
+diff --git a/drivers/cpufreq/Kconfig.arm b/drivers/cpufreq/Kconfig.arm
+--- a/drivers/cpufreq/Kconfig.arm
++++ b/drivers/cpufreq/Kconfig.arm
+@@ -232,7 +232,7 @@ config ARM_TEGRA20_CPUFREQ
+ 	tristate "Tegra20/30 CPUFreq support"
+ 	depends on ARCH_TEGRA || COMPILE_TEST
+ 	depends on CPUFREQ_DT
+-	default ARCH_TEGRA
++	default ARCH_TEGRA_2x_SOC || ARCH_TEGRA_3x_SOC
+ 	help
+ 	  This adds the CPUFreq driver support for Tegra20/30 SOCs.
+ 
+@@ -240,7 +240,7 @@ config ARM_TEGRA124_CPUFREQ
+ 	tristate "Tegra124 CPUFreq support"
+ 	depends on ARCH_TEGRA || COMPILE_TEST
+ 	depends on CPUFREQ_DT
+-	default ARCH_TEGRA
++	default ARCH_TEGRA_114_SOC || ARCH_TEGRA_124_SOC || ARCH_TEGRA_132_SOC || ARCH_TEGRA_210_SOC
+ 	help
+ 	  This adds the CPUFreq driver support for Tegra124 SOCs.
+ 

@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: David Anderson <dvander@google.com>
+Date: Mon, 15 Nov 2021 22:03:30 -0800
+Subject: ANDROID: overlayfs: override_creds=off option bypass creator_cred
+
+By default, all access to the upper, lower and work directories is the
+recorded mounter's MAC and DAC credentials.  The incoming accesses are
+checked against the caller's credentials.
+
+If the principles of least privilege are applied, the mounter's
+credentials might not overlap the credentials of the caller's when
+accessing the overlayfs filesystem.  For example, a file that a lower
+DAC privileged caller can execute, is MAC denied to the generally
+higher DAC privileged mounter, to prevent an attack vector.
+
+We add the option to turn off override_creds in the mount options; all
+subsequent operations after mount on the filesystem will be only the
+caller's credentials.  The module boolean parameter and mount option
+override_creds is also added as a presence check for this "feature",
+existence of /sys/module/overlay/parameters/override_creds.
+
+It was not always this way.  Circa 4.6 there was no recorded mounter's
+credentials, instead privileged access to upper or work directories
+were temporarily increased to perform the operations.  The MAC
+(selinux) policies were caller's in all cases.  override_creds=off
+partially returns us to this older access model minus the insecure
+temporary credential increases.  This is to permit use in a system
+with non-overlapping security models for each executable including
+the agent that mounts the overlayfs filesystem.  In Android
+this is the case since init, which performs the mount operations,
+has a minimal MAC set of privileges to reduce any attack surface,
+and services that use the content have a different set of MAC
+privileges (eg: read, for vendor labelled configuration, execute for
+vendor libraries and modules).  The caveats are not a problem in
+the Android usage model, however they should be fixed for
+completeness and for general use in time.
+
+Bug: 297913716
+Link: https://lore.kernel.org/lkml/20211117015806.2192263-4-dvander@google.com
+Change-Id: If17ba2d7de0b339cf4a79f63009322080f1d8645
+Signed-off-by: David Anderson <dvander@google.com>
+Signed-off-by: Mark Salyzyn <salyzyn@android.com>
+Signed-off-by: Daniel Rosenberg <drosen@google.com>
+Test: adb-remount-test.sh
+---
+ Documentation/filesystems/overlayfs.rst | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Documentation/filesystems/overlayfs.rst b/Documentation/filesystems/overlayfs.rst
+--- a/Documentation/filesystems/overlayfs.rst
++++ b/Documentation/filesystems/overlayfs.rst
+@@ -204,7 +204,7 @@ handle it in two different ways:
+ 
+ 1. return EXDEV error: this error is returned by rename(2) when trying to
+    move a file or directory across filesystem boundaries.  Hence
+-   applications are usually prepared to handle this error (mv(1) for example
++   applications are usually prepared to hande this error (mv(1) for example
+    recursively copies the directory tree).  This is the default behavior.
+ 
+ 2. If the "redirect_dir" feature is enabled, then the directory will be

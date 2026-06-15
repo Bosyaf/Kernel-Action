@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alexey Klimov <klimova@google.com>
+Date: Fri, 10 Mar 2023 00:31:59 +0000
+Subject: ANDROID: Revert "cpuidle, dt: Push RCU-idle into driver"
+
+This reverts commit 0c5ffc3d7b15978c6b184938cd6b8af06e436424.
+
+Commit causes trigger of debug reboot timer timeout on simple
+reboots from android userspace or on reboots from fastbootd mode.
+Debug reboot timer is programmed when reboot sequence is initiated
+and if reboot doesn't happen in 15 seconds the timer callback
+causes a fatal exception in the interrupt using BRK.
+This also leads to ramdumps which consume some amount of time
+which in its turn leads to longer reboots.
+
+[   27.362551][    C4] debug-reboot: Reboot timer (15 seconds) timeout - Show All Blocked State
+	...
+[   27.365871][    C4] debug-reboot: Trigger a panic
+[   27.365959][    C4] Unexpected kernel BRK exception at EL1
+	...
+[   27.378991][    C4] CPU: 4 PID: 0 Comm: swapper/4 Tainted: G        W  OE      6.2.0-mainline-maybe-dirty #1
+[   27.379363][    C4] Hardware name: Oriole DVT (DT)
+[   27.379546][    C4] pstate: 60400005 (nZCv daif +PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+[   27.379839][    C4] pc : reboot_timeout+0x38/0x40 [debug_reboot]
+[   27.380068][    C4] lr : reboot_timeout+0x38/0x40 [debug_reboot]
+[   27.380298][    C4] sp : ffffffc008023e40
+[   27.380451][    C4] x29: ffffffc008023e40 x28: dead000000000122 x27: 0000000000000000
+[   27.380751][    C4] x26: ffffffc008023ea0 x25: 0000000000000001 x24: ffffff894f18f270
+[   27.381050][    C4] x23: ffffffd56e436000 x22: ffffff880022c600 x21: ffffffd56e7d7008
+[   27.381349][    C4] x20: ffffffd56e7d4088 x19: 0000000000000101 x18: ffffffc008025030
+[   27.381648][    C4] x17: 0000000022b7e063 x16: ffffffffffffffff x15: 0000000000000004
+[   27.381948][    C4] x14: 0000000000007fff x13: ffffff894ed58000 x12: 0000000000000003
+[   27.382247][    C4] x11: 0000000000000003 x10: c0000000ffff7fff x9 : 14b04a95e2f58a00
+[   27.382546][    C4] x8 : 14b04a95e2f58a00 x7 : 205b5d3137383536 x6 : 332e37322020205b
+[   27.382846][    C4] x5 : ffffffd56e62b90f x4 : 0000000000000001 x3 : 0000000000000000
+[   27.383145][    C4] x2 : 0000000000000000 x1 : ffffffc008023c10 x0 : 000000000000001d
+[   27.383445][    C4] Call trace:
+[   27.383564][    C4]  reboot_timeout+0x38/0x40 [debug_reboot]
+[   27.383780][    C4]  call_timer_fn+0x54/0x268
+[   27.383946][    C4]  __run_timers+0x1cc/0x334
+[   27.384113][    C4]  run_timer_softirq+0x2c/0x58
+[   27.384289][    C4]  __do_softirq+0x104/0x3f0
+[   27.384456][    C4]  ____do_softirq+0x18/0x2c
+[   27.384622][    C4]  call_on_irq_stack+0x40/0x74
+[   27.384798][    C4]  do_softirq_own_stack+0x24/0x38
+[   27.384985][    C4]  __irq_exit_rcu+0xa0/0x100
+[   27.385154][    C4]  irq_exit_rcu+0x18/0x28
+[   27.385314][    C4]  el1_interrupt+0xac/0xe8
+[   27.385477][    C4]  el1h_64_irq_handler+0x20/0x30
+[   27.385659][    C4]  el1h_64_irq+0x68/0x6c
+[   27.385816][    C4]  arch_local_irq_enable+0xc/0x14
+[   27.386002][    C4]  cpuidle_enter+0x40/0x60
+[   27.386165][    C4]  do_idle+0x1e0/0x2a0
+[   27.386315][    C4]  cpu_startup_entry+0x2c/0x34
+[   27.386492][    C4]  secondary_start_kernel+0x148/0x16c
+[   27.386690][    C4]  __secondary_switched+0xb4/0xb8
+[   27.386879][    C4] Code: 9791bb54 b0000000 9106f400 97b1739f (d4200020)
+[   27.387137][    C4] ---[ end trace 0000000000000000 ]---
+[   27.387341][    C4] Kernel panic - not syncing: BRK handler: Fatal exception in interrupt
+
+Reverting while investigating a proper fix.
+
+Bug: 272060410
+Change-Id: Ib7b33586f7670066738c267f497f9a7c2332c3f6
+Signed-off-by: Alexey Klimov <klimova@google.com>
+---
+ drivers/cpuidle/cpuidle-big_little.c | 12 ++++--------
+ drivers/cpuidle/dt_idle_states.c     |  2 +-
+ 2 files changed, 5 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/cpuidle/cpuidle-big_little.c b/drivers/cpuidle/cpuidle-big_little.c
+--- a/drivers/cpuidle/cpuidle-big_little.c
++++ b/drivers/cpuidle/cpuidle-big_little.c
+@@ -64,8 +64,7 @@ static struct cpuidle_driver bl_idle_little_driver = {
+ 		.enter			= bl_enter_powerdown,
+ 		.exit_latency		= 700,
+ 		.target_residency	= 2500,
+-		.flags			= CPUIDLE_FLAG_TIMER_STOP |
+-					  CPUIDLE_FLAG_RCU_IDLE,
++		.flags			= CPUIDLE_FLAG_TIMER_STOP,
+ 		.name			= "C1",
+ 		.desc			= "ARM little-cluster power down",
+ 	},
+@@ -86,8 +85,7 @@ static struct cpuidle_driver bl_idle_big_driver = {
+ 		.enter			= bl_enter_powerdown,
+ 		.exit_latency		= 500,
+ 		.target_residency	= 2000,
+-		.flags			= CPUIDLE_FLAG_TIMER_STOP |
+-					  CPUIDLE_FLAG_RCU_IDLE,
++		.flags			= CPUIDLE_FLAG_TIMER_STOP,
+ 		.name			= "C1",
+ 		.desc			= "ARM big-cluster power down",
+ 	},
+@@ -122,17 +120,15 @@ static int notrace bl_powerdown_finisher(unsigned long arg)
+  * Called from the CPUidle framework to program the device to the
+  * specified target state selected by the governor.
+  */
+-static __cpuidle int bl_enter_powerdown(struct cpuidle_device *dev,
+-					struct cpuidle_driver *drv, int idx)
++static int bl_enter_powerdown(struct cpuidle_device *dev,
++				struct cpuidle_driver *drv, int idx)
+ {
+ 	cpu_pm_enter();
+-	ct_cpuidle_enter();
+ 
+ 	cpu_suspend(0, bl_powerdown_finisher);
+ 
+ 	/* signals the MCPM core that CPU is out of low power state */
+ 	mcpm_cpu_powered_up();
+-	ct_cpuidle_exit();
+ 
+ 	cpu_pm_exit();
+ 
+diff --git a/drivers/cpuidle/dt_idle_states.c b/drivers/cpuidle/dt_idle_states.c
+--- a/drivers/cpuidle/dt_idle_states.c
++++ b/drivers/cpuidle/dt_idle_states.c
+@@ -76,7 +76,7 @@ static int init_state_node(struct cpuidle_state *idle_state,
+ 	if (err)
+ 		desc = state_node->name;
+ 
+-	idle_state->flags = CPUIDLE_FLAG_RCU_IDLE;
++	idle_state->flags = 0;
+ 	if (of_property_read_bool(state_node, "local-timer-stop"))
+ 		idle_state->flags |= CPUIDLE_FLAG_TIMER_STOP;
+ 	/*

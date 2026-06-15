@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9=20Draszik?= <draszik@google.com>
+Date: Tue, 23 Jul 2024 10:50:24 +0100
+Subject: ANDROID: Revert "HID: do not assume HAT Switch logical max < 8"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This reverts commit 65ad580a14e875c2d8c027cf1a2ca03b849ff843.
+
+This causes CTS failures, in particular
+android.hardware.input.cts.tests.RazerKishiTest#testAllMotions fails
+with that commit:
+
+    java.lang.AssertionError: Sanity check - should not produce any events: Received unexpected event MotionEvent { action=ACTION_MOVE, actionButton=0, id[0]=0, x[0]=0.0, y[0]=0.0, toolType[0]=TOOL_TYPE_UNKNOWN, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=287193, downTime=0, deviceId=5, source=0x1000010, displayId=0, eventId=-764670775 }
+        at org.junit.Assert.fail(Assert.java:89)
+        at android.hardware.input.cts.tests.InputTestCase.failWithMessage(InputTestCase.java:412)
+        at android.hardware.input.cts.tests.InputTestCase.verifyFirstEvents(InputTestCase.java:271)
+        at android.hardware.input.cts.tests.InputTestCase.verifyEvents(InputTestCase.java:260)
+        at android.hardware.input.cts.tests.InputHidTestCase.testInputEvents(InputHidTestCase.java:222)
+        at android.hardware.input.cts.tests.RazerKishiTest.testAllMotions(RazerKishiTest.java:43)
+
+Revert while we further investigate the issue.
+
+Test: TH
+Bug: 354875759
+Change-Id: Ib26cff0b0e3b41096890cec30aef4115653642d0
+Signed-off-by: André Draszik <draszik@google.com>
+---
+ include/linux/hid.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/include/linux/hid.h b/include/linux/hid.h
+--- a/include/linux/hid.h
++++ b/include/linux/hid.h
+@@ -512,9 +512,9 @@ struct hid_usage {
+ 	__s8	  wheel_factor;		/* 120/resolution_multiplier */
+ 	__u16     code;			/* input driver code */
+ 	__u8      type;			/* input driver type */
+-	__s16	  hat_min;		/* hat switch fun */
+-	__s16	  hat_max;		/* ditto */
+-	__s16	  hat_dir;		/* ditto */
++	__s8	  hat_min;		/* hat switch fun */
++	__s8	  hat_max;		/* ditto */
++	__s8	  hat_dir;		/* ditto */
+ 	__s16	  wheel_accumulated;	/* hi-res wheel */
+ };
+ 

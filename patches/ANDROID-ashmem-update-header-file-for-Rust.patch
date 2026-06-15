@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alice Ryhl <aliceryhl@google.com>
+Date: Wed, 24 Jul 2024 09:51:33 +0000
+Subject: ANDROID: ashmem: update header file for Rust
+
+To make the ioctl constants available from Rust, use a enum rather than
+using #define. This is analogous to a similar change for Binder [1].
+
+Also move some constants from ashmem.c to ashmem.h so that Rust ashmem
+can use them too.
+
+Bug: 370906207
+Bug: 415769373
+Bug: 456158356
+Link: https://lore.kernel.org/all/20231208152801.3425772-1-aliceryhl@google.com/ [1]
+Change-Id: I14032b0d0522eb961d41d3cd097d352d7fd10f75
+Signed-off-by: Alice Ryhl <aliceryhl@google.com>
+Signed-off-by: Isaac J. Manjarres <isaacmanjarres@google.com>
+---
+ drivers/staging/android/ashmem.c      |  4 ----
+ drivers/staging/android/ashmem.h      | 10 ++++++++--
+ drivers/staging/android/uapi/ashmem.h | 24 +++++++++++++-----------
+ 3 files changed, 21 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/staging/android/ashmem.c b/drivers/staging/android/ashmem.c
+--- a/drivers/staging/android/ashmem.c
++++ b/drivers/staging/android/ashmem.c
+@@ -26,10 +26,6 @@
+ #include <linux/shmem_fs.h>
+ #include "ashmem.h"
+ 
+-#define ASHMEM_NAME_PREFIX "dev/ashmem/"
+-#define ASHMEM_NAME_PREFIX_LEN (sizeof(ASHMEM_NAME_PREFIX) - 1)
+-#define ASHMEM_FULL_NAME_LEN (ASHMEM_NAME_LEN + ASHMEM_NAME_PREFIX_LEN)
+-
+ /**
+  * struct ashmem_area - The anonymous shared memory area
+  * @name:		The optional name in /proc/pid/maps
+diff --git a/drivers/staging/android/ashmem.h b/drivers/staging/android/ashmem.h
+--- a/drivers/staging/android/ashmem.h
++++ b/drivers/staging/android/ashmem.h
+@@ -15,10 +15,16 @@
+ 
+ #include "uapi/ashmem.h"
+ 
++#define ASHMEM_NAME_PREFIX "dev/ashmem/"
++#define ASHMEM_NAME_PREFIX_LEN (sizeof(ASHMEM_NAME_PREFIX) - 1)
++#define ASHMEM_FULL_NAME_LEN (ASHMEM_NAME_LEN + ASHMEM_NAME_PREFIX_LEN)
++
+ /* support of 32bit userspace on 64bit platforms */
+ #ifdef CONFIG_COMPAT
+-#define COMPAT_ASHMEM_SET_SIZE		_IOW(__ASHMEMIOC, 3, compat_size_t)
+-#define COMPAT_ASHMEM_SET_PROT_MASK	_IOW(__ASHMEMIOC, 5, unsigned int)
++enum {
++	COMPAT_ASHMEM_SET_SIZE		=	_IOW(__ASHMEMIOC, 3, compat_size_t),
++	COMPAT_ASHMEM_SET_PROT_MASK	=	_IOW(__ASHMEMIOC, 5, unsigned int),
++};
+ #endif
+ 
+ #endif	/* _LINUX_ASHMEM_H */
+diff --git a/drivers/staging/android/uapi/ashmem.h b/drivers/staging/android/uapi/ashmem.h
+--- a/drivers/staging/android/uapi/ashmem.h
++++ b/drivers/staging/android/uapi/ashmem.h
+@@ -29,16 +29,18 @@ struct ashmem_pin {
+ 
+ #define __ASHMEMIOC		0x77
+ 
+-#define ASHMEM_SET_NAME		_IOW(__ASHMEMIOC, 1, char[ASHMEM_NAME_LEN])
+-#define ASHMEM_GET_NAME		_IOR(__ASHMEMIOC, 2, char[ASHMEM_NAME_LEN])
+-#define ASHMEM_SET_SIZE		_IOW(__ASHMEMIOC, 3, size_t)
+-#define ASHMEM_GET_SIZE		_IO(__ASHMEMIOC, 4)
+-#define ASHMEM_SET_PROT_MASK	_IOW(__ASHMEMIOC, 5, unsigned long)
+-#define ASHMEM_GET_PROT_MASK	_IO(__ASHMEMIOC, 6)
+-#define ASHMEM_PIN		_IOW(__ASHMEMIOC, 7, struct ashmem_pin)
+-#define ASHMEM_UNPIN		_IOW(__ASHMEMIOC, 8, struct ashmem_pin)
+-#define ASHMEM_GET_PIN_STATUS	_IO(__ASHMEMIOC, 9)
+-#define ASHMEM_PURGE_ALL_CACHES	_IO(__ASHMEMIOC, 10)
+-#define ASHMEM_GET_FILE_ID		_IOR(__ASHMEMIOC, 11, unsigned long)
++enum {
++	ASHMEM_SET_NAME		= _IOW(__ASHMEMIOC, 1, char[ASHMEM_NAME_LEN]),
++	ASHMEM_GET_NAME		= _IOR(__ASHMEMIOC, 2, char[ASHMEM_NAME_LEN]),
++	ASHMEM_SET_SIZE		= _IOW(__ASHMEMIOC, 3, size_t),
++	ASHMEM_GET_SIZE		= _IO(__ASHMEMIOC, 4),
++	ASHMEM_SET_PROT_MASK	= _IOW(__ASHMEMIOC, 5, unsigned long),
++	ASHMEM_GET_PROT_MASK	= _IO(__ASHMEMIOC, 6),
++	ASHMEM_PIN		= _IOW(__ASHMEMIOC, 7, struct ashmem_pin),
++	ASHMEM_UNPIN		= _IOW(__ASHMEMIOC, 8, struct ashmem_pin),
++	ASHMEM_GET_PIN_STATUS	= _IO(__ASHMEMIOC, 9),
++	ASHMEM_PURGE_ALL_CACHES	= _IO(__ASHMEMIOC, 10),
++	ASHMEM_GET_FILE_ID	= _IOR(__ASHMEMIOC, 11, unsigned long),
++};
+ 
+ #endif	/* _UAPI_LINUX_ASHMEM_H */

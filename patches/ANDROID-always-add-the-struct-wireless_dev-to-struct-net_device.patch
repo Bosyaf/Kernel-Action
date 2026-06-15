@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ramji Jiyani <ramjiyani@google.com>
+Date: Tue, 2 Apr 2024 22:32:02 +0000
+Subject: ANDROID: always add the struct wireless_dev * to struct net_device
+
+When Android moved the wifi drivers to be a vendor driver, it disabled
+CFG80211 from the build configuration, yet that needs to be enabled in
+the vendor module build.  As the struct net_device is defined in the
+core kernel image, both builds needs to have the same structure size, so
+always enable it in the structure and protect any potential vendor
+changes from showing up in the CRC checker by maing it a void * as far
+as it is concerned.
+
+Bug: 274416891
+Test: TH
+
+Fixes: c304eddcecfe ("net: wrap the wireless pointers in struct net_device in an ifdef")
+Change-Id: I7c2a10da63b6022abbac78a3a0d48c2fd405f42c
+Signed-off-by: Greg Kroah-Hartman <gregkh@google.com>
+(cherry picked from commit 006d1fc45043caf1c94316ddb475ea38d6918ab4)
+Signed-off-by: Ramji Jiyani <ramjiyani@google.com>
+(cherry picked from commit 4db218b4ffed01d5e98ce4fccea7698dcb1a63d1)
+---
+ include/linux/netdevice.h       | 7 +++----
+ include/net/cfg80211.h          | 2 --
+ net/batman-adv/hard-interface.c | 2 --
+ net/core/net-sysfs.c            | 4 ----
+ 4 files changed, 3 insertions(+), 12 deletions(-)
+
+diff --git a/include/linux/netdevice.h b/include/linux/netdevice.h
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -2236,9 +2236,9 @@ struct net_device {
+ 	atomic_t		carrier_up_count;
+ 	atomic_t		carrier_down_count;
+ 
+-#ifdef CONFIG_WIRELESS_EXT
++	/* Android KMI hack to allow vendors to have their own wifi changes in modules */
+ 	const struct iw_handler_def *wireless_handlers;
+-#endif
++	struct iw_public_data	*wireless_data;
+ 	const struct ethtool_ops *ethtool_ops;
+ #ifdef CONFIG_NET_L3_MASTER_DEV
+ 	const struct l3mdev_ops	*l3mdev_ops;
+@@ -2315,9 +2315,8 @@ struct net_device {
+ #if IS_ENABLED(CONFIG_AX25)
+ 	struct ax25_dev	__rcu	*ax25_ptr;
+ #endif
+-#if IS_ENABLED(CONFIG_CFG80211)
++	/* Android KMI hack to allow vendors to have their own wifi changes in modules */
+ 	struct wireless_dev	*ieee80211_ptr;
+-#endif
+ #if IS_ENABLED(CONFIG_IEEE802154) || IS_ENABLED(CONFIG_6LOWPAN)
+ 	struct wpan_dev		*ieee802154_ptr;
+ #endif
+diff --git a/include/net/cfg80211.h b/include/net/cfg80211.h
+--- a/include/net/cfg80211.h
++++ b/include/net/cfg80211.h
+@@ -9584,9 +9584,7 @@ int cfg80211_register_netdevice(struct net_device *dev);
+  */
+ static inline void cfg80211_unregister_netdevice(struct net_device *dev)
+ {
+-#if IS_ENABLED(CONFIG_CFG80211)
+ 	cfg80211_unregister_wdev(dev->ieee80211_ptr);
+-#endif
+ }
+ 
+ /**
+diff --git a/net/batman-adv/hard-interface.c b/net/batman-adv/hard-interface.c
+--- a/net/batman-adv/hard-interface.c
++++ b/net/batman-adv/hard-interface.c
+@@ -310,11 +310,9 @@ static bool batadv_is_cfg80211_netdev(struct net_device *net_device)
+ 	if (!net_device)
+ 		return false;
+ 
+-#if IS_ENABLED(CONFIG_CFG80211)
+ 	/* cfg80211 drivers have to set ieee80211_ptr */
+ 	if (net_device->ieee80211_ptr)
+ 		return true;
+-#endif
+ 
+ 	return false;
+ }
+diff --git a/net/core/net-sysfs.c b/net/core/net-sysfs.c
+--- a/net/core/net-sysfs.c
++++ b/net/core/net-sysfs.c
+@@ -905,14 +905,10 @@ static const struct attribute_group wireless_group = {
+ 
+ static bool wireless_group_needed(struct net_device *ndev)
+ {
+-#if IS_ENABLED(CONFIG_CFG80211)
+ 	if (ndev->ieee80211_ptr)
+ 		return true;
+-#endif
+-#if IS_ENABLED(CONFIG_WIRELESS_EXT)
+ 	if (ndev->wireless_handlers)
+ 		return true;
+-#endif
+ 	return false;
+ }
+ 

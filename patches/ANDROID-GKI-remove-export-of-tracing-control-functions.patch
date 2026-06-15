@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Greg Kroah-Hartman <gregkh@google.com>
+Date: Fri, 26 Jul 2024 08:27:27 +0000
+Subject: ANDROID: GKI: remove export of tracing control functions
+
+Android GKI kernel modules should NOT have the ability to control the
+system-wide tracing functionality, nor query to determine if it is on or
+not.  So remove the exports of these functions.
+
+Upstream does not wish to do this, so an Android-only change is
+required.  See the bug id for details.
+
+Bug: 355584612
+Signed-off-by: Greg Kroah-Hartman <gregkh@google.com>
+Change-Id: I50f69cd9930ddc6b876c5c1dd86f51cfb2ee1bac
+---
+ kernel/trace/trace.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/kernel/trace/trace.c b/kernel/trace/trace.c
+--- a/kernel/trace/trace.c
++++ b/kernel/trace/trace.c
+@@ -1110,7 +1110,6 @@ void tracing_on(void)
+ {
+ 	tracer_tracing_on(&global_trace);
+ }
+-EXPORT_SYMBOL_GPL(tracing_on);
+ 
+ 
+ static __always_inline void
+@@ -1694,7 +1693,6 @@ int tracing_is_on(void)
+ {
+ 	return tracer_tracing_is_on(&global_trace);
+ }
+-EXPORT_SYMBOL_GPL(tracing_is_on);
+ 
+ static int __init set_buf_size(char *str)
+ {

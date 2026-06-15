@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: mtk32677 <vian-ya.shang@mediatek.com>
+Date: Sun, 23 Mar 2025 22:38:52 +0800
+Subject: ANDROID: media: v4l2-core: extend v4l2 subdev num
+
+This patch extends the subdev num from 256 to 512.
+
+Bug: 404694958
+
+Change-Id: I3688011ffbaa1940d3fae13a4ad758d439fa88f0
+Signed-off-by: mtk32677 <vian-ya.shang@mediatek.com>
+(cherry picked from commit 43bb1da4b54d3dd3f62d73980e9c29d9fea3447f)
+---
+ drivers/media/v4l2-core/v4l2-dev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-dev.c b/drivers/media/v4l2-core/v4l2-dev.c
+--- a/drivers/media/v4l2-core/v4l2-dev.c
++++ b/drivers/media/v4l2-core/v4l2-dev.c
+@@ -31,7 +31,7 @@
+ #include <media/v4l2-ioctl.h>
+ #include <media/v4l2-event.h>
+ 
+-#define VIDEO_NUM_DEVICES	256
++#define VIDEO_NUM_DEVICES	512
+ #define VIDEO_NAME              "video4linux"
+ 
+ #define dprintk(fmt, arg...) do {					\

@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lee Jones <joneslee@google.com>
+Date: Thu, 23 Jan 2025 09:56:39 +0000
+Subject: _____ANNOTATION: OOT fix-ups_____
+
+Signed-off-by: Lee Jones <joneslee@google.com>
+Change-Id: I788a1c60671a5f2d379ea36a8c847d4ccce866ef
+---
+ ANNOTATIONS | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/ANNOTATIONS b/ANNOTATIONS
+--- a/ANNOTATIONS
++++ b/ANNOTATIONS
+@@ -20,3 +20,4 @@ networking changes
+ android vendor hooks
+ android exports
+ android kconfigs and build scripts
++oot fixups

@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Richard Chang <richardycc@google.com>
+Date: Wed, 29 Nov 2023 06:41:13 +0000
+Subject: ANDROID: mm: lru_cache_disable skips lru cache drainnig
+
+lru_cache_disable is not trivial cost since it should run work
+from every cores in the system. Thus, repeated call of the
+function whenever alloc_contig_range in the cma's allocation loop
+is called is expensive.
+
+This patch makes the lru_cache_disable smarter in that it will
+not run __lru_add_drain_all since it knows the cache was already
+disabled by someone else.
+With that, user of alloc_contig_range can disable the lru cache
+in advance in their context so that subsequent alloc_contig_range
+for user's operation will avoid the costly function call.
+
+Bug: 313795505
+Change-Id: Icbb0e6dbf74644d45f562fd1d845888ca1f1f347
+Signed-off-by: Richard Chang <richardycc@google.com>
+---
+ mm/swap.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/mm/swap.c b/mm/swap.c
+--- a/mm/swap.c
++++ b/mm/swap.c
+@@ -900,6 +900,7 @@ void lru_add_drain_all(void)
+ #endif /* CONFIG_SMP */
+ 
+ atomic_t lru_disable_count = ATOMIC_INIT(0);
++EXPORT_SYMBOL_GPL(lru_disable_count);
+ 
+ /*
+  * lru_cache_disable() needs to be called before we start compiling
+@@ -911,7 +912,12 @@ atomic_t lru_disable_count = ATOMIC_INIT(0);
+  */
+ void lru_cache_disable(void)
+ {
+-	atomic_inc(&lru_disable_count);
++	/*
++	 * If someone is already disabled lru_cache, just return with
++	 * increasing the lru_disable_count.
++	 */
++	if (atomic_inc_not_zero(&lru_disable_count))
++		return;
+ 	/*
+ 	 * Readers of lru_disable_count are protected by either disabling
+ 	 * preemption or rcu_read_lock:
+@@ -931,7 +937,9 @@ void lru_cache_disable(void)
+ #else
+ 	lru_add_and_bh_lrus_drain();
+ #endif
++	atomic_inc(&lru_disable_count);
+ }
++EXPORT_SYMBOL_GPL(lru_cache_disable);
+ 
+ /**
+  * folios_put_refs - Reduce the reference count on a batch of folios.

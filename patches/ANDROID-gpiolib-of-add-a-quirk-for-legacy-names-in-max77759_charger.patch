@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9=20Draszik?= <draszik@google.com>
+Date: Tue, 28 Mar 2023 15:22:15 +0000
+Subject: ANDROID: gpiolib: of: add a quirk for legacy names in
+ max77759_charger
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The driver is using the non-standard "max77759,extbst-ctl" name for
+a property describing this gpio.
+
+While this driver and DT are under our control, Linux mysteriously
+refuses to call this driver's probe function if we rename the
+property in the DT to the expected name with the "-gpio" suffix.
+Renaming the property is necessary in order to convert this driver to
+gpiod APIs instead of the obsolete of-specific gpio APIs that are
+about to be removed from Linux.
+
+Add a temporary quirk so we can update the max77759_charger driver and
+unblock merging Linux updates while investigating the probe issue.
+
+Test: driver still loads successfully and can claim all GPIOs
+Bug: 273738655
+Change-Id: Ib6aa27db41c11f49acf49910a76bd3bd45f68a06
+Signed-off-by: André Draszik <draszik@google.com>
+---
+ drivers/gpio/gpiolib-of.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpio/gpiolib-of.c b/drivers/gpio/gpiolib-of.c
+--- a/drivers/gpio/gpiolib-of.c
++++ b/drivers/gpio/gpiolib-of.c
+@@ -552,6 +552,7 @@ static struct gpio_desc *of_find_gpio_rename(struct device_node *np,
+ 		 * establish that GPIO properties should be named
+ 		 * "foo-gpios" so we have this special kludge for them.
+ 		 */
++		{ "max77759,extbst-ctl",	NULL,	"maxim,max77759chrg" },
+ #if IS_ENABLED(CONFIG_REGULATOR_ARIZONA_LDO1)
+ 		{ "wlf,ldoena",  NULL,		NULL }, /* Arizona */
+ #endif

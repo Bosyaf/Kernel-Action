@@ -1,0 +1,467 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ramji Jiyani <ramjiyani@google.com>
+Date: Thu, 25 Nov 2021 00:51:55 +0000
+Subject: ANDROID: GKI: Add script to generate symbol protection headers
+
+Called By: KERNEL_SRC/kernel/Makefile if CONFIG_MODULE_SIG_PROTECT=y
+
+Generates headers required by gki_modules.c from symbol lists:
+
+gki_module_protected.h: from android/abi_gki_modules_protected
+gki_module_exported.h: from android/abi_gki_modules_exports
+
+Bug: 200082547
+Test: Treehugger
+Signed-off-by: Ramji Jiyani <ramjiyani@google.com>
+Change-Id: Ibcc6e6fe0ad6c7850d48f7c0a283c7f9b06e4456
+(cherry picked from commit 23cd26aab14d813fd73eced18988bae06d5b9334)
+(cherry picked from commit 31d5735baf0b20dd6a90bd8fcd1fa73a6531a62b)
+Signed-off-by: Lee Jones <joneslee@google.com>
+---
+ kernel/module/Kconfig              |  13 +++
+ kernel/module/Makefile             |  36 +++++++++
+ kernel/module/gki_module.c         |  70 ++++++++++++++++
+ kernel/module/internal.h           |  14 ++++
+ kernel/module/main.c               |  44 ++++++++++-
+ kernel/module/signing.c            |  25 ++++--
+ scripts/gen_gki_modules_headers.sh | 123 +++++++++++++++++++++++++++++
+ 7 files changed, 317 insertions(+), 8 deletions(-)
+ create mode 100644 kernel/module/gki_module.c
+ create mode 100755 scripts/gen_gki_modules_headers.sh
+
+diff --git a/kernel/module/Kconfig b/kernel/module/Kconfig
+--- a/kernel/module/Kconfig
++++ b/kernel/module/Kconfig
+@@ -291,6 +291,19 @@ config MODULE_SIG_FORCE
+ 	  Reject unsigned modules or signed modules for which we don't have a
+ 	  key.  Without this, such modules will simply taint the kernel.
+ 
++config MODULE_SIG_PROTECT
++	bool "Android GKI module protection"
++	depends on MODULE_SIG && !MODULE_SIG_FORCE
++	help
++	  Enables Android GKI symbol and export protection support.
++
++	  This modifies the behavior of the MODULE_SIG_FORCE as follows:
++	  - Allows Android GKI Modules signed using MODULE_SIG_ALL during build.
++	  - Allows other modules to load if they don't violate the access to
++	    Android GKI protected symbols and do not export the symbols already
++	    exported by the Android GKI modules. Loading will fail and return
++	    -EACCES (Permission denied) if symbol access conditions are not met.
++
+ config MODULE_SIG_ALL
+ 	bool "Automatically sign all modules"
+ 	default y
+diff --git a/kernel/module/Makefile b/kernel/module/Makefile
+--- a/kernel/module/Makefile
++++ b/kernel/module/Makefile
+@@ -13,6 +13,7 @@ obj-y += kmod.o
+ obj-$(CONFIG_MODULE_DEBUG_AUTOLOAD_DUPS) += dups.o
+ obj-$(CONFIG_MODULE_DECOMPRESS) += decompress.o
+ obj-$(CONFIG_MODULE_SIG) += signing.o
++obj-$(CONFIG_MODULE_SIG_PROTECT) += gki_module.o
+ obj-$(CONFIG_LIVEPATCH) += livepatch.o
+ obj-$(CONFIG_MODULES_TREE_LOOKUP) += tree_lookup.o
+ obj-$(CONFIG_DEBUG_KMEMLEAK) += debug_kmemleak.o
+@@ -23,3 +24,38 @@ obj-$(CONFIG_KGDB_KDB) += kdb.o
+ obj-$(CONFIG_MODVERSIONS) += version.o
+ obj-$(CONFIG_MODULE_UNLOAD_TAINT_TRACKING) += tracking.o
+ obj-$(CONFIG_MODULE_STATS) += stats.o
++
++#
++# ANDROID: GKI: Generate headerfiles required for gki_module.o
++#
++# Dependencies on generated files need to be listed explicitly
++$(obj)/gki_module.o: include/generated/gki_module_protected_exports.h \
++			include/generated/gki_module_unprotected.h
++
++ifneq ($(CONFIG_UNUSED_KSYMS_WHITELIST),)
++ALL_KMI_SYMBOLS := $(CONFIG_UNUSED_KSYMS_WHITELIST)
++else
++ALL_KMI_SYMBOLS := include/config/abi_gki_kmi_symbols
++$(ALL_KMI_SYMBOLS):
++	: > $@
++endif
++
++include/generated/gki_module_unprotected.h: $(ALL_KMI_SYMBOLS) \
++				$(srctree)/scripts/gen_gki_modules_headers.sh
++	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/gen_gki_modules_headers.sh $@ \
++	"$(srctree)" \
++	$(ALL_KMI_SYMBOLS)
++
++# ABI protected exports list file specific to ARCH if exists else empty
++ABI_PROTECTED_EXPORTS_FILE :=
++ifeq ($(ARCH),arm64)
++	ABI_PROTECTED_EXPORTS_FILE := $(wildcard $(srctree)/android/abi_gki_protected_exports_aarch64)
++else
++	ABI_PROTECTED_EXPORTS_FILE := $(wildcard $(srctree)/android/abi_gki_protected_exports_$(ARCH))
++endif
++
++include/generated/gki_module_protected_exports.h: $(ABI_PROTECTED_EXPORTS_FILE) \
++				$(srctree)/scripts/gen_gki_modules_headers.sh
++	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/gen_gki_modules_headers.sh $@ \
++	"$(srctree)" \
++	$(ABI_PROTECTED_EXPORTS_FILE)
+diff --git a/kernel/module/gki_module.c b/kernel/module/gki_module.c
+new file mode 100644
+--- /dev/null
++++ b/kernel/module/gki_module.c
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Copyright 2022 Google LLC
++ * Author: ramjiyani@google.com (Ramji Jiyani)
++ */
++
++#include <linux/bsearch.h>
++#include <linux/errno.h>
++#include <linux/kernel.h>
++#include <linux/printk.h>
++#include <linux/string.h>
++
++#include "internal.h"
++
++/*
++ * Build time generated header files
++ *
++ * gki_module_protected_exports.h -- Symbols protected from _export_ by unsigned modules
++ * gki_module_unprotected.h -- Symbols allowed to _access_ by unsigned modules
++ */
++#include <generated/gki_module_protected_exports.h>
++#include <generated/gki_module_unprotected.h>
++
++#define MAX_STRCMP_LEN (max(MAX_UNPROTECTED_NAME_LEN, MAX_PROTECTED_EXPORTS_NAME_LEN))
++
++/* bsearch() comparision callback */
++static int gki_cmp_name(const void *sym, const void *protected_sym)
++{
++	return strncmp(sym, protected_sym, MAX_STRCMP_LEN);
++}
++
++/**
++ * gki_is_module_protected_export - Is a symbol exported from a protected GKI module?
++ *
++ * @name:	Symbol being checked against exported symbols from protected GKI modules
++ */
++bool gki_is_module_protected_export(const char *name)
++{
++	if (NR_UNPROTECTED_SYMBOLS) {
++		return bsearch(name, gki_protected_exports_symbols, NR_PROTECTED_EXPORTS_SYMBOLS,
++		       MAX_PROTECTED_EXPORTS_NAME_LEN, gki_cmp_name) != NULL;
++	} else {
++		/*
++		 * If there are no symbols in unprotected list; We don't need to
++		 * protect exports as there is no KMI enforcement.
++		 * Treat everything exportable in this case.
++		 */
++		return false;
++	}
++}
++
++/**
++ * gki_is_module_unprotected_symbol - Is a symbol unprotected for unsigned module?
++ *
++ * @name:	Symbol being checked in list of unprotected symbols
++ */
++bool gki_is_module_unprotected_symbol(const char *name)
++{
++	if (NR_UNPROTECTED_SYMBOLS) {
++		return bsearch(name, gki_unprotected_symbols, NR_UNPROTECTED_SYMBOLS,
++				MAX_UNPROTECTED_NAME_LEN, gki_cmp_name) != NULL;
++	} else {
++		/*
++		 * If there are no symbols in unprotected list;
++		 * there isn't a KMI enforcement for the kernel.
++		 * Treat everything accessible in this case.
++		 */
++		return true;
++	}
++}
+diff --git a/kernel/module/internal.h b/kernel/module/internal.h
+--- a/kernel/module/internal.h
++++ b/kernel/module/internal.h
+@@ -423,3 +423,17 @@ static inline int same_magic(const char *amagic, const char *bmagic, bool has_cr
+ 	return strcmp(amagic, bmagic) == 0;
+ }
+ #endif /* CONFIG_MODVERSIONS */
++
++#ifdef CONFIG_MODULE_SIG_PROTECT
++extern bool gki_is_module_unprotected_symbol(const char *name);
++extern bool gki_is_module_protected_export(const char *name);
++#else
++static inline bool gki_is_module_unprotected_symbol(const char *name)
++{
++	return true;
++}
++static inline bool gki_is_module_protected_export(const char *name)
++{
++	return false;
++}
++#endif /* CONFIG_MODULE_SIG_PROTECT */
+diff --git a/kernel/module/main.c b/kernel/module/main.c
+--- a/kernel/module/main.c
++++ b/kernel/module/main.c
+@@ -1235,6 +1235,8 @@ static const struct kernel_symbol *resolve_symbol(struct module *mod,
+ 						  const char *name,
+ 						  char ownername[])
+ {
++	bool is_vendor_module;
++	bool is_vendor_exported_symbol;
+ 	struct find_symbol_arg fsa = {
+ 		.name	= name,
+ 		.gplok	= !(mod->taints & (1 << TAINT_PROPRIETARY_MODULE)),
+@@ -1271,6 +1273,24 @@ static const struct kernel_symbol *resolve_symbol(struct module *mod,
+ 		goto getname;
+ 	}
+ 
++	/*
++	 * ANDROID GKI
++	 *
++	 * Vendor (i.e., unsigned) modules are only permitted to use:
++	 *
++	 * 1. symbols exported by other vendor (unsigned) modules
++	 * 2. unprotected symbols
++	 */
++	is_vendor_module = !mod->sig_ok;
++	is_vendor_exported_symbol = fsa.owner && !fsa.owner->sig_ok;
++
++	if (is_vendor_module &&
++	    !is_vendor_exported_symbol &&
++	    !gki_is_module_unprotected_symbol(name)) {
++		fsa.sym = ERR_PTR(-EACCES);
++		goto getname;
++	}
++
+ 	err = ref_module(mod, fsa.owner);
+ 	if (err) {
+ 		fsa.sym = ERR_PTR(err);
+@@ -1484,6 +1504,14 @@ static int verify_exported_symbols(struct module *mod)
+ 				.name	= kernel_symbol_name(s),
+ 				.gplok	= true,
+ 			};
++
++			if (!mod->sig_ok && gki_is_module_protected_export(
++						kernel_symbol_name(s))) {
++				pr_err("%s: exports protected symbol %s\n",
++				       mod->name, kernel_symbol_name(s));
++				return -EACCES;
++			}
++
+ 			if (find_symbol(&fsa)) {
+ 				pr_err("%s: exports duplicate symbol %s"
+ 				       " (owned by %s)\n",
+@@ -1564,9 +1592,15 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
+ 			     ignore_undef_symbol(info->hdr->e_machine, name)))
+ 				break;
+ 
+-			ret = PTR_ERR(ksym) ?: -ENOENT;
+-			pr_warn("%s: Unknown symbol %s (err %d)\n",
+-				mod->name, name, ret);
++			if (PTR_ERR(ksym) == -EACCES) {
++				ret = -EACCES;
++				pr_warn("%s: Protected symbol: %s (err %d)\n",
++					mod->name, name, ret);
++			} else {
++				ret = PTR_ERR(ksym) ?: -ENOENT;
++				pr_warn("%s: Unknown symbol %s (err %d)\n",
++					mod->name, name, ret);
++			}
+ 			break;
+ 
+ 		default:
+@@ -2545,6 +2579,7 @@ static void module_augment_kernel_taints(struct module *mod, struct load_info *i
+ 	}
+ #ifdef CONFIG_MODULE_SIG
+ 	mod->sig_ok = info->sig_ok;
++#ifndef CONFIG_MODULE_SIG_PROTECT
+ 	if (!mod->sig_ok) {
+ 		pr_notice_once("%s: module verification failed: signature "
+ 			       "and/or required key missing - tainting "
+@@ -2552,6 +2587,9 @@ static void module_augment_kernel_taints(struct module *mod, struct load_info *i
+ 		add_taint_module(mod, TAINT_UNSIGNED_MODULE, LOCKDEP_STILL_OK);
+ 	}
+ #endif
++#else
++	mod->sig_ok = 0;
++#endif
+ 
+ 	/*
+ 	 * ndiswrapper is under GPL by itself, but loads proprietary modules.
+diff --git a/kernel/module/signing.c b/kernel/module/signing.c
+--- a/kernel/module/signing.c
++++ b/kernel/module/signing.c
+@@ -19,8 +19,20 @@
+ #undef MODULE_PARAM_PREFIX
+ #define MODULE_PARAM_PREFIX "module."
+ 
++/*
++ * ANDROID: GKI:
++ * Only enforce signature if SIG_PROTECT is not set
++ */
++#ifndef CONFIG_MODULE_SIG_PROTECT
+ static bool sig_enforce = IS_ENABLED(CONFIG_MODULE_SIG_FORCE);
+ module_param(sig_enforce, bool_enable_only, 0644);
++void set_module_sig_enforced(void)
++{
++	sig_enforce = true;
++}
++#else
++#define sig_enforce false
++#endif
+ 
+ /*
+  * Export sig_enforce kernel cmdline parameter to allow other subsystems rely
+@@ -32,11 +44,6 @@ bool is_module_sig_enforced(void)
+ }
+ EXPORT_SYMBOL(is_module_sig_enforced);
+ 
+-void set_module_sig_enforced(void)
+-{
+-	sig_enforce = true;
+-}
+-
+ /*
+  * Verify the signature on a module.
+  */
+@@ -121,5 +128,13 @@ int module_sig_check(struct load_info *info, int flags)
+ 		return -EKEYREJECTED;
+ 	}
+ 
++/*
++ * ANDROID: GKI: Do not prevent loading of unsigned modules;
++ * as all modules except GKI modules are not signed.
++ */
++#ifndef CONFIG_MODULE_SIG_PROTECT
+ 	return security_locked_down(LOCKDOWN_MODULE_SIGNATURE);
++#else
++	return 0;
++#endif
+ }
+diff --git a/scripts/gen_gki_modules_headers.sh b/scripts/gen_gki_modules_headers.sh
+new file mode 100755
+--- /dev/null
++++ b/scripts/gen_gki_modules_headers.sh
+@@ -0,0 +1,123 @@
++#!/bin/bash
++# SPDX-License-Identifier: GPL-2.0-only
++#
++# Copyright 2022 Google LLC
++# Author: ramjiyani@google.com (Ramji Jiyani)
++#
++
++#
++# Generates header file with list of unprotected symbols
++#
++# Called By: KERNEL_SRC/kernel/Makefile if CONFIG_MODULE_SIG_PROTECT=y
++#
++# gki_module_unprotected.h: Symbols allowed to _access_ by unsigned modules
++#
++# If valid symbol file doesn't exists then still generates valid C header files for
++# compilation to proceed with no symbols to protect
++#
++
++# Collect arguments from Makefile
++TARGET=$1
++SRCTREE=$2
++SYMBOL_LIST=$3
++
++set -e
++
++#
++# Common Definitions
++#
++# Use "make V=1" to debug this script.
++case "$KBUILD_VERBOSE" in
++*1*)
++	set -x
++	;;
++esac
++
++#
++# generate_header():
++# Args: $1 = Name of the header file
++#       $2 = Input symbol list
++#       $3 = Symbol type ("unprotected")
++#
++generate_header() {
++	local header_file=$1
++	local symbol_file=$2
++	local symbol_type=$3
++
++	if [ -f "${header_file}" ]; then
++		rm -f -- "${header_file}"
++	fi
++
++	# If symbol_file exist preprocess it and find maximum name length
++	if [  -s "${symbol_file}" ]; then
++		# Remove any trailing CR, leading / trailing whitespace,
++		# line comments, empty lines and symbol list markers.
++		sed -i '
++			s/\r$//
++			s/^[[:space:]]*//
++			s/[[:space:]]*$//
++			/^#/d
++			/^$/d
++			/^\[abi_symbol_list\]$/d
++		' "${symbol_file}"
++
++		# Sort in byte order for kernel binary search at runtime
++		LC_ALL=C sort -u -o "${symbol_file}" "${symbol_file}"
++
++		# Trim white spaces & +1 for null termination
++		local max_name_len=$(awk '
++				{
++					$1=$1;
++					if ( length > L ) {
++						L=length
++					}
++				} END { print ++L }' "${symbol_file}")
++	else
++		# Set to 1 to generate valid C header file
++		local max_name_len=1
++	fi
++
++	# Header generation
++	cat > "${header_file}" <<- EOT
++	/*
++	 * DO NOT EDIT
++	 *
++	 * Build generated header file with ${symbol_type}
++	 */
++
++	#define NR_$(printf ${symbol_type} | tr [:lower:] [:upper:])_SYMBOLS \\
++	$(printf '\t')(ARRAY_SIZE(gki_${symbol_type}_symbols))
++	#define MAX_$(printf ${symbol_type} | tr [:lower:] [:upper:])_NAME_LEN (${max_name_len})
++
++	static const char gki_${symbol_type}_symbols[][MAX_$(printf ${symbol_type} |
++							tr [:lower:] [:upper:])_NAME_LEN] = {
++	EOT
++
++	# If a valid symbol_file present add symbols in an array except the 1st line
++	if [  -s "${symbol_file}" ]; then
++		sed -e 's/^[ \t]*/\t"/;s/[ \t]*$/",/' "${symbol_file}" >> "${header_file}"
++	fi
++
++	# Terminate the file
++	echo "};" >> "${header_file}"
++}
++
++if [ "$(basename "${TARGET}")" = "gki_module_unprotected.h" ]; then
++	# Union of vendor symbol lists
++	GKI_VENDOR_SYMBOLS="${SYMBOL_LIST}"
++	generate_header "${TARGET}" "${GKI_VENDOR_SYMBOLS}" "unprotected"
++else
++	# Sorted list of exported symbols
++	GKI_EXPORTED_SYMBOLS="include/config/abi_gki_protected_exports"
++
++	if [ -z "${SYMBOL_LIST}" ]; then
++		# Create empty list if ARCH doesn't have protected exports
++		touch "${GKI_EXPORTED_SYMBOLS}"
++	else
++		# Make a temp copy to avoid changing source during pre-processing
++		cp -f "${SYMBOL_LIST}" "${GKI_EXPORTED_SYMBOLS}"
++	fi
++
++	generate_header "${TARGET}" "${GKI_EXPORTED_SYMBOLS}" "protected_exports"
++fi
++

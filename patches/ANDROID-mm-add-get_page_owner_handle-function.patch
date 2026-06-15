@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Vijayanand Jitta <vjitta@codeaurora.org>
+Date: Tue, 12 Jan 2021 00:15:31 +0530
+Subject: ANDROID: mm: add get_page_owner_handle function
+
+Add and export get_page_owner_handle function which returns
+the handle for the corresponding page_ext, this will be used
+by the minidump module to get page_owner info.
+
+Bug: 394900912
+Bug: 199236943
+Bug: 444616776
+Change-Id: I7b3641f7c6ad918f4111c98d715904477f92185b
+Signed-off-by: Vijayanand Jitta <vjitta@codeaurora.org>
+Signed-off-by: Jaskaran Singh <quic_jasksing@quicinc.com>
+Signed-off-by: Ketan Kishore <ketan.kishore@oss.qualcomm.com>
+---
+ include/linux/page_owner.h |  3 +++
+ mm/page_owner.c            | 20 +++++++++++++++++++-
+ 2 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/page_owner.h b/include/linux/page_owner.h
+--- a/include/linux/page_owner.h
++++ b/include/linux/page_owner.h
+@@ -3,11 +3,14 @@
+ #define __LINUX_PAGE_OWNER_H
+ 
+ #include <linux/jump_label.h>
++#include <linux/stackdepot.h>
+ 
+ #ifdef CONFIG_PAGE_OWNER
+ extern struct static_key_false page_owner_inited;
+ extern struct page_ext_operations page_owner_ops;
+ 
++extern depot_stack_handle_t get_page_owner_handle(struct page_ext *page_ext,
++					unsigned long pfn);
+ extern void __reset_page_owner(struct page *page, unsigned short order);
+ extern void __set_page_owner(struct page *page,
+ 			unsigned short order, gfp_t gfp_mask);
+diff --git a/mm/page_owner.c b/mm/page_owner.c
+--- a/mm/page_owner.c
++++ b/mm/page_owner.c
+@@ -8,7 +8,6 @@
+ #include <linux/page_owner.h>
+ #include <linux/jump_label.h>
+ #include <linux/migrate.h>
+-#include <linux/stackdepot.h>
+ #include <linux/seq_file.h>
+ #include <linux/memcontrol.h>
+ #include <linux/sched/clock.h>
+@@ -143,6 +142,25 @@ static inline struct page_owner *get_page_owner(struct page_ext *page_ext)
+ 	return page_ext_data(page_ext, &page_owner_ops);
+ }
+ 
++depot_stack_handle_t get_page_owner_handle(struct page_ext *page_ext, unsigned long pfn)
++{
++	struct page_owner *page_owner;
++	depot_stack_handle_t handle;
++
++	if (!static_branch_unlikely(&page_owner_inited))
++		return 0;
++
++	page_owner = get_page_owner(page_ext);
++
++	/* skip handle for tail pages of higher order allocations */
++	if (!IS_ALIGNED(pfn, 1 << page_owner->order))
++		return 0;
++
++	handle = READ_ONCE(page_owner->handle);
++	return handle;
++}
++EXPORT_SYMBOL_NS_GPL(get_page_owner_handle, "MINIDUMP");
++
+ static noinline depot_stack_handle_t save_stack(gfp_t flags)
+ {
+ 	unsigned long entries[PAGE_OWNER_STACK_DEPTH];
