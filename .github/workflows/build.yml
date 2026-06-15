@@ -46,17 +46,26 @@ jobs:
           echo "$GITHUB_WORKSPACE/llvm-17/bin" >> "$GITHUB_PATH"
           echo "✅ LLVM: $(clang --version | head -n1)"
 
-      - name: 2. Download GKI Kernel Source (Bosyaf)
+      - name: 2. Download Sources & DT-Bindings
         run: |
-          echo "📦 GKI Kernel Source (android14-6.1-staging)..."
+          echo "📦 GKI Kernel Source (Bosyaf)..."
           git clone -b android14-6.1-staging --depth=1 \
             https://github.com/Bosyaf/android_kernel_common-6.1.git kernel
           
-          echo "📦 Mkbootimg (mkdtboimg.py dahil)..."
+          echo "📦 CodeLinaro DT-Bindings..."
+          git clone -b linaro/tracking-qcomlt-sm8650 --depth=1 \
+            https://git.codelinaro.org/clo/la/kernel/qcom.git codelinaro-temp
+          
+          # DT-Bindings'leri kopyala
+          cp -r codelinaro-temp/include/dt-bindings/* kernel/include/dt-bindings/
+          
+          rm -rf codelinaro-temp
+          
+          echo "📦 Mkbootimg..."
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg
           
-          echo "=== Mkbootimg İçeriği ==="
-          ls -la mkbootimg/*.py
+          echo "=== DT-Bindings Kontrol ==="
+          ls kernel/include/dt-bindings/soc/qcom* | head -10
 
       - name: 3. Kernel Config
         run: |
@@ -64,8 +73,6 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/llvm-17/bin:$PATH"
 
           mkdir -p out
-          
-          # GKI defconfig kullan (zaten var source'da)
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" \
             defconfig
@@ -110,13 +117,11 @@ jobs:
           cd kernel
           mkdir -p dtb_out dtbo_out
 
-          # Houji öncelikli
           echo "📦 Houji DTB'leri seçiliyor..."
           find out/arch/arm64/boot/dts -name "*houji*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*sm8650*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*pineapple*.dtb" -exec cp -v {} dtb_out/ \; 2>/dev/null || true
 
-          # QCOM DTBO'ları
           echo "📦 QCOM DTBO'ları seçiliyor..."
           find out/arch/arm64/boot/dts -path "*/qcom/*.dtbo" -exec cp -v {} dtbo_out/ \; 2>/dev/null || true
           find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp -v {} dtbo_out/ \; 2>/dev/null || true
@@ -131,7 +136,6 @@ jobs:
           DTBO_COUNT=$(ls dtbo_out/*.dtbo 2>/dev/null | wc -l)
           if [ "$DTBO_COUNT" -gt 0 ]; then
             echo "📦 DTBO Image oluşturuluyor ($DTBO_COUNT dosya)..."
-            # ✅ DOĞRU YOL: mkbootimg klasörü içinde
             python3 ../mkbootimg/mkdtboimg.py create dtbo_out/dtbo.img dtbo_out/*.dtbo || {
               echo "⚠️ DTBO oluşturulamadı"
               exit 1
@@ -231,6 +235,7 @@ jobs:
             **Chipset:** SM8650
             **Kernel Source:** Bosyaf GKI (android14-6.1-staging)
             **LLVM:** 17.0.2
+            **DT-Bindings:** CodeLinaro SM8650
             
             ### İçerik:
             - vendor_boot.img (tüm modüller ramdisk içinde)
