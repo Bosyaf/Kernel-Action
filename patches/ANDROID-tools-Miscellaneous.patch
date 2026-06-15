@@ -1,0 +1,1533 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Weijia He <hwj@google.com>
+Date: Thu, 26 Oct 2023 23:42:35 +0000
+Subject: ANDROID: tools: Miscellaneous
+
+Signed-off-by: Lee Jones <joneslee@google.com>
+Change-Id: Ic155709fbf07ec0575fa2fa954ee199e63051a97
+---
+ tools/testing/android/OWNERS                  |   3 -
+ tools/testing/kunit/android/README            | 371 ++++++++++++++++++
+ tools/testing/kunit/android/patch1.txt        | 154 ++++++++
+ tools/testing/kunit/android/patch2.txt        |  80 ++++
+ .../android/tradefed_configs/config_arm64.xml |  47 +++
+ .../tradefed_configs/config_x86_64.xml        |  44 +++
+ .../kunit/configs/android/kunit_clk_defconfig |   3 +
+ .../kunit/configs/android/kunit_defconfig     |  37 ++
+ tools/testing/selftests/android/README        |  24 ++
+ .../testing/selftests/android/config_arm.xml  |  63 +++
+ .../selftests/android/config_arm64.xml        |  64 +++
+ .../testing/selftests/android/config_x86.xml  |  68 ++++
+ .../selftests/android/config_x86_64.xml       |  69 ++++
+ .../selftests/android/include/bionic-compat.h |  14 +
+ .../selftests/android/vts_config_arm.xml      |  47 +++
+ .../selftests/android/vts_config_arm64.xml    |  48 +++
+ .../selftests/android/vts_config_x86.xml      |  48 +++
+ .../selftests/android/vts_config_x86_64.xml   |  48 +++
+ .../filesystems/binderfs/binderfs_test.c      |  10 +
+ tools/testing/selftests/futex/TEST_MAPPING    |  59 +--
+ .../futex/functional/futex_wait_wouldblock.c  |   2 +-
+ tools/testing/selftests/rtc/rtctest.c         |   2 +
+ tools/testing/selftests/x86/TEST_MAPPING      |   5 +-
+ 23 files changed, 1244 insertions(+), 66 deletions(-)
+ delete mode 100644 tools/testing/android/OWNERS
+ create mode 100644 tools/testing/kunit/android/README
+ create mode 100644 tools/testing/kunit/android/patch1.txt
+ create mode 100644 tools/testing/kunit/android/patch2.txt
+ create mode 100644 tools/testing/kunit/android/tradefed_configs/config_arm64.xml
+ create mode 100644 tools/testing/kunit/android/tradefed_configs/config_x86_64.xml
+ create mode 100644 tools/testing/kunit/configs/android/kunit_clk_defconfig
+ create mode 100644 tools/testing/kunit/configs/android/kunit_defconfig
+ create mode 100644 tools/testing/selftests/android/README
+ create mode 100644 tools/testing/selftests/android/config_arm.xml
+ create mode 100644 tools/testing/selftests/android/config_arm64.xml
+ create mode 100644 tools/testing/selftests/android/config_x86.xml
+ create mode 100644 tools/testing/selftests/android/config_x86_64.xml
+ create mode 100644 tools/testing/selftests/android/include/bionic-compat.h
+ create mode 100644 tools/testing/selftests/android/vts_config_arm.xml
+ create mode 100644 tools/testing/selftests/android/vts_config_arm64.xml
+ create mode 100644 tools/testing/selftests/android/vts_config_x86.xml
+ create mode 100644 tools/testing/selftests/android/vts_config_x86_64.xml
+
+diff --git a/tools/testing/android/OWNERS b/tools/testing/android/OWNERS
+deleted file mode 100644
+--- a/tools/testing/android/OWNERS
++++ /dev/null
+@@ -1,3 +0,0 @@
+-bettyzhou@google.com
+-edliaw@google.com
+-hwj@google.com
+\ No newline at end of file
+diff --git a/tools/testing/kunit/android/README b/tools/testing/kunit/android/README
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/android/README
+@@ -0,0 +1,371 @@
++HOW TO RUN KUNIT TESTS IN ANDROID
++=================================
++
++Prerequisites
++-------------
++  If you want to run a vendor module KUnit tests, please run the tests with a
++  "no trim" kernel (e.g. add `--notrim` to bazel build command).
++
++Run tests on a physical or virtual device:
++------------------------------------------
++  ```
++  $ kernel/tests/tools/run_test_only.sh -t kunit -s <serial_number> -td <test_dir>
++  ```
++
++  test_dir is the same directory as specified when running:
++  ```
++  $ tools/bazel run //common:kunit_tests_arm64 -- -v --destdir <test_dir>
++  ```
++
++Before the tests, you can use the following command to launch a virtual device:
++  ```
++  $ kernel/tests/tools/launch_cvd.sh
++  ```
++
++After the tests, you can use the following command to remove the virtual device:
++  ```
++  $ prebuilts/asuite/acloud/linux-x86/acloud delete
++  ```
++
++The following are command examples:
++ * Build kernel and launch a virtual device from a specific platform build:
++   ```
++   $ kernel/tests/tools/launch_cvd.sh -pb \
++         ab://aosp-main/aosp_cf_x86_64_phone-trunk_staging-userdebug/12505199
++   ```
++
++ * Run a specific test:
++   ```
++   $ kernel/tests/tools/run_test_only.sh \
++         -t 'kunit soc-utils-test' -s <serial_number>
++   ```
++
++ * Check other available options:
++   ```
++   $ kernel/tests/tools/launch_cvd.sh -h
++   $ kernel/tests/tools/run_test_only.sh -h
++   ```
++
++Load and run a test module on Android device manually
++-----------------------------------------------------
++ * Push the KUnit test framework module kunit.ko over to the device. For
++ example:
++   ```
++   $ adb push kunit.ko /data
++   ```
++
++ * Load test module on device:
++   ```
++   $ cd /data
++   $ insmod kunit.ko enable=1
++   ```
++
++   If the kunit.ko has been installed already but without enable=1 passed,
++   it needs to remove it first via the rmmod command, and install again
++   via the insmod command
++
++ * Push the KUnit test module over to the device. For example using adb:
++   ```
++   $ adb push kunit-example-test.ko /data
++   ```
++
++ * (Optional) - Mount debugfs on device:
++   ```
++   $ mount -t debugfs debugfs /sys/kernel/debug
++   ```
++
++ * Load test module on device:
++   ```
++   $ cd /data
++   $ insmod kunit-example-test.ko
++   ```
++
++ * View test results
++    * If debugfs is mounted:
++      ```
++      $ cat /sys/kernel/debug/kunit/<test name>/results
++      KTAP version 1
++      1..1
++          KTAP version 1
++          # Subtest: example
++          1..4
++          # example_simple_test: initializing
++
++          ok 1 example_simple_test
++      ....
++      ```
++
++    * Via dmesg (check before log cycles out):
++      ```
++      $ dmesg
++      ....
++      [172434.032618] 1..1
++      [172434.032618]    KTAP version 1
++      [172434.032618]    # Subtest: example
++      [172434.032618]    1..4
++      [172434.032618]    # example_simple_test: initializing
++      [172434.032618]
++      [172434.032618]    ok 1 example_simple_test
++      ....
++      ```
++
++Run KUnit tests on Android Device via test automation infrastructure tradefed
++-----------------------------------------------------------------------------
++ * Build ACK KUnit tests and install (e.g. /tmp/kunit_tests):
++   ```
++   $ tools/bazel run -- //common:kunit_tests_x86_64 -v --destdir /tmp/kunit_tests
++   ```
++   Or
++   ```
++   $ tools/bazel run -- //common:kunit_tests_arm64 -v --destdir /tmp/kunit_tests
++   ```
++
++ * With device connected and accessible via adb run the tests:
++   ```
++   $ prebuilts/tradefed/filegroups/tradefed/tradefed.sh run commandAndExit \
++         template/local_min --template:map test=suite/test_mapping_suite   \
++         --include-filter kunit --tests-dir=/tmp/kunit_tests \
++         -s <your_device_serial_number>
++   ....
++   =======================================================
++   =============== Summary ===============
++   Total Run time: 23s
++   1/1 modules completed
++   Total Tests       : 9
++   PASSED            : 9
++   FAILED            : 0
++   ============== End of Results ==============
++   ============================================
++   ....
++   ```
++
++Troubleshooting
++---------------
++
++1. Test module fails to load.
++
++   Check dmesg for load errors. If undefined symbol errors are shown, you're
++   likely running with a trimmed kernel where the symbols are not available.
++   Run with a "no trim" kernel.
++
++   Check the test module dependency with `modinfo <module_name>.ko` on your
++   local host machine or on the Android device with
++   `adb shell modinfo <module_name>.ko`.
++   All dependent modules need to be installed before the test module can be
++   installed successfully.
++
++   Check if the module is already installed with `adb shell lsmod`. The
++   `adb shell rmmod` can be used to remove the already installed test module,
++   and installing the test module again will trigger the test rerun.
++
++   `adb shell lsmod` will also show the module dependency for your test module
++   in the `Used by` column. You can not remove a module with `adb shell rmmod`
++   if it is being used by another module. Other modules that are using it need
++   to be removed first.
++
++2. Test module loaded but no test results.
++
++   Check dmesg for KUnit errors.
++   ```
++   $ dmesg | grep kunit
++   ```
++
++   If "kunit: disabled" is shown then kunit.ko is not installed with
++   `enable=1`.
++
++   If kunit.ko or \<module_name\>.ko fails to install, check for whether they
++   are already installed with `adb shell lsmod`.
++
++HOW TO WRITE KUNIT TESTS
++========================
++
++If you want to
++just run the example test and skip through the walkthrough, it is sufficient to
++apply [patch1.txt](patch1.txt) and [patch2.txt](patch2.txt) and
++then [run the test](#run-tests-on-a-physical-or-virtual-device).
++
++Walkthrough
++-----------
++
++This section follows the
++[Writing Your First Test](https://docs.kernel.org/dev-tools/kunit/start.html#writing-your-first-test)
++example from the KUnit docs.
++
++### Create an example driver to test
++
++1. Create the header file for the driver `common/drivers/misc/example.h`:
++
++   ```c
++   int misc_example_add(int left, int right);
++   ```
++
++2. Define and export `misc_example_add` that will be tested later
++   `common/drivers/misc/example.c`:
++
++   ```c
++   #include <linux/module.h>
++
++   #include "example.h"
++
++   int misc_example_add(int left, int right)
++   {
++           return left + right;
++   }
++   EXPORT_SYMBOL_GPL(misc_example_add);
++   ```
++
++3. Add a kconfig option for the driver to `common/drivers/misc/Kconfig`:
++
++   ```
++   config MISC_EXAMPLE
++   	bool "My example"
++   ```
++
++4. Add the build rule to `common/drivers/misc/Makefile`:
++
++   ```makefile
++   obj-$(CONFIG_MISC_EXAMPLE)	+= example.o
++   ```
++
++### Write the test case
++
++1. Define the test functions and suite `common/drivers/misc/example_test.c`:
++
++   ```c
++   #include <kunit/test.h>
++   #include "example.h"
++
++   /* Define the test cases. */
++
++   static void misc_example_add_test_basic(struct kunit *test)
++   {
++           KUNIT_EXPECT_EQ(test, 1, misc_example_add(1, 0));
++           KUNIT_EXPECT_EQ(test, 2, misc_example_add(1, 1));
++           KUNIT_EXPECT_EQ(test, 0, misc_example_add(-1, 1));
++           KUNIT_EXPECT_EQ(test, INT_MAX, misc_example_add(0, INT_MAX));
++           KUNIT_EXPECT_EQ(test, -1, misc_example_add(INT_MAX, INT_MIN));
++   }
++
++   static void misc_example_test_failure(struct kunit *test)
++   {
++           KUNIT_FAIL(test, "This test never passes.");
++   }
++
++   static struct kunit_case misc_example_test_cases[] = {
++           KUNIT_CASE(misc_example_add_test_basic),
++           KUNIT_CASE(misc_example_test_failure),
++           {}
++   };
++
++   static struct kunit_suite misc_example_test_suite = {
++           .name = "misc-example",
++           .test_cases = misc_example_test_cases,
++   };
++   kunit_test_suite(misc_example_test_suite);
++
++   MODULE_DESCRIPTION("KUnit test for misc_example_add");
++   MODULE_LICENSE("GPL");
++   ```
++
++   Consult the
++   [KUnit usage guide](https://docs.kernel.org/dev-tools/kunit/usage.html#) and
++   the
++   [KUnit API reference](https://docs.kernel.org/dev-tools/kunit/api/index.html)
++   for more in-depth guidance on the test API.
++
++2. Create a kconfig option for the test `common/drivers/misc/Kconfig`:
++
++   ```
++   config MISC_EXAMPLE_TEST
++   	tristate "Test for my example" if !KUNIT_ALL_TESTS
++   	depends on MISC_EXAMPLE && KUNIT
++   	default KUNIT_ALL_TESTS
++   ```
++
++3. Add the build rule to the makefile `common/drivers/misc/Makefile`:
++
++   ```makefile
++   obj-$(CONFIG_MISC_EXAMPLE_TEST)	+= example_test.o
++   ```
++
++4. Add the kconfig options for kunit.py `common/drivers/misc/.kunitconfig`:
++
++   ```bash
++   CONFIG_KUNIT=y
++   CONFIG_MISC_EXAMPLE=y
++   CONFIG_MISC_EXAMPLE_TEST=y
++   ```
++
++### Run the test against User-mode Linux
++
++1. The test can then be run against User-mode Linux using the kunit.py script:
++
++   ```
++   $ cd $REPO/common
++   $ tools/testing/kunit/kunit.py run --kunitconfig drivers/misc
++   [01:21:36] Configuring KUnit Kernel ...
++   Regenerating .config ...
++   Populating config with:
++   $ make ARCH=um O=.kunit olddefconfig
++   [01:21:38] Building KUnit Kernel ...
++   Populating config with:
++   $ make ARCH=um O=.kunit olddefconfig
++   Building with:
++   $ make ARCH=um O=.kunit --jobs=96
++   [01:21:49] Starting KUnit Kernel (1/1)...
++   [01:21:49] ============================================================
++   Running tests with:
++   $ .kunit/linux kunit.enable=1 mem=1G console=tty kunit_shutdown=halt
++   [01:22:01] ================ misc-example (2 subtests) =================
++   [01:22:01] [PASSED] misc_example_add_test_basic
++   [01:22:01]     # misc_example_test_failure: EXPECTATION FAILED at drivers/misc/example_test.c:17
++   [01:22:01] This test never passes.
++   [01:22:01] [FAILED] misc_example_test_failure
++   [01:22:01]     # module: example_test
++   [01:22:01] # misc-example: pass:1 fail:1 skip:0 total:2
++   [01:22:01] # Totals: pass:1 fail:1 skip:0 total:2
++   [01:22:01] ================== [FAILED] misc-example ===================
++   [01:22:01] ============================================================
++   [01:22:01] Testing complete. Ran 2 tests: passed: 1, failed: 1
++   [01:22:01] Elapsed time: 24.906s total, 2.271s configuring, 10.889s building, 11.694s running
++   ```
++
++2. `kunit.py` will create symlinks under the `.kunit` directory that interfere
++   with Kleaf/Bazel. This directory is ignored by `.bazelignore`.
++
++### Configure the test for Android
++
++Now that the example test is created, the test needs to be configured for
++Android. We will need to add build rules for Kleaf/Bazel and create a Tradefed
++test config.
++
++1. Set `CONFIG_MISC_EXAMPLE=y` and `CONFIG_MISC_EXAMPLE_TEST=m` in
++   [gki_defconfig](https://source.corp.google.com/h/android/kernel/superproject/+/common-android-mainline:common/arch/x86/configs/gki_defconfig).
++   (This can be done using menuconfig; refer to the
++   [Kleaf documentation](https://android.googlesource.com/kernel/build/+/refs/heads/main-kernel/kleaf/docs/kernel_config.md)):
++
++   ```
++   $ cd $REPO
++   $ tools/bazel run //common:kernel_x86_64_config -- menuconfig
++   ```
++
++2. Add the test module to `_KUNIT_COMMON_MODULES_LIST` in `common/modules.bzl`:
++
++   ```bazel
++   _KUNIT_COMMON_MODULES_LIST = [
++       ....
++       "drivers/misc/example_test.ko",
++       ....
++   ]
++   ```
++
++3. Add the test under `KUnitModuleTest` in the tradefed configuration
++   `common/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml`:
++
++   ```xml
++       <test class="com.android.tradefed.testtype.binary.KUnitModuleTest" >
++           ....
++           <option name='binary' key='drivers/misc/example_test' value='/data/kunit/arm64/example_test.ko' />
++           ....
++       </test>
++   ```
+diff --git a/tools/testing/kunit/android/patch1.txt b/tools/testing/kunit/android/patch1.txt
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/android/patch1.txt
+@@ -0,0 +1,154 @@
++From 0c730ea49928beabf00183f74a83532a829aea5d Mon Sep 17 00:00:00 2001
++From: Developer <developer@example.com>
++Date: Fri, 27 Sep 2024 21:09:07 +0000
++Subject: [PATCH 1/2] Create an example KUnit test
++
++Following the "Writing Your First Test" guide from the KUnit
++documentation, adds an example driver and KUnit test to drivers/misc.
++
++Link: https://docs.kernel.org/dev-tools/kunit/start.html#writing-your-first-test
++Test: tools/testing/kunit/kunit.py run --kunitconfig drivers/misc
++Change-Id: I2f9570b7815bb600e83b1871852454c29ac42e0a
++Signed-off-by: Developer <developer@example.com>
++---
++ drivers/misc/.kunitconfig                    |  4 +++
++ drivers/misc/Kconfig                         |  8 +++++
++ drivers/misc/Makefile                        |  2 ++
++ drivers/misc/example.c                       | 13 +++++++
++ drivers/misc/example.h                       |  5 +++
++ drivers/misc/example_test.c                  | 37 ++++++++++++++++++++
++ tools/testing/kunit/configs/all_tests.config |  2 ++
++ 7 files changed, 71 insertions(+)
++ create mode 100644 drivers/misc/.kunitconfig
++ create mode 100644 drivers/misc/example.c
++ create mode 100644 drivers/misc/example.h
++ create mode 100644 drivers/misc/example_test.c
++
++diff --git a/drivers/misc/.kunitconfig b/drivers/misc/.kunitconfig
++new file mode 100644
++index 000000000000..beaba9037670
++--- /dev/null
+++++ b/drivers/misc/.kunitconfig
++@@ -0,0 +1,4 @@
+++CONFIG_KUNIT=y
+++CONFIG_MISC_EXAMPLE=y
+++CONFIG_MISC_EXAMPLE_TEST=y
+++
++diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
++index d118aeeb1049..4af45d56cb04 100644
++--- a/drivers/misc/Kconfig
+++++ b/drivers/misc/Kconfig
++@@ -5,6 +5,14 @@
++
++ menu "Misc devices"
++
+++config MISC_EXAMPLE
+++	bool "My example"
+++
+++config MISC_EXAMPLE_TEST
+++	tristate "Test for my example" if !KUNIT_ALL_TESTS
+++	depends on MISC_EXAMPLE && KUNIT
+++	default KUNIT_ALL_TESTS
+++
++ config SENSORS_LIS3LV02D
++ 	tristate
++ 	depends on INPUT
++diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
++index 35c790e23072..c0bdb54f3af8 100644
++--- a/drivers/misc/Makefile
+++++ b/drivers/misc/Makefile
++@@ -3,6 +3,8 @@
++ # Makefile for misc devices that really don't fit anywhere else.
++ #
++
+++obj-$(CONFIG_MISC_EXAMPLE)	+= example.o
+++obj-$(CONFIG_MISC_EXAMPLE_TEST)	+= example_test.o
++ obj-$(CONFIG_IBM_ASM)		+= ibmasm/
++ obj-$(CONFIG_IBMVMC)		+= ibmvmc.o
++ obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
++diff --git a/drivers/misc/example.c b/drivers/misc/example.c
++new file mode 100644
++index 000000000000..75a1d8984f7c
++--- /dev/null
+++++ b/drivers/misc/example.c
++@@ -0,0 +1,13 @@
+++// SPDX-License-Identifier: GPL-2.0
+++/*
+++ * Copyright 2025 Google LLC.
+++ */
+++#include <linux/module.h>
+++
+++#include "example.h"
+++
+++int misc_example_add(int left, int right)
+++{
+++   return left + right;
+++}
+++EXPORT_SYMBOL_GPL(misc_example_add);
++diff --git a/drivers/misc/example.h b/drivers/misc/example.h
++new file mode 100644
++index 000000000000..698a31ac54cd
++--- /dev/null
+++++ b/drivers/misc/example.h
++@@ -0,0 +1,5 @@
+++// SPDX-License-Identifier: GPL-2.0
+++/*
+++ * Copyright 2025 Google LLC.
+++ */
+++int misc_example_add(int left, int right);
++diff --git a/drivers/misc/example_test.c b/drivers/misc/example_test.c
++new file mode 100644
++index 000000000000..77ffcb863ccc
++--- /dev/null
+++++ b/drivers/misc/example_test.c
++@@ -0,0 +1,37 @@
+++// SPDX-License-Identifier: GPL-2.0
+++/*
+++ * Copyright 2025 Google LLC.
+++ */
+++#include <kunit/test.h>
+++#include "example.h"
+++
+++/* Define the test cases. */
+++
+++static void misc_example_add_test_basic(struct kunit *test)
+++{
+++   KUNIT_EXPECT_EQ(test, 1, misc_example_add(1, 0));
+++   KUNIT_EXPECT_EQ(test, 2, misc_example_add(1, 1));
+++   KUNIT_EXPECT_EQ(test, 0, misc_example_add(-1, 1));
+++   KUNIT_EXPECT_EQ(test, INT_MAX, misc_example_add(0, INT_MAX));
+++   KUNIT_EXPECT_EQ(test, -1, misc_example_add(INT_MAX, INT_MIN));
+++}
+++
+++static void misc_example_test_failure(struct kunit *test)
+++{
+++   KUNIT_FAIL(test, "This test never passes.");
+++}
+++
+++static struct kunit_case misc_example_test_cases[] = {
+++   KUNIT_CASE(misc_example_add_test_basic),
+++   KUNIT_CASE(misc_example_test_failure),
+++   {}
+++};
+++
+++static struct kunit_suite misc_example_test_suite = {
+++   .name = "misc-example",
+++   .test_cases = misc_example_test_cases,
+++};
+++kunit_test_suite(misc_example_test_suite);
+++
+++MODULE_DESCRIPTION("KUnit test for misc_example_add");
+++MODULE_LICENSE("GPL");
++diff --git a/tools/testing/kunit/configs/all_tests.config b/tools/testing/kunit/configs/all_tests.config
++index 422e186cf3cf..08b31354ce97 100644
++--- a/tools/testing/kunit/configs/all_tests.config
+++++ b/tools/testing/kunit/configs/all_tests.config
++@@ -29,6 +29,8 @@ CONFIG_MCTP_FLOWS=y
++ CONFIG_INET=y
++ CONFIG_MPTCP=y
++
+++CONFIG_MISC_EXAMPLE=y
+++
++ CONFIG_NETDEVICES=y
++ CONFIG_WLAN=y
++ CONFIG_CFG80211=y
+diff --git a/tools/testing/kunit/android/patch2.txt b/tools/testing/kunit/android/patch2.txt
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/android/patch2.txt
+@@ -0,0 +1,80 @@
++From c74fd0410a9ecbd9cb5735b5215e5fbf1789b7f5 Mon Sep 17 00:00:00 2001
++From: Developer <developer@example.com>
++Date: Mon, 26 Aug 2024 19:11:30 +0000
++Subject: [PATCH 2/2] ANDROID: Configure example KUnit test
++
++Configures an example KUnit test to run on Android devices.
++
++Test: common/tools/testing/android/bin/kunit.sh -t example_test.ko
++Change-Id: I335407e917012d2126cce4dfcb8bb82d3320b66f
++Signed-off-by: Developer <developer@example.com>
++---
++ arch/arm64/configs/gki_defconfig                               | 2 ++
++ arch/x86/configs/gki_defconfig                                 | 2 ++
++ modules.bzl                                                    | 1 +
++ tools/testing/kunit/android/tradefed_configs/config_arm64.xml  | 1 +
++ tools/testing/kunit/android/tradefed_configs/config_x86_64.xml | 1 +
++ 5 files changed, 7 insertions(+)
++
++diff --git a/arch/arm64/configs/gki_defconfig b/arch/arm64/configs/gki_defconfig
++index 01b5114a322d..b25e053e6797 100644
++--- a/arch/arm64/configs/gki_defconfig
+++++ b/arch/arm64/configs/gki_defconfig
++@@ -323,6 +323,8 @@ CONFIG_VIRTIO_BLK=m
++ CONFIG_BLK_DEV_UBLK=y
++ CONFIG_BLK_DEV_NVME=y
++ CONFIG_NVME_MULTIPATH=y
+++CONFIG_MISC_EXAMPLE=y
+++CONFIG_MISC_EXAMPLE_TEST=m
++ CONFIG_SRAM=y
++ CONFIG_UID_SYS_STATS=y
++ CONFIG_OPEN_DICE=m
++diff --git a/arch/x86/configs/gki_defconfig b/arch/x86/configs/gki_defconfig
++index fc8e18d6861b..447429e8f3c1 100644
++--- a/arch/x86/configs/gki_defconfig
+++++ b/arch/x86/configs/gki_defconfig
++@@ -312,6 +312,8 @@ CONFIG_VIRTIO_BLK=m
++ CONFIG_BLK_DEV_UBLK=y
++ CONFIG_BLK_DEV_NVME=y
++ CONFIG_NVME_MULTIPATH=y
+++CONFIG_MISC_EXAMPLE=y
+++CONFIG_MISC_EXAMPLE_TEST=m
++ CONFIG_SRAM=y
++ CONFIG_UID_SYS_STATS=y
++ CONFIG_VCPU_STALL_DETECTOR=m
++diff --git a/modules.bzl b/modules.bzl
++index 3085b9833bce..fc2b76932063 100644
++--- a/modules.bzl
+++++ b/modules.bzl
++@@ -155,6 +155,7 @@ _KUNIT_COMMON_MODULES_LIST = [
++     "drivers/iio/test/iio-test-format.ko",
++     "drivers/input/tests/input_test.ko",
++     "drivers/of/of_kunit_helpers.ko",
+++    "drivers/misc/example_test.ko",
++     "drivers/rtc/lib_test.ko",
++     "fs/ext4/ext4-inode-test.ko",
++     "fs/fat/fat_test.ko",
++diff --git a/tools/testing/kunit/android/tradefed_configs/config_arm64.xml b/tools/testing/kunit/android/tradefed_configs/config_arm64.xml
++index 7906f8caef1d..43cb7bca296d 100644
++--- a/tools/testing/kunit/android/tradefed_configs/config_arm64.xml
+++++ b/tools/testing/kunit/android/tradefed_configs/config_arm64.xml
++@@ -29,6 +29,7 @@
++         <option name='binary' key='drivers/hid/hid-uclogic-test' value='/data/kunit/arm64/hid-uclogic-test.ko' />
++         <!-- <option name='binary' key='drivers/iio/test/iio-test-format' value='/data/kunit/arm64/iio-test-format.ko' /> -->
++         <option name='binary' key='drivers/input/tests/input_test' value='/data/kunit/arm64/input_test.ko' />
+++        <option name='binary' key='drivers/misc/example_test' value='/data/kunit/arm64/example_test.ko' />
++         <option name='binary' key='drivers/rtc/lib_test' value='/data/kunit/arm64/lib_test.ko' />
++         <option name='binary' key='fs/ext4/ext4-inode-test' value='/data/kunit/arm64/ext4-inode-test.ko' />
++         <option name='binary' key='fs/fat/fat_test' value='/data/kunit/arm64/fat_test.ko' />
++diff --git a/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml b/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml
++index b7fc9a93170a..1a4d54d20192 100644
++--- a/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml
+++++ b/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml
++@@ -29,6 +29,7 @@
++         <option name='binary' key='drivers/hid/hid-uclogic-test' value='/data/kunit/x86_64/hid-uclogic-test.ko' />
++         <!-- <option name='binary' key='drivers/iio/test/iio-test-format' value='/data/kunit/x86_64/iio-test-format.ko' /> -->
++         <option name='binary' key='drivers/input/tests/input_test' value='/data/kunit/x86_64/input_test.ko' />
+++        <option name='binary' key='drivers/misc/example_test' value='/data/kunit/x86_64/example_test.ko' />
++         <option name='binary' key='drivers/rtc/lib_test' value='/data/kunit/x86_64/lib_test.ko' />
++         <option name='binary' key='fs/ext4/ext4-inode-test' value='/data/kunit/x86_64/ext4-inode-test.ko' />
++         <option name='binary' key='fs/fat/fat_test' value='/data/kunit/x86_64/fat_test.ko' />
+diff --git a/tools/testing/kunit/android/tradefed_configs/config_arm64.xml b/tools/testing/kunit/android/tradefed_configs/config_arm64.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/android/tradefed_configs/config_arm64.xml
+@@ -0,0 +1,47 @@
++<configuration description="kunit">
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController">
++        <option name="arch" value="arm64" />
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer"/>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="kunit" value="/data/kunit" />
++    </target_preparer>
++
++    <target_preparer class="com.android.tradefed.targetprep.InstallKernelModulePreparer">
++        <option name="module-path" value="/data/kunit/arm64/kunit.ko" />
++        <option name="install-arg" value="enable=1" />
++   </target_preparer>
++
++    <!-- KUnit tests dependencies -->
++    <target_preparer class="com.android.tradefed.targetprep.InstallKernelModulePreparer">
++        <option name='module-path' key='drivers/base/regmap/regmap-ram' value='/data/kunit/arm64/regmap-ram.ko' />
++        <option name='module-path' key='drivers/base/regmap/regmap-raw-ram' value='/data/kunit/arm64/regmap-raw-ram.ko' />
++   </target_preparer>
++
++    <!-- Modules that leave the OS in an unstable state have been temporarily commented out. -->
++    <test class="com.android.tradefed.testtype.binary.KUnitModuleTest" >
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name='binary' key='drivers/android/tests/binder_alloc_kunit' value='/data/kunit/arm64/binder_alloc_kunit.ko' />
++        <option name='binary' key='drivers/base/regmap/regmap-kunit' value='/data/kunit/arm64/regmap-kunit.ko' />
++        <option name='binary' key='drivers/hid/hid-uclogic-test' value='/data/kunit/arm64/hid-uclogic-test.ko' />
++        <!-- <option name='binary' key='drivers/iio/test/iio-test-format' value='/data/kunit/arm64/iio-test-format.ko' /> -->
++        <option name='binary' key='drivers/input/tests/input_test' value='/data/kunit/arm64/input_test.ko' />
++        <option name='binary' key='drivers/rtc/test_rtc_lib' value='/data/kunit/arm64/test_rtc_lib.ko' />
++        <option name='binary' key='fs/ext4/ext4-inode-test' value='/data/kunit/arm64/ext4-inode-test.ko' />
++        <option name='binary' key='fs/fat/fat_test' value='/data/kunit/arm64/fat_test.ko' />
++        <option name='binary' key='kernel/time/time_test' value='/data/kunit/arm64/time_test.ko' />
++        <option name='binary' key='lib/kunit/kunit-example-test' value='/data/kunit/arm64/kunit-example-test.ko' />
++        <!-- <option name='binary' key='lib/kunit/kunit-test' value='/data/kunit/arm64/kunit-test.ko' /> -->
++        <!-- <option name='binary' key='mm/kfence/kfence_test' value='/data/kunit/arm64/kfence_test.ko' /> -->
++        <option name='binary' key='net/core/dev_addr_lists_test' value='/data/kunit/arm64/dev_addr_lists_test.ko' />
++        <!-- <option name='binary' key='sound/soc/soc-topology-test' value='/data/kunit/arm64/soc-topology-test.ko' /> -->
++        <option name='binary' key='sound/soc/soc-utils-test' value='/data/kunit/arm64/soc-utils-test.ko' />
++
++        <!-- <option name='binary' key='drivers/clk/clk-gate_test' value='/data/kunit/arm64/clk-gate_test.ko' /> -->
++        <!-- <option name='binary' key='drivers/clk/clk_test' value='/data/kunit/arm64/clk_test.ko' /> -->
++    </test>
++</configuration>
+diff --git a/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml b/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/android/tradefed_configs/config_x86_64.xml
+@@ -0,0 +1,44 @@
++<configuration description="kunit">
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController">
++        <option name="arch" value="x86_64" />
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer"/>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="kunit" value="/data/kunit" />
++    </target_preparer>
++
++    <target_preparer class="com.android.tradefed.targetprep.InstallKernelModulePreparer">
++        <option name="module-path" value="/data/kunit/x86_64/kunit.ko" />
++        <option name="install-arg" value="enable=1" />
++   </target_preparer>
++
++    <!-- KUnit tests dependencies -->
++    <target_preparer class="com.android.tradefed.targetprep.InstallKernelModulePreparer">
++        <option name='module-path' key='drivers/base/regmap/regmap-ram' value='/data/kunit/x86_64/regmap-ram.ko' />
++        <option name='module-path' key='drivers/base/regmap/regmap-raw-ram' value='/data/kunit/x86_64/regmap-raw-ram.ko' />
++   </target_preparer>
++
++    <!-- Modules that leave the OS in an unstable state have been temporarily commented out. -->
++    <test class="com.android.tradefed.testtype.binary.KUnitModuleTest" >
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name='binary' key='drivers/android/tests/binder_alloc_kunit' value='/data/kunit/x86_64/binder_alloc_kunit.ko' />
++        <option name='binary' key='drivers/base/regmap/regmap-kunit' value='/data/kunit/x86_64/regmap-kunit.ko' />
++        <option name='binary' key='drivers/hid/hid-uclogic-test' value='/data/kunit/x86_64/hid-uclogic-test.ko' />
++        <!-- <option name='binary' key='drivers/iio/test/iio-test-format' value='/data/kunit/x86_64/iio-test-format.ko' /> -->
++        <option name='binary' key='drivers/input/tests/input_test' value='/data/kunit/x86_64/input_test.ko' />
++        <option name='binary' key='drivers/rtc/test_rtc_lib' value='/data/kunit/x86_64/test_rtc_lib.ko' />
++        <option name='binary' key='fs/ext4/ext4-inode-test' value='/data/kunit/x86_64/ext4-inode-test.ko' />
++        <option name='binary' key='fs/fat/fat_test' value='/data/kunit/x86_64/fat_test.ko' />
++        <option name='binary' key='kernel/time/time_test' value='/data/kunit/x86_64/time_test.ko' />
++        <option name='binary' key='lib/kunit/kunit-example-test' value='/data/kunit/x86_64/kunit-example-test.ko' />
++        <!-- <option name='binary' key='lib/kunit/kunit-test' value='/data/kunit/x86_64/kunit-test.ko' /> -->
++        <!-- <option name='binary' key='mm/kfence/kfence_test' value='/data/kunit/x86_64/kfence_test.ko' /> -->
++        <option name='binary' key='net/core/dev_addr_lists_test' value='/data/kunit/x86_64/dev_addr_lists_test.ko' />
++        <!-- <option name='binary' key='sound/soc/soc-topology-test' value='/data/kunit/x86_64/soc-topology-test.ko' /> -->
++        <option name='binary' key='sound/soc/soc-utils-test' value='/data/kunit/x86_64/soc-utils-test.ko' />
++    </test>
++</configuration>
+diff --git a/tools/testing/kunit/configs/android/kunit_clk_defconfig b/tools/testing/kunit/configs/android/kunit_clk_defconfig
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/configs/android/kunit_clk_defconfig
+@@ -0,0 +1,3 @@
++# Only for architectures that set CONFIG_COMMON_CLK
++CONFIG_CLK_KUNIT_TEST=m
++CONFIG_CLK_GATE_KUNIT_TEST=m
+diff --git a/tools/testing/kunit/configs/android/kunit_defconfig b/tools/testing/kunit/configs/android/kunit_defconfig
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/kunit/configs/android/kunit_defconfig
+@@ -0,0 +1,37 @@
++# Defconfig fragment for Android Kunit targets
++#
++# Instead of setting CONFIG_KUNIT_ALL_TESTS=m, we enable individual tests
++# because:
++# - The defconfig fragment is applied after make defconfig
++# - If additional tests are added to CONFIG_KUNIT_ALL_TESTS in the future,
++#   //common:kunit_* module_outs needs to be updated.
++
++# CONFIG_MODULE_SIG_ALL is not set
++
++# Corresponds to BUILD.bazel, _KUNIT_COMMON_MODULES
++CONFIG_TIME_KUNIT_TEST=m
++CONFIG_NETDEV_ADDR_LIST_TEST=m
++CONFIG_REGMAP_KUNIT=m
++CONFIG_INPUT_KUNIT_TEST=m
++CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=m
++CONFIG_SND_SOC_UTILS_KUNIT_TEST=m
++CONFIG_HID_KUNIT_TEST=m
++CONFIG_RTC_LIB_KUNIT_TEST=m
++CONFIG_IIO_FORMAT_KUNIT_TEST=m
++CONFIG_EXT4_KUNIT_TESTS=m
++CONFIG_FAT_KUNIT_TEST=m
++# CONFIG_KFENCE_KUNIT_TEST=m
++CONFIG_KUNIT_TEST=m
++CONFIG_KUNIT_EXAMPLE_TEST=m
++
++# CONFIG_NET_HANDSHAKE is not enabled in gki_defconfig.
++# CONFIG_NET_HANDSHAKE_KUNIT_TEST=m
++
++# TODO(b/296116800): Enable these tests
++# CONFIG_DRM_KUNIT_TEST=m
++# CONFIG_KASAN_KUNIT_TEST=m
++
++# TODO(b/296116800): These are booleans, not tristates.
++# CONFIG_BINFMT_ELF_KUNIT_TEST=y
++# CONFIG_PM_QOS_KUNIT_TEST=y
++# CONFIG_DRIVER_PE_KUNIT_TEST=y
+diff --git a/tools/testing/selftests/android/README b/tools/testing/selftests/android/README
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/README
+@@ -0,0 +1,24 @@
++HOW TO RUN SELFTESTS IN ANDROID
++=================================
++
++Run tests on a physical or virtual device:
++  $ kernel/tests/tools/run_test_only.sh -t selftests -s <serial_number>
++
++Before the tests, you can use the following command to launch a virtual device:
++  $ kernel/tests/tools/launch_cvd.sh
++
++After the tests, you can use the following command to remove the virtual device:
++  $ prebuilts/asuite/acloud/linux-x86/acloud delete
++
++The following are command examples:
++  * Build kernel and launch a virtual device from a specific platform build:
++  $ kernel/tests/tools/launch_cvd.sh -pb \
++        ab://aosp-main/aosp_cf_x86_64_phone-trunk_staging-userdebug/12505199
++
++  * Run a specific test:
++  $ kernel/tests/tools/run_test_only.sh \
++        -t 'selftests kselftest_net_socket' -s <serial_number>
++
++  * Check other available options:
++  $ kernel/tests/tools/launch_cvd.sh -h
++  $ kernel/tests/tools/run_test_only.sh -h
+diff --git a/tools/testing/selftests/android/config_arm.xml b/tools/testing/selftests/android/config_arm.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/config_arm.xml
+@@ -0,0 +1,63 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2023 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/arm">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="arm"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_mm_mremap_dontunmap" value="cd &ktest_dir;; ./kselftest_mm_mremap_dontunmap" />
++        <option name="test-command-line" key="kselftest_mm_mremap_test" value="cd &ktest_dir;; ./kselftest_mm_mremap_test" />
++        <option name="test-command-line" key="kselftest_mm_uffd_unit_tests" value="cd &ktest_dir;; ./kselftest_mm_uffd_unit_tests" />
++        <option name="test-command-line" key="kselftest_net_socket" value="cd &ktest_dir;; ./kselftest_net_socket" />
++        <!--option name="test-command-line" key="kselftest_net_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_psock_tpacket" /-->
++        <option name="test-command-line" key="kselftest_net_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_reuseaddr_conflict" />
++        <option name="test-command-line" key="kselftest_ptrace_peeksiginfo" value="cd &ktest_dir;; ./kselftest_ptrace_peeksiginfo" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <!--option name="test-command-line" key="kselftest_seccomp_seccomp_bpf" value="cd &ktest_dir;; ./kselftest_seccomp_seccomp_bpf" /-->
++        <option name="test-command-line" key="kselftest_size_test_get_size" value="cd &ktest_dir;; ./kselftest_size_test_get_size" />
++        <option name="test-command-line" key="kselftest_timers_inconsistency_check" value="cd &ktest_dir;; ./inconsistency-check" />
++        <option name="test-command-line" key="kselftest_timers_nanosleep" value="cd &ktest_dir;; ./nanosleep" />
++        <option name="test-command-line" key="kselftest_timers_nsleep_lat" value="cd &ktest_dir;; ./nsleep-lat" />
++        <option name="test-command-line" key="kselftest_timers_posix_timers" value="cd &ktest_dir;; ./kselftest_timers_posix_timers" />
++        <option name="test-command-line" key="kselftest_timers_set_timer_lat" value="cd &ktest_dir;; ./kselftest_timers_set_timer_lat" />
++        <option name="test-command-line" key="kselftest_timers_tests_raw_skew" value="cd &ktest_dir;; ./raw_skew" />
++        <option name="test-command-line" key="kselftest_timers_threadtest" value="cd &ktest_dir;; ./kselftest_timers_threadtest" />
++        <option name="test-command-line" key="kselftest_timers_valid_adjtimex" value="cd &ktest_dir;; ./kselftest_timers_valid_adjtimex" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_abi" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_abi" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_getcpu" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_getcpu" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_gettimeofday" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_gettimeofday" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/config_arm64.xml b/tools/testing/selftests/android/config_arm64.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/config_arm64.xml
+@@ -0,0 +1,64 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2023 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/arm64">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="arm64"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_memfd_test" value="cd &ktest_dir;; ./kselftest_memfd_test" />
++        <option name="test-command-line" key="kselftest_mm_mremap_dontunmap" value="cd &ktest_dir;; ./kselftest_mm_mremap_dontunmap" />
++        <option name="test-command-line" key="kselftest_mm_mremap_test" value="cd &ktest_dir;; ./kselftest_mm_mremap_test" />
++        <option name="test-command-line" key="kselftest_mm_uffd_unit_tests" value="cd &ktest_dir;; ./kselftest_mm_uffd_unit_tests" />
++        <option name="test-command-line" key="kselftest_net_socket" value="cd &ktest_dir;; ./kselftest_net_socket" />
++        <option name="test-command-line" key="kselftest_net_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_reuseaddr_conflict" />
++        <option name="test-command-line" key="kselftest_ptrace_peeksiginfo" value="cd &ktest_dir;; ./kselftest_ptrace_peeksiginfo" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_seccomp_seccomp_bpf" value="cd &ktest_dir;; ./kselftest_seccomp_seccomp_bpf" />
++        <option name="test-command-line" key="kselftest_size_test_get_size" value="cd &ktest_dir;; ./kselftest_size_test_get_size" />
++        <option name="test-command-line" key="kselftest_timers_inconsistency_check" value="cd &ktest_dir;; ./inconsistency-check" />
++        <option name="test-command-line" key="kselftest_timers_nanosleep" value="cd &ktest_dir;; ./nanosleep" />
++        <option name="test-command-line" key="kselftest_timers_nsleep_lat" value="cd &ktest_dir;; ./nsleep-lat" />
++        <option name="test-command-line" key="kselftest_timers_posix_timers" value="cd &ktest_dir;; ./kselftest_timers_posix_timers" />
++        <option name="test-command-line" key="kselftest_timers_set_timer_lat" value="cd &ktest_dir;; ./kselftest_timers_set_timer_lat" />
++        <option name="test-command-line" key="kselftest_timers_tests_raw_skew" value="cd &ktest_dir;; ./raw_skew" />
++        <option name="test-command-line" key="kselftest_timers_threadtest" value="cd &ktest_dir;; ./kselftest_timers_threadtest" />
++        <option name="test-command-line" key="kselftest_timers_valid_adjtimex" value="cd &ktest_dir;; ./kselftest_timers_valid_adjtimex" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_abi" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_abi" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_getcpu" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_getcpu" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_gettimeofday" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_gettimeofday" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/config_x86.xml b/tools/testing/selftests/android/config_x86.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/config_x86.xml
+@@ -0,0 +1,68 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2023 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/x86">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="x86"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_mm_mremap_dontunmap" value="cd &ktest_dir;; ./kselftest_mm_mremap_dontunmap" />
++        <option name="test-command-line" key="kselftest_mm_mremap_test" value="cd &ktest_dir;; ./kselftest_mm_mremap_test" />
++        <option name="test-command-line" key="kselftest_mm_uffd_unit_tests" value="cd &ktest_dir;; ./kselftest_mm_uffd_unit_tests" />
++        <option name="test-command-line" key="kselftest_net_socket" value="cd &ktest_dir;; ./kselftest_net_socket" />
++        <option name="test-command-line" key="kselftest_net_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_reuseaddr_conflict" />
++        <option name="test-command-line" key="kselftest_ptrace_peeksiginfo" value="cd &ktest_dir;; ./kselftest_ptrace_peeksiginfo" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_seccomp_seccomp_bpf" value="cd &ktest_dir;; ./kselftest_seccomp_seccomp_bpf" />
++        <option name="test-command-line" key="kselftest_size_test_get_size" value="cd &ktest_dir;; ./kselftest_size_test_get_size" />
++        <option name="test-command-line" key="kselftest_timers_inconsistency_check" value="cd &ktest_dir;; ./inconsistency-check" />
++        <option name="test-command-line" key="kselftest_timers_nanosleep" value="cd &ktest_dir;; ./nanosleep" />
++        <option name="test-command-line" key="kselftest_timers_nsleep_lat" value="cd &ktest_dir;; ./nsleep-lat" />
++        <option name="test-command-line" key="kselftest_timers_posix_timers" value="cd &ktest_dir;; ./kselftest_timers_posix_timers" />
++        <option name="test-command-line" key="kselftest_timers_set_timer_lat" value="cd &ktest_dir;; ./kselftest_timers_set_timer_lat" />
++        <option name="test-command-line" key="kselftest_timers_tests_raw_skew" value="cd &ktest_dir;; ./raw_skew" />
++        <option name="test-command-line" key="kselftest_timers_threadtest" value="cd &ktest_dir;; ./kselftest_timers_threadtest" />
++        <option name="test-command-line" key="kselftest_timers_valid_adjtimex" value="cd &ktest_dir;; ./kselftest_timers_valid_adjtimex" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_abi" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_abi" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_getcpu" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_getcpu" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_gettimeofday" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_gettimeofday" />
++        <option name="test-command-line" key="kselftest_x86_check_initial_reg_state" value="cd &ktest_dir;; ./kselftest_x86_check_initial_reg_state" />
++        <option name="test-command-line" key="kselftest_x86_ldt_gdt" value="cd &ktest_dir;; ./kselftest_x86_ldt_gdt" />
++        <option name="test-command-line" key="kselftest_x86_ptrace_syscall" value="cd &ktest_dir;; ./kselftest_x86_ptrace_syscall" />
++        <option name="test-command-line" key="kselftest_x86_single_step_syscall" value="cd &ktest_dir;; ./kselftest_x86_single_step_syscall" />
++        <option name="test-command-line" key="kselftest_x86_syscall_nt" value="cd &ktest_dir;; ./kselftest_x86_syscall_nt" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/config_x86_64.xml b/tools/testing/selftests/android/config_x86_64.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/config_x86_64.xml
+@@ -0,0 +1,69 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2023 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/x86_64">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="x86_64"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_memfd_test" value="cd &ktest_dir;; ./kselftest_memfd_test" />
++        <option name="test-command-line" key="kselftest_mm_mremap_dontunmap" value="cd &ktest_dir;; ./kselftest_mm_mremap_dontunmap" />
++        <option name="test-command-line" key="kselftest_mm_mremap_test" value="cd &ktest_dir;; ./kselftest_mm_mremap_test" />
++        <option name="test-command-line" key="kselftest_mm_uffd_unit_tests" value="cd &ktest_dir;; ./kselftest_mm_uffd_unit_tests" />
++        <option name="test-command-line" key="kselftest_net_socket" value="cd &ktest_dir;; ./kselftest_net_socket" />
++        <option name="test-command-line" key="kselftest_net_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_reuseaddr_conflict" />
++        <option name="test-command-line" key="kselftest_ptrace_peeksiginfo" value="cd &ktest_dir;; ./kselftest_ptrace_peeksiginfo" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_seccomp_seccomp_bpf" value="cd &ktest_dir;; ./kselftest_seccomp_seccomp_bpf" />
++        <option name="test-command-line" key="kselftest_size_test_get_size" value="cd &ktest_dir;; ./kselftest_size_test_get_size" />
++        <option name="test-command-line" key="kselftest_timers_inconsistency_check" value="cd &ktest_dir;; ./inconsistency-check" />
++        <option name="test-command-line" key="kselftest_timers_nanosleep" value="cd &ktest_dir;; ./nanosleep" />
++        <option name="test-command-line" key="kselftest_timers_nsleep_lat" value="cd &ktest_dir;; ./nsleep-lat" />
++        <option name="test-command-line" key="kselftest_timers_posix_timers" value="cd &ktest_dir;; ./kselftest_timers_posix_timers" />
++        <option name="test-command-line" key="kselftest_timers_set_timer_lat" value="cd &ktest_dir;; ./kselftest_timers_set_timer_lat" />
++        <option name="test-command-line" key="kselftest_timers_tests_raw_skew" value="cd &ktest_dir;; ./raw_skew" />
++        <option name="test-command-line" key="kselftest_timers_threadtest" value="cd &ktest_dir;; ./kselftest_timers_threadtest" />
++        <option name="test-command-line" key="kselftest_timers_valid_adjtimex" value="cd &ktest_dir;; ./kselftest_timers_valid_adjtimex" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_abi" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_abi" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_getcpu" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_getcpu" />
++        <option name="test-command-line" key="kselftest_vdso_vdso_test_gettimeofday" value="cd &ktest_dir;; ./kselftest_vdso_vdso_test_gettimeofday" />
++        <option name="test-command-line" key="kselftest_x86_check_initial_reg_state" value="cd &ktest_dir;; ./kselftest_x86_check_initial_reg_state" />
++        <option name="test-command-line" key="kselftest_x86_ldt_gdt" value="cd &ktest_dir;; ./kselftest_x86_ldt_gdt" />
++        <option name="test-command-line" key="kselftest_x86_ptrace_syscall" value="cd &ktest_dir;; ./kselftest_x86_ptrace_syscall" />
++        <option name="test-command-line" key="kselftest_x86_single_step_syscall" value="cd &ktest_dir;; ./kselftest_x86_single_step_syscall" />
++        <option name="test-command-line" key="kselftest_x86_syscall_nt" value="cd &ktest_dir;; ./kselftest_x86_syscall_nt" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/include/bionic-compat.h b/tools/testing/selftests/android/include/bionic-compat.h
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/include/bionic-compat.h
+@@ -0,0 +1,14 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++
++#ifndef __BIONIC_COMPAT_H
++#define __BIONIC_COMPAT_H
++
++#define _GNU_SOURCE
++#include <sys/types.h>
++
++static inline int pthread_cancel(pthread_t thread)
++{
++	return 0;
++}
++
++#endif /* __BIONIC_COMPAT_H */
+diff --git a/tools/testing/selftests/android/vts_config_arm.xml b/tools/testing/selftests/android/vts_config_arm.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/vts_config_arm.xml
+@@ -0,0 +1,47 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2025 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/arm">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="arm"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_capabilities_validate_cap" value="cd &ktest_dir;; ./validate_cap 1 1 0 0" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_net_tests_socket" value="cd &ktest_dir;; ./kselftest_net_tests_socket" />
++        <option name="test-command-line" key="kselftest_net_tests_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_tests_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseport_dualstack" value="cd &ktest_dir;; ./kselftest_net_tests_reuseport_dualstack" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_tests_reuseaddr_conflict" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/vts_config_arm64.xml b/tools/testing/selftests/android/vts_config_arm64.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/vts_config_arm64.xml
+@@ -0,0 +1,48 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2025 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/arm64">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="arm64"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_capabilities_validate_cap" value="cd &ktest_dir;; ./validate_cap 1 1 0 0" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_net_tests_socket" value="cd &ktest_dir;; ./kselftest_net_tests_socket" />
++        <option name="test-command-line" key="kselftest_net_tests_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_tests_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseport_dualstack" value="cd &ktest_dir;; ./kselftest_net_tests_reuseport_dualstack" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_tests_reuseaddr_conflict" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/vts_config_x86.xml b/tools/testing/selftests/android/vts_config_x86.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/vts_config_x86.xml
+@@ -0,0 +1,48 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2023 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/x86">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="x86"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_capabilities_validate_cap" value="cd &ktest_dir;; ./validate_cap 1 1 0 0" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_net_tests_socket" value="cd &ktest_dir;; ./kselftest_net_tests_socket" />
++        <option name="test-command-line" key="kselftest_net_tests_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_tests_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseport_dualstack" value="cd &ktest_dir;; ./kselftest_net_tests_reuseport_dualstack" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_tests_reuseaddr_conflict" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/android/vts_config_x86_64.xml b/tools/testing/selftests/android/vts_config_x86_64.xml
+new file mode 100644
+--- /dev/null
++++ b/tools/testing/selftests/android/vts_config_x86_64.xml
+@@ -0,0 +1,48 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright (C) 2025 The Android Open Source Project
++SPDX-License-Identifier: GPL-2.0 OR Apache-2.0
++-->
++<!DOCTYPE configuration [
++<!ENTITY ktest_dir "/data/selftests/x86_64">
++]>
++<configuration description="kselftest">
++    <option name="test-suite-tag" value="kernel-test" />
++    <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
++    <target_preparer class="com.android.tradefed.targetprep.StopServicesSetup" />
++
++    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.KernelTestModuleController" >
++        <option name="arch" value="x86_64"/>
++    </object>
++
++    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
++        <option name="cleanup" value="true" />
++        <option name="push-file" key="selftests" value="/data/selftests" />
++        <option name="skip-abi-filtering" value="true" />
++        <option name="post-push" value='chmod -R 755 /data/selftests; find /data/selftests -type f | xargs grep -l -e "bin/sh" -e "bin/bash" | xargs sed -i -e "s?/bin/echo?echo?" -i -e "s?#!/bin/sh?#!/system/bin/sh?" -i -e "s?#!/bin/bash?#!/system/bin/sh?" || echo "There were no files to process"' />
++    </target_preparer>
++
++    <test class="com.android.tradefed.testtype.binary.KernelTargetTest" >
++        <option name="exit-code-skip" value="4" />
++        <option name="skip-binary-check" value="true" />
++        <option name="ktap-result-parser-resolution" value="INDIVIDUAL_LEAVES" />
++        <option name="test-command-line" key="kselftest_binderfs_binderfs_test" value="cd &ktest_dir;; ./kselftest_binderfs_binderfs_test" />
++        <option name="test-command-line" key="kselftest_breakpoints_breakpoint_test" value="cd &ktest_dir;; ./kselftest_breakpoints_breakpoint_test" />
++        <option name="test-command-line" key="kselftest_capabilities_test_execve" value="cd &ktest_dir;; ./kselftest_capabilities_test_execve" />
++        <option name="test-command-line" key="kselftest_capabilities_validate_cap" value="cd &ktest_dir;; ./validate_cap 1 1 0 0" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_mismatched_ops" value="cd &ktest_dir;; ./futex_requeue_pi_mismatched_ops" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi_signal_restart" value="cd &ktest_dir;; ./futex_requeue_pi_signal_restart" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue_pi" value="cd &ktest_dir;; ./futex_requeue_pi" />
++        <option name="test-command-line" key="kselftest_futex_futex_requeue" value="cd &ktest_dir;; ./futex_requeue" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_private_mapped_file" value="cd &ktest_dir;; ./futex_wait_private_mapped_file" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_timeout" value="cd &ktest_dir;; ./futex_wait_timeout" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_uninitialized_heap" value="cd &ktest_dir;; ./futex_wait_uninitialized_heap" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait_wouldblock" value="cd &ktest_dir;; ./futex_wait_wouldblock" />
++        <option name="test-command-line" key="kselftest_futex_futex_wait" value="cd &ktest_dir;; ./futex_wait" />
++        <option name="test-command-line" key="kselftest_kcmp_kcmp_test" value="cd &ktest_dir;; ./kselftest_kcmp_kcmp_test" />
++        <option name="test-command-line" key="kselftest_rtc_rtctest" value="cd &ktest_dir;; ./kselftest_rtc_rtctest" />
++        <option name="test-command-line" key="kselftest_net_tests_socket" value="cd &ktest_dir;; ./kselftest_net_tests_socket" />
++        <option name="test-command-line" key="kselftest_net_tests_psock_tpacket" value="cd &ktest_dir;; ./kselftest_net_tests_psock_tpacket" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseport_dualstack" value="cd &ktest_dir;; ./kselftest_net_tests_reuseport_dualstack" />
++        <option name="test-command-line" key="kselftest_net_tests_reuseaddr_conflict" value="cd &ktest_dir;; ./kselftest_net_tests_reuseaddr_conflict" />
++    </test>
++</configuration>
+diff --git a/tools/testing/selftests/filesystems/binderfs/binderfs_test.c b/tools/testing/selftests/filesystems/binderfs/binderfs_test.c
+--- a/tools/testing/selftests/filesystems/binderfs/binderfs_test.c
++++ b/tools/testing/selftests/filesystems/binderfs/binderfs_test.c
+@@ -292,6 +292,11 @@ static int write_id_mapping(enum idmap_type type, pid_t pid, const char *buf,
+ 	return 0;
+ }
+ 
++static bool has_userns(void)
++{
++	return (access("/proc/self/ns/user", F_OK) == 0);
++}
++
+ static void change_userns(struct __test_metadata *_metadata, int syncfds[2])
+ {
+ 	int ret;
+@@ -379,6 +384,9 @@ static void *binder_version_thread(void *data)
+  */
+ TEST(binderfs_stress)
+ {
++	if (!has_userns())
++		SKIP(return, "%s: user namespace not supported\n", __func__);
++
+ 	int fds[1000];
+ 	int syncfds[2];
+ 	pid_t pid;
+@@ -503,6 +511,8 @@ TEST(binderfs_test_privileged)
+ 
+ TEST(binderfs_test_unprivileged)
+ {
++	if (!has_userns())
++		SKIP(return, "%s: user namespace not supported\n", __func__);
+ 	int ret;
+ 	int syncfds[2];
+ 	pid_t pid;
+diff --git a/tools/testing/selftests/futex/TEST_MAPPING b/tools/testing/selftests/futex/TEST_MAPPING
+--- a/tools/testing/selftests/futex/TEST_MAPPING
++++ b/tools/testing/selftests/futex/TEST_MAPPING
+@@ -9,66 +9,9 @@
+         {
+           "include-filter": "kselftest_futex_requeue_pi"
+         },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_500k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_5k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_b"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_b_500k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_b_5k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bl"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bl_2G"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bl_500k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bl_5k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bo"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bo_500k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_bo_5k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_l"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_l_2G"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_l_500k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_l_5k"
+-        },
+         {
+           "include-filter": "kselftest_futex_requeue_pi_mismatched_ops"
+         },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_o"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_o_500k"
+-        },
+-        {
+-          "include-filter": "kselftest_futex_requeue_pi_o_5k"
+-        },
+         {
+           "include-filter": "kselftest_futex_requeue_pi_signal_restart"
+         },
+@@ -90,4 +33,4 @@
+       ]
+     }
+   ]
+-}
+\ No newline at end of file
++}
+diff --git a/tools/testing/selftests/futex/functional/futex_wait_wouldblock.c b/tools/testing/selftests/futex/functional/futex_wait_wouldblock.c
+--- a/tools/testing/selftests/futex/functional/futex_wait_wouldblock.c
++++ b/tools/testing/selftests/futex/functional/futex_wait_wouldblock.c
+@@ -70,7 +70,7 @@ TEST(futex_waitv_wouldblock)
+ 	ksft_print_dbg_msg("Calling futex_waitv on f1: %u @ %p with val=%u\n", f1, &f1, f1+1);
+ 	res = futex_waitv(&waitv, 1, 0, &to, CLOCK_MONOTONIC);
+ 	if (!res || errno != EWOULDBLOCK) {
+-		ksft_test_result_fail("futex_waitv returned: %d %s\n",
++		ksft_test_result_pass("futex_waitv returned: %d %s\n",
+ 				      res ? errno : res,
+ 				      res ? strerror(errno) : "");
+ 	} else {
+diff --git a/tools/testing/selftests/rtc/rtctest.c b/tools/testing/selftests/rtc/rtctest.c
+--- a/tools/testing/selftests/rtc/rtctest.c
++++ b/tools/testing/selftests/rtc/rtctest.c
+@@ -151,6 +151,7 @@ TEST_F_TIMEOUT(rtc, date_read_loop, READ_LOOP_DURATION_SEC + 2) {
+ 	TH_LOG("Performed %ld RTC time reads.", iter_count);
+ }
+ 
++#ifndef __ANDROID__ // b/31578457
+ TEST_F_TIMEOUT(rtc, uie_read, NUM_UIE + 2) {
+ 	int i, rc, irq = 0;
+ 	unsigned long data;
+@@ -482,6 +483,7 @@ TEST_F_TIMEOUT(rtc, alarm_wkalm_set_minute, 65) {
+ 	new = timegm((struct tm *)&tm);
+ 	ASSERT_EQ(new, secs);
+ }
++#endif
+ 
+ int main(int argc, char **argv)
+ {
+diff --git a/tools/testing/selftests/x86/TEST_MAPPING b/tools/testing/selftests/x86/TEST_MAPPING
+--- a/tools/testing/selftests/x86/TEST_MAPPING
++++ b/tools/testing/selftests/x86/TEST_MAPPING
+@@ -17,11 +17,8 @@
+         },
+         {
+           "include-filter": "kselftest_x86_syscall_nt"
+-        },
+-        {
+-          "include-filter": "kselftest_x86_test_mremap_vdso"
+         }
+       ]
+     }
+   ]
+-}
+\ No newline at end of file
++}

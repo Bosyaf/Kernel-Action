@@ -1,0 +1,515 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Connor O'Brien <connoro@google.com>
+Date: Tue, 10 May 2022 13:07:09 -0700
+Subject: ANDROID: sched: softirqs
+
+[...]
+
+ANDROID: sched: Avoid placing RT threads on cores handling long softirqs
+
+In certain audio use cases, scheduling RT threads on cores that
+are handling softirqs can lead to glitches. Prevent this
+behavior in cases where the softirq is likely to take a long
+time. To avoid unnecessary migrations, the old behavior is
+preserved for RCU, SCHED and TIMER irqs which are expected to be
+relatively quick.
+
+This patch reworks and combines two related changes originally
+by John Dias <joaodias@google.com>
+
+Cc: John Dias <joaodias@google.com>
+Cc: Connor O'Brien <connoro@google.com>
+Cc: Rick Yiu <rickyiu@google.com>
+Cc: John Kacur <jkacur@redhat.com>
+Cc: Qais Yousef <qyousef@google.com>
+Cc: Chris Redpath <chris.redpath@arm.com>
+Cc: Abhijeet Dharmapurikar <adharmap@quicinc.com>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Juri Lelli <juri.lelli@redhat.com>
+Cc: Vincent Guittot <vincent.guittot@linaro.org>
+Cc: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Cc: Steven Rostedt <rostedt@goodmis.org>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: Heiko Carstens <hca@linux.ibm.com>
+Cc: Vasily Gorbik <gor@linux.ibm.com>
+Cc: Joel Fernandes <joel@joelfernandes.org>
+Cc: Alexander Gordeev <agordeev@linux.ibm.com>
+Cc: kernel-team@android.com
+Signed-off-by: John Dias <joaodias@google.com>
+[elavila: Port to mainline, amend commit text]
+Signed-off-by: J. Avila <elavila@google.com>
+[connoro: Reworked, simplified, and merged two patches together]
+Signed-off-by: Connor O'Brien <connoro@google.com>
+[jstultz: Further simplified and fixed issues, reworded commit
+ message, removed arm64-isms]
+Signed-off-by: John Stultz <jstultz@google.com>
+Link: https://lore.kernel.org/lkml/20221116075929.453876-3-jstultz@google.com/
+[xuewen: resolve conflicts with android15-6.6]
+Signed-off-by: Xuewen Yan <xuewen.yan@unisoc.com>
+Signed-off-by: John Stultz <jstultz@google.com>
+Bug: 168521633
+Bug: 332627282
+Change-Id: Ia5b5ce37a41ebf83e6295c5ae39f1bd321bf6036
+---
+ arch/s390/include/asm/hardirq.h |   6 ++
+ include/linux/interrupt.h       |  21 ++++++
+ init/Kconfig                    |  10 +++
+ kernel/sched/rt.c               | 123 ++++++++++++++++++++++++++++----
+ kernel/sched/sched.h            |   2 +
+ kernel/softirq.c                |  42 ++++++++++-
+ 6 files changed, 189 insertions(+), 15 deletions(-)
+
+diff --git a/arch/s390/include/asm/hardirq.h b/arch/s390/include/asm/hardirq.h
+--- a/arch/s390/include/asm/hardirq.h
++++ b/arch/s390/include/asm/hardirq.h
+@@ -16,6 +16,12 @@
+ #define local_softirq_pending() (get_lowcore()->softirq_pending)
+ #define set_softirq_pending(x) (get_lowcore()->softirq_pending = (x))
+ #define or_softirq_pending(x)  (get_lowcore()->softirq_pending |= (x))
++/*
++ *  Not sure what the right thing is here  for s390,
++ *  but returning 0 will result in no logical change
++ *  from what happens now
++ */
++#define __cpu_softirq_pending(x) (0)
+ 
+ #define __ARCH_IRQ_STAT
+ #define __ARCH_IRQ_EXIT_IRQS_DISABLED
+diff --git a/include/linux/interrupt.h b/include/linux/interrupt.h
+--- a/include/linux/interrupt.h
++++ b/include/linux/interrupt.h
+@@ -539,6 +539,17 @@ DECLARE_STATIC_KEY_FALSE(force_irqthreads_key);
+ #define set_softirq_pending(x)	(__this_cpu_write(local_softirq_pending_ref, (x)))
+ #define or_softirq_pending(x)	(__this_cpu_or(local_softirq_pending_ref, (x)))
+ 
++/**
++ * __cpu_softirq_pending() - Checks to see if softirq is pending on a cpu
++ *
++ * This helper is inherently racy, as we're accessing per-cpu data w/o locks.
++ * But peeking at the flag can still be useful when deciding where to place a
++ * task.
++ */
++static inline u32 __cpu_softirq_pending(int cpu)
++{
++	return (u32)per_cpu(local_softirq_pending_ref, cpu);
++}
+ #endif /* local_softirq_pending */
+ 
+ /* Some architectures might implement lazy enabling/disabling of
+@@ -587,6 +598,12 @@ enum
+ #define SOFTIRQ_HOTPLUG_SAFE_MASK (BIT(TIMER_SOFTIRQ) | BIT(IRQ_POLL_SOFTIRQ) |\
+ 				   BIT(HRTIMER_SOFTIRQ) | BIT(RCU_SOFTIRQ))
+ 
++/* Softirq's where the handling might be long: */
++#define LONG_SOFTIRQ_MASK (BIT(NET_TX_SOFTIRQ)    | \
++			   BIT(NET_RX_SOFTIRQ)    | \
++			   BIT(BLOCK_SOFTIRQ)     | \
++			   BIT(IRQ_POLL_SOFTIRQ)  | \
++			   BIT(TASKLET_SOFTIRQ))
+ 
+ /* map softirq index to softirq name. update 'softirq_to_name' in
+  * kernel/softirq.c when adding a new softirq.
+@@ -670,6 +687,10 @@ static inline unsigned int local_timers_pending(void)
+ 
+ DECLARE_PER_CPU(struct task_struct *, ksoftirqd);
+ 
++#ifdef CONFIG_RT_SOFTIRQ_AWARE_SCHED
++DECLARE_PER_CPU(u32, active_softirqs);
++#endif
++
+ static inline struct task_struct *this_cpu_ksoftirqd(void)
+ {
+ 	return this_cpu_read(ksoftirqd);
+diff --git a/init/Kconfig b/init/Kconfig
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -1442,6 +1442,16 @@ config SCHED_AUTOGROUP
+ 	  desktop applications.  Task group autogeneration is currently based
+ 	  upon task session.
+ 
++config RT_SOFTIRQ_AWARE_SCHED
++	bool "Improve RT scheduling during long softirq execution"
++	depends on SMP && !PREEMPT_RT
++	default n
++	help
++	  Enable an optimization which tries to avoid placing RT tasks on CPUs
++	  occupied by nonpreemptible tasks, such as a long softirq or CPUs
++	  which may soon block preemptions, such as a CPU running a ksoftirq
++	  thread which handles slow softirqs.
++
+ config RELAY
+ 	bool "Kernel->user space relay support (formerly relayfs)"
+ 	select IRQ_WORK
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -4,6 +4,8 @@
+  * policies)
+  */
+ 
++#include <trace/hooks/sched.h>
++#undef TRACE_INCLUDE_PATH
+ #include "sched.h"
+ #include "pelt.h"
+ 
+@@ -885,6 +887,13 @@ static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)
+ 		if (likely(rt_b->rt_runtime)) {
+ 			rt_rq->rt_throttled = 1;
+ 			printk_deferred_once("sched: RT throttling activated\n");
++
++			trace_android_vh_dump_throttled_rt_tasks(
++				raw_smp_processor_id(),
++				rq_clock(rq_of_rt_rq(rt_rq)),
++				sched_rt_period(rt_rq),
++				runtime,
++				hrtimer_get_expires_ns(&rt_b->rt_period_timer));
+ 		} else {
+ 			/*
+ 			 * In case we did anyway, make it go away,
+@@ -1424,6 +1433,27 @@ static void dequeue_rt_entity(struct sched_rt_entity *rt_se, unsigned int flags)
+ 	enqueue_top_rt_rq(&rq->rt);
+ }
+ 
++#ifdef CONFIG_SMP
++static inline bool should_honor_rt_sync(struct rq *rq, struct task_struct *p,
++					bool sync)
++{
++	/*
++	 * If the waker is CFS, then an RT sync wakeup would preempt the waker
++	 * and force it to run for a likely small time after the RT wakee is
++	 * done. So, only honor RT sync wakeups from RT wakers.
++	 */
++	return sync && task_has_rt_policy(rq->curr) &&
++		p->prio <= rq->rt.highest_prio.next &&
++		rq->rt.rt_nr_running <= 2;
++}
++#else
++static inline bool should_honor_rt_sync(struct rq *rq, struct task_struct *p,
++					bool sync)
++{
++	return 0;
++}
++#endif
++
+ /*
+  * Adding/removing a task to/from a priority array:
+  */
+@@ -1431,6 +1461,7 @@ static void
+ enqueue_task_rt(struct rq *rq, struct task_struct *p, int flags)
+ {
+ 	struct sched_rt_entity *rt_se = &p->rt;
++	bool sync = !!(flags & ENQUEUE_WAKEUP_SYNC);
+ 
+ 	if (flags & ENQUEUE_WAKEUP)
+ 		rt_se->timeout = 0;
+@@ -1443,7 +1474,8 @@ enqueue_task_rt(struct rq *rq, struct task_struct *p, int flags)
+ 	if (task_is_blocked(p))
+ 		return;
+ 
+-	if (!task_current(rq, p) && p->nr_cpus_allowed > 1)
++	if (!task_current(rq, p) && p->nr_cpus_allowed > 1 &&
++	    !should_honor_rt_sync(rq, p, sync))
+ 		enqueue_pushable_task(rq, p);
+ }
+ 
+@@ -1495,12 +1527,47 @@ static void yield_task_rt(struct rq *rq)
+ 
+ static int find_lowest_rq(struct task_struct *task);
+ 
++#ifdef CONFIG_RT_SOFTIRQ_AWARE_SCHED
++/*
++ * Return whether the given cpu is currently non-preemptible
++ * while handling a potentially long softirq, or if the current
++ * task is likely to block preemptions soon because it is a
++ * ksoftirq thread that is handling softirqs.
++ */
++static bool cpu_busy_with_softirqs(int cpu)
++{
++	u32 softirqs = per_cpu(active_softirqs, cpu) |
++		       __cpu_softirq_pending(cpu);
++
++	return softirqs & LONG_SOFTIRQ_MASK;
++}
++#else
++static bool cpu_busy_with_softirqs(int cpu)
++{
++	return false;
++}
++#endif /* CONFIG_RT_SOFTIRQ_AWARE_SCHED */
++
++static bool rt_task_fits_cpu(struct task_struct *p, int cpu)
++{
++	return rt_task_fits_capacity(p, cpu) && !cpu_busy_with_softirqs(cpu);
++}
++
+ static int
+ select_task_rq_rt(struct task_struct *p, int cpu, int flags)
+ {
+ 	struct task_struct *curr, *donor;
+ 	struct rq *rq;
++	struct rq *this_cpu_rq;
+ 	bool test;
++	int target_cpu = -1;
++	bool sync = !!(flags & WF_SYNC);
++	int this_cpu;
++
++	trace_android_rvh_select_task_rq_rt(p, cpu, flags & 0xF,
++					flags, &target_cpu);
++	if (target_cpu >= 0)
++		return target_cpu;
+ 
+ 	/* For anything but wake ups, just return the task_cpu */
+ 	if (!(flags & (WF_TTWU | WF_FORK)))
+@@ -1511,6 +1578,8 @@ select_task_rq_rt(struct task_struct *p, int cpu, int flags)
+ 	rcu_read_lock();
+ 	curr = READ_ONCE(rq->curr); /* unlocked access */
+ 	donor = READ_ONCE(rq->donor);
++	this_cpu = smp_processor_id();
++	this_cpu_rq = cpu_rq(this_cpu);
+ 
+ 	/*
+ 	 * If the current task on @p's runqueue is an RT task, then
+@@ -1534,22 +1603,33 @@ select_task_rq_rt(struct task_struct *p, int cpu, int flags)
+ 	 * This test is optimistic, if we get it wrong the load-balancer
+ 	 * will have to sort it out.
+ 	 *
+-	 * We take into account the capacity of the CPU to ensure it fits the
+-	 * requirement of the task - which is only important on heterogeneous
+-	 * systems like big.LITTLE.
++	 * We use rt_task_fits_cpu() to evaluate if the CPU is busy with
++	 * potentially long-running softirq work, as well as take into
++	 * account the capacity of the CPU to ensure it fits the
++	 * requirement of the task - which is only important on
++	 * heterogeneous systems like big.LITTLE.
+ 	 */
+ 	test = curr &&
+ 	       unlikely(rt_task(donor)) &&
+ 	       (curr->nr_cpus_allowed < 2 || donor->prio <= p->prio);
+ 
+-	if (test || !rt_task_fits_capacity(p, cpu)) {
++	/*
++	 * Respect the sync flag as long as the task can run on this CPU.
++	 */
++	if (should_honor_rt_sync(this_cpu_rq, p, sync) &&
++	    cpumask_test_cpu(this_cpu, p->cpus_ptr)) {
++		cpu = this_cpu;
++		goto out_unlock;
++	}
++
++	if (test || !rt_task_fits_cpu(p, cpu)) {
+ 		int target = find_lowest_rq(p);
+ 
+ 		/*
+ 		 * Bail out if we were forcing a migration to find a better
+ 		 * fitting CPU but our search failed.
+ 		 */
+-		if (!test && target != -1 && !rt_task_fits_capacity(p, target))
++		if (!test && target != -1 && !rt_task_fits_cpu(p, target))
+ 			goto out_unlock;
+ 
+ 		/*
+@@ -1594,6 +1674,8 @@ static void check_preempt_equal_prio(struct rq *rq, struct task_struct *p)
+ static int balance_rt(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
+ {
+ 	if (!on_rt_rq(&p->rt) && need_pull_rt_task(rq, p)) {
++		int done = 0;
++
+ 		/*
+ 		 * This is OK, because current is on_cpu, which avoids it being
+ 		 * picked for load-balance and preemption/IRQs are still
+@@ -1601,7 +1683,9 @@ static int balance_rt(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
+ 		 * not yet started the picking loop.
+ 		 */
+ 		rq_unpin_lock(rq, rf);
+-		pull_rt_task(rq);
++		trace_android_rvh_sched_balance_rt(rq, p, &done);
++		if (!done)
++			pull_rt_task(rq);
+ 		rq_repin_lock(rq, rf);
+ 	}
+ 
+@@ -1736,7 +1820,7 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p, struct task_s
+  * Return the highest pushable rq's task, which is suitable to be executed
+  * on the CPU, NULL otherwise
+  */
+-static struct task_struct *pick_highest_pushable_task(struct rq *rq, int cpu)
++struct task_struct *pick_highest_pushable_task(struct rq *rq, int cpu)
+ {
+ 	struct plist_head *head = &rq->rt.pushable_tasks;
+ 	struct task_struct *p;
+@@ -1751,6 +1835,7 @@ static struct task_struct *pick_highest_pushable_task(struct rq *rq, int cpu)
+ 
+ 	return NULL;
+ }
++EXPORT_SYMBOL_GPL(pick_highest_pushable_task);
+ 
+ static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
+ 
+@@ -1759,7 +1844,7 @@ static int find_lowest_rq(struct task_struct *task)
+ 	struct sched_domain *sd;
+ 	struct cpumask *lowest_mask = this_cpu_cpumask_var_ptr(local_cpu_mask);
+ 	int this_cpu = smp_processor_id();
+-	int cpu      = task_cpu(task);
++	int cpu      = -1;
+ 	int ret;
+ 
+ 	/* Make sure the mask is initialized first */
+@@ -1770,23 +1855,32 @@ static int find_lowest_rq(struct task_struct *task)
+ 		return -1; /* No other targets possible */
+ 
+ 	/*
+-	 * If we're on asym system ensure we consider the different capacities
+-	 * of the CPUs when searching for the lowest_mask.
++	 * If we're using the softirq optimization or if we are
++	 * on asym system, ensure we consider the softirq processing
++	 * or different capacities of the CPUs when searching for the
++	 * lowest_mask.
+ 	 */
+-	if (sched_asym_cpucap_active()) {
++	if (IS_ENABLED(CONFIG_RT_SOFTIRQ_AWARE_SCHED) ||
++	    sched_asym_cpucap_active()) {
+ 
+ 		ret = cpupri_find_fitness(&task_rq(task)->rd->cpupri,
+ 					  task, lowest_mask,
+-					  rt_task_fits_capacity);
++					  rt_task_fits_cpu);
+ 	} else {
+ 
+ 		ret = cpupri_find(&task_rq(task)->rd->cpupri,
+ 				  task, lowest_mask);
+ 	}
+ 
++	trace_android_rvh_find_lowest_rq(task, lowest_mask, ret, &cpu);
++	if (cpu >= 0)
++		return cpu;
++
+ 	if (!ret)
+ 		return -1; /* No targets found */
+ 
++	cpu = task_cpu(task);
++
+ 	/*
+ 	 * At this point we have built a mask of CPUs representing the
+ 	 * lowest priority tasks in the system.  Now we want to elect
+@@ -2121,6 +2215,9 @@ static int rto_next_cpu(struct root_domain *rd)
+ 		/* When rto_cpu is -1 this acts like cpumask_first() */
+ 		cpu = cpumask_next(rd->rto_cpu, rd->rto_mask);
+ 
++		/* this will be any CPU in the rd->rto_mask, and can be a halted cpu update it */
++		trace_android_rvh_rto_next_cpu(rd->rto_cpu, rd->rto_mask, &cpu);
++
+ 		rd->rto_cpu = cpu;
+ 
+ 		if (cpu < nr_cpu_ids)
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -2421,6 +2421,8 @@ extern const u32		sched_prio_to_wmult[40];
+ #define ENQUEUE_INITIAL		0x00080000
+ #define ENQUEUE_RQ_SELECTED	0x00100000
+ 
++#define ENQUEUE_WAKEUP_SYNC	0x80
++
+ #define RETRY_TASK		((void *)-1UL)
+ 
+ struct affinity_context {
+diff --git a/kernel/softirq.c b/kernel/softirq.c
+--- a/kernel/softirq.c
++++ b/kernel/softirq.c
+@@ -61,6 +61,21 @@ static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp
+ 
+ DEFINE_PER_CPU(struct task_struct *, ksoftirqd);
+ 
++#ifdef CONFIG_RT_SOFTIRQ_AWARE_SCHED
++/*
++ * active_softirqs -- per cpu, a mask of softirqs that are being handled,
++ * with the expectation that approximate answers are acceptable and therefore
++ * no synchronization.
++ */
++DEFINE_PER_CPU(u32, active_softirqs);
++static inline void set_active_softirqs(u32 pending)
++{
++	__this_cpu_write(active_softirqs, pending);
++}
++#else /* CONFIG_RT_SOFTIRQ_AWARE_SCHED */
++static inline void set_active_softirqs(u32 pending) {};
++#endif /* CONFIG_RT_SOFTIRQ_AWARE_SCHED */
++
+ const char * const softirq_to_name[NR_SOFTIRQS] = {
+ 	"HI", "TIMER", "NET_TX", "NET_RX", "BLOCK", "IRQ_POLL",
+ 	"TASKLET", "SCHED", "HRTIMER", "RCU"
+@@ -576,6 +591,21 @@ static inline bool lockdep_softirq_start(void) { return false; }
+ static inline void lockdep_softirq_end(bool in_hardirq) { }
+ #endif
+ 
++#ifdef CONFIG_RT_SOFTIRQ_AWARE_SCHED
++static __u32 softirq_deferred_for_rt(__u32 *pending)
++{
++	__u32 deferred = 0;
++
++	if (rt_task(current)) {
++		deferred = *pending & LONG_SOFTIRQ_MASK;
++		*pending &= ~LONG_SOFTIRQ_MASK;
++	}
++	return deferred;
++}
++#else
++#define softirq_deferred_for_rt(x) (0)
++#endif
++
+ static void handle_softirqs(bool ksirqd)
+ {
+ 	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
+@@ -583,6 +613,7 @@ static void handle_softirqs(bool ksirqd)
+ 	int max_restart = MAX_SOFTIRQ_RESTART;
+ 	struct softirq_action *h;
+ 	bool in_hardirq;
++	__u32 deferred;
+ 	__u32 pending;
+ 	int softirq_bit;
+ 
+@@ -594,14 +625,17 @@ static void handle_softirqs(bool ksirqd)
+ 	current->flags &= ~PF_MEMALLOC;
+ 
+ 	pending = local_softirq_pending();
++	deferred = softirq_deferred_for_rt(&pending);
+ 
+ 	softirq_handle_begin();
++
+ 	in_hardirq = lockdep_softirq_start();
+ 	account_softirq_enter(current);
+ 
+ restart:
+ 	/* Reset the pending bitmask before enabling irqs */
+-	set_softirq_pending(0);
++	set_softirq_pending(deferred);
++	set_active_softirqs(pending);
+ 
+ 	local_irq_enable();
+ 
+@@ -631,19 +665,23 @@ static void handle_softirqs(bool ksirqd)
+ 		pending >>= softirq_bit;
+ 	}
+ 
++	set_active_softirqs(0);
+ 	if (!IS_ENABLED(CONFIG_PREEMPT_RT) && ksirqd)
+ 		rcu_softirq_qs();
+ 
+ 	local_irq_disable();
+ 
+ 	pending = local_softirq_pending();
++	deferred = softirq_deferred_for_rt(&pending);
++
+ 	if (pending) {
+ 		if (time_before(jiffies, end) && !need_resched() &&
+ 		    --max_restart)
+ 			goto restart;
++	}
+ 
++	if (pending | deferred)
+ 		wakeup_softirqd();
+-	}
+ 
+ 	account_softirq_exit(current);
+ 	lockdep_softirq_end(in_hardirq);
