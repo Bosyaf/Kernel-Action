@@ -118,25 +118,32 @@ jobs:
           cd common
           echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
           PATCH_DIR="../patches"
+          
           if [ ! -d "$PATCH_DIR" ]; then
             echo "❌ HATA: $PATCH_DIR dizini bulunamadı!"
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "----------------------------------------------------"
-              echo "📦 İşleniyor: $filename"
-              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
-                echo "⚠️ SUSFS ekstra yaması algılandı, entegre ediliyor..."
-              fi
-              if patch -p1 --forward < "$patch_file"; then
+            exit 1
+          fi
+          
+          for patch_file in "$PATCH_DIR"/*.patch; do
+            filename=$(basename "$patch_file")
+            echo "----------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            # git apply daha strict ve doğru hata verir
+            if git apply --check "$patch_file" 2>&1; then
+              echo "✅ Patch geçerli, uygulanıyor..."
+              if git apply "$patch_file"; then
                 echo "✅ BAŞARILI: $filename"
               else
-                echo "❌ ATLANDI: $filename"
+                echo "❌ UYGULAMA BAŞARISIZ: $filename"
               fi
-            done
-            echo "----------------------------------------------------"
-            echo "🎉 Özel yamalar tamamlandı!"
-          fi
+            else
+              echo "⚠️ Patch uygulanamaz (zaten var veya hatalı): $filename"
+            fi
+          done
+          
+          echo "----------------------------------------------------"
+          echo "🎉 Özel yamalar tamamlandı!"
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
