@@ -47,12 +47,8 @@ jobs:
           
       - name: 2. Kaynakları Çek
         run: |
-          # AnyKernel3 indirme (Aynen kalıyor)
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
-          
-          # CodeLinaro Android14 6.1.174 Sourceunu "common" klasörüne çekme
-          git clone -b aosp-new/upstream-master --depth=1 https://git.codelinaro.org/clo/la/kernel/common.git common
-
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -117,37 +113,40 @@ jobs:
               fi
             fi
           fi
+      - name: 5. Wi-Fi ve Asya Yamaları
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+          rm -f wifi.patch
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
           echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
           PATCH_DIR="../patches"
-          
           if [ ! -d "$PATCH_DIR" ]; then
             echo "❌ HATA: $PATCH_DIR dizini bulunamadı!"
-            exit 1
-          fi
-          
-          for patch_file in "$PATCH_DIR"/*.patch; do
-            filename=$(basename "$patch_file")
-            echo "----------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
-            # git apply daha strict ve doğru hata verir
-            if git apply --check "$patch_file" 2>&1; then
-              echo "✅ Patch geçerli, uygulanıyor..."
-              if git apply "$patch_file"; then
+          else
+            for patch_file in "$PATCH_DIR"/*.patch; do
+              filename=$(basename "$patch_file")
+              echo "----------------------------------------------------"
+              echo "📦 İşleniyor: $filename"
+              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
+                echo "⚠️ SUSFS ekstra yaması algılandı, entegre ediliyor..."
+              fi
+              if patch -p1 --forward < "$patch_file"; then
                 echo "✅ BAŞARILI: $filename"
               else
-                echo "❌ UYGULAMA BAŞARISIZ: $filename"
+                echo "❌ ATLANDI: $filename"
               fi
-            else
-              echo "⚠️ Patch uygulanamaz (zaten var veya hatalı): $filename"
-            fi
-          done
-          
-          echo "----------------------------------------------------"
-          echo "🎉 Özel yamalar tamamlandı!"
+            done
+            echo "----------------------------------------------------"
+            echo "🎉 Özel yamalar tamamlandı!"
+          fi
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -203,7 +202,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -236,23 +235,25 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
-            -falign-functions=16 \
+            -falign-functions=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
-            -fno-strict-aliasing \
-            -fno-common \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
+            -Wno-unused-command-line-argument \
             -Wno-error \
             -Wno-format \
-            -Wno-format-extra-args" \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand \
+            -Wno-unused-variable \
+            -Wno-address-of-packed-member" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
@@ -271,6 +272,7 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
 
