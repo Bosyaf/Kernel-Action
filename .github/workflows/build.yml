@@ -237,6 +237,8 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=16 \
             -fomit-frame-pointer \
+            -fno-strict-aliasing \
+            -fno-common
             -ffunction-sections \
             -fdata-sections \
             -fno-unwind-tables \
