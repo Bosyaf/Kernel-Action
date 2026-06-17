@@ -1,74 +1,277 @@
-name: Xiaomi 14 Vendor Build (LLVM 17)
+name: Build QCA WLAN Modules (Houji/Pineapple)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  ARCH: arm64
+  CROSS_COMPILE: aarch64-linux-gnu-
+  CLANG_VERSION: 17.0.2
+  WLAN_PROFILE: kiwi_v2
+  BOARD_PLATFORM: pineapple
+  KERNEL_REPO: Bosyaf/android_kernel_common-6.1
+  KERNEL_BRANCH: android14-6.1-staging
+  WLAN_REPO: MiCode/vendor_qcom_opensource_wlan
+  WLAN_BRANCH: shennong-u-oss
+  DEFCONFIG: gki_defconfig
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
     steps:
-      - name: Maximize Space
-        uses: easimon/maximize-build-space@master
+      # ====================================================
+      # 1. ORTAM HAZIRLIGI
+      # ====================================================
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            libelf-dev \
+            libssl-dev \
+            bc \
+            bison \
+            flex \
+            python3 \
+            python3-minimal \
+            device-tree-compiler \
+            libncurses5-dev \
+            cpio \
+            rsync \
+            wget \
+            xz-utils \
+            curl \
+            git
+
+      # ====================================================
+      # 2. TOOLCHAIN - LLVM/Clang 17.0.2
+      # ====================================================
+      - name: Cache LLVM ${{ env.CLANG_VERSION }}
+        id: cache-llvm
+        uses: actions/cache@v4
         with:
-          root-reserve-mb: 16384
-          temp-reserve-mb: 2048
-          swap-size-gb: 16
+          path: $HOME/llvm-17
+          key: llvm-${{ env.CLANG_VERSION }}-ubuntu2204
 
-      - name: Checkout
+      - name: Download LLVM ${{ env.CLANG_VERSION }}
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        run: |
+          wget -q -O llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/clang+llvm-${CLANG_VERSION}-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
+          mkdir -p $HOME/llvm-17
+          tar -xf llvm.tar.xz -C $HOME/llvm-17 --strip-components=1
+          rm llvm.tar.xz
+
+      - name: Setup Clang path
+        run: |
+          echo "$HOME/llvm-17/bin" >> $GITHUB_PATH
+          $HOME/llvm-17/bin/clang --version
+
+      # ====================================================
+      # 3. KERNEL SOURCE
+      # ====================================================
+      - name: Clone GKI Kernel
         uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ env.KERNEL_BRANCH }}
+          path: kernel
+          fetch-depth: 1
 
-      - name: 1. Ortam ve LLVM 17 Kurulumu
+      - name: Prepare GKI Kernel (defconfig + modules_prepare)
         run: |
-          sudo apt update && sudo apt install -y python3 git curl bc bison flex make libssl-dev zip
-          mkdir -p $GITHUB_WORKSPACE/clang
-          # AOSP LLVM 17 (r498224b) indirme
-          curl -fLSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498224b.tar.gz -o clang.tar.gz
-          tar -xf clang.tar.gz -C $GITHUB_WORKSPACE/clang
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+          cd kernel
 
-      - name: 2. Kaynakları ve Araçları Çek
-        run: |
-          git clone -b new https://github.com/Bosyaf/xiaomi14.git --depth=1 common
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          # Magiskboot çek (Unpack/Repack için)
-          wget https://github.com/tiann/KernelSU/raw/main/kernel/setup.sh -O magiskboot_setup.sh # Örnek araç
+          echo "=== gki_defconfig olusturuluyor ==="
+          make ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            ${{ env.DEFCONFIG }}
 
-      - name: 3. Kernel ve Modülleri Derle
-        run: |
-          cd common
-          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          make O=out ARCH=arm64 vendor/pineapple-gki_defconfig
-          
-          # WiFi hatasını geçmek için devre dışı bırakıyoruz (İstersen enable yapabilirsin)
-          scripts/config --file out/.config --disable CONFIG_QCA_CLD_WLAN
-          scripts/config --file out/.config --enable CONFIG_SCHED_WALT
-          
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            Image modules
-          
-      - name: 4. Vendor Boot Paketleme (Cerrahi İşlem)
-        run: |
-          # NOT: Bu adım için ana dizine 'vendor_boot.img' koyman lazım
-          # Eğer yoksa script hata vermesin diye sadece Image alacak şekilde ayarladım
-          mkdir -p out_final
-          cp common/out/arch/arm64/boot/Image out_final/
-          
-          # Derlenen modülleri topla
-          find common/out/ -name "*.ko" -exec cp {} out_final/ \;
-          
-          echo "✅ Modüller ve Image hazır."
+          # WLAN icin gerekli config'leri ekle
+          cat >> .config << 'EOF'
+          CONFIG_PCI=y
+          CONFIG_PCIEPORTBUS=y
+          CONFIG_PCI_MSI=y
+          CONFIG_PCIE_QCOM=y
+          CONFIG_MHI_BUS=y
+          CONFIG_MHI_BUS_PCI_GENERIC=y
+          CONFIG_QCOM_QMI_HELPERS=y
+          CONFIG_NET=y
+          CONFIG_WIRELESS=y
+          CONFIG_CFG80211=y
+          CONFIG_MAC80211=y
+          CONFIG_RFKILL=y
+          EOF
 
-      - name: 5. AnyKernel3 Hazırlığı
-        run: |
-          cd AnyKernel3
-          cp ../out_final/Image .
-          mkdir -p modules/vendor/lib/modules
-          cp ../out_final/*.ko modules/vendor/lib/modules/
-          zip -r "../Xiaomi14-WALT-Build.zip" ./*
+          # Config'i cozumle
+          make ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig
 
-      - name: 6. Upload Artifact
+          # modules_prepare - harici modul derleme icin gerekli
+          echo "=== modules_prepare basliyor ==="
+          make ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            modules_prepare
+
+          echo "=== modules_prepare tamam ==="
+
+      # ====================================================
+      # 4. WLAN SOURCE
+      # ====================================================
+      - name: Clone WLAN Source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WLAN_REPO }}
+          ref: ${{ env.WLAN_BRANCH }}
+          path: wlan
+          fetch-depth: 1
+
+      - name: Fix WLAN symlinks
+        run: |
+          cd wlan/qcacld-3.0
+          rm -f api cmn
+          ln -sf ../fw-api api
+          ln -sf ../qca-wifi-host-cmn cmn
+          echo "=== Symlinks ==="
+          ls -la api cmn
+
+      # ====================================================
+      # 5. PLATFORM MODULLERI DERLE
+      # ====================================================
+      - name: Build Platform Modules
+        run: |
+          cd wlan/platform
+
+          echo "=== Platform modülleri derleniyor ==="
+
+          make -C $GITHUB_WORKSPACE/kernel M=$(pwd) \
+            ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            WLAN_PLATFORM_ROOT=$(pwd) \
+            CONFIG_CNSS_OUT_OF_TREE=y \
+            CONFIG_CNSS2=m \
+            CONFIG_ICNSS2=m \
+            CONFIG_CNSS2_QMI=y \
+            CONFIG_ICNSS2_QMI=y \
+            CONFIG_CNSS2_DEBUG=y \
+            CONFIG_ICNSS2_DEBUG=y \
+            CONFIG_CNSS_QMI_SVC=m \
+            CONFIG_CNSS_PLAT_IPC_QMI_SVC=m \
+            CONFIG_CNSS_GENL=m \
+            CONFIG_WCNSS_MEM_PRE_ALLOC=m \
+            CONFIG_CNSS_UTILS=m \
+            CONFIG_CNSS2_SSR_DRIVER_DUMP=y \
+            modules
+
+          echo "=== Platform modülleri başarılı ==="
+          find . -name "*.ko" -exec ls -lh {} \;
+
+      # ====================================================
+      # 6. WLAN DRIVER DERLE
+      # ====================================================
+      - name: Build WLAN Driver (qca_cld3_kiwi_v2)
+        run: |
+          cd wlan/qcacld-3.0
+
+          echo "=== WLAN driver derleniyor (kiwi_v2 profile) ==="
+
+          make -C $GITHUB_WORKSPACE/kernel M=$(pwd) \
+            ARCH=${{ env.ARCH }} \
+            CROSS_COMPILE=${{ env.CROSS_COMPILE }} \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            WLAN_ROOT=$(pwd) \
+            WLAN_COMMON_ROOT=cmn \
+            WLAN_COMMON_INC=$(pwd)/cmn \
+            WLAN_FW_API=$(pwd)/../fw-api \
+            WLAN_PROFILE=${{ env.WLAN_PROFILE }} \
+            MODNAME=qca_cld3_kiwi_v2 \
+            DEVNAME=qca_cld3_kiwi_v2 \
+            BOARD_PLATFORM=${{ env.BOARD_PLATFORM }} \
+            CONFIG_QCA_CLD_WLAN=m \
+            CONFIG_QCA_WIFI_ISOC=0 \
+            CONFIG_QCA_WIFI_2_0=1 \
+            KBUILD_EXTRA_SYMBOLS=$GITHUB_WORKSPACE/wlan/platform/Module.symvers \
+            modules
+
+          echo "=== WLAN driver başarılı ==="
+          find . -maxdepth 1 -name "*.ko" -exec ls -lh {} \;
+
+      # ====================================================
+      # 7. TOPLA VE YUKLE
+      # ====================================================
+      - name: Collect all modules
+        run: |
+          mkdir -p output
+
+          echo "=== Toplanan modüller ==="
+
+          # Platform modülleri
+          echo "--- Platform ---"
+          find wlan/platform -name "*.ko" -exec cp -v {} output/ \;
+
+          # WLAN driver
+          echo "--- WLAN Driver ---"
+          find wlan/qcacld-3.0 -maxdepth 1 -name "*.ko" -exec cp -v {} output/ \;
+
+          # Strip debug symbols
+          for ko in output/*.ko; do
+            if [ -f "$ko" ]; then
+              aarch64-linux-gnu-strip --strip-unneeded "$ko" 2>/dev/null || true
+            fi
+          done
+
+          echo ""
+          echo "========================================="
+          echo "  DERLEME SONUÇLARI"
+          echo "========================================="
+          ls -lh output/
+          echo ""
+          echo "Toplam boyut:"
+          du -sh output/
+
+      - name: Upload kernel modules
         uses: actions/upload-artifact@v4
         with:
-          name: Xiaomi14-Kernel-Modules
-          path: "*.zip"
+          name: qca-wlan-kiwi_v2-kernel6.1
+          path: output/*.ko
+          retention-days: 30
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## 🏗️ Derleme Özeti" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Öğe | Değer |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cihaz | Xiaomi 14 (Houji) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Pineapple (SM8650) |" >> $GITHUB_STEP_SUMMARY
+          echo "| WiFi Chip | QCA Kiwi v2 (17cb:1107) |" >> $GITHUB_STEP_SUMMARY
+          echo "| WLAN Profile | ${{ env.WLAN_PROFILE }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kernel | ${{ env.KERNEL_BRANCH }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Toolchain | Clang ${{ env.CLANG_VERSION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Modüller" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh output/*.ko 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "Modül bulunamadı" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
