@@ -299,7 +299,7 @@ jobs:
             -Wl,--icf=safe \
             -Wl,-O2 \
             -Wl,--threads=1" \
-            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
         
           echo "BOOTHASH=Galadriel-Victory-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
