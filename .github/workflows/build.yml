@@ -242,13 +242,12 @@ jobs:
             -falign-functions=32 \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
-            -fno-common
+            -fno-common \
             -ffunction-sections \
             -fdata-sections \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
             -fno-semantic-interposition \
-            -fno-plt \
             -mllvm -enable-gvn-hoist \
             -mllvm -enable-ext-lsp-optimization \
             -mllvm -enable-loop-flattening \
