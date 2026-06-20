@@ -147,6 +147,39 @@ jobs:
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
+      - name: 5.6. Walt-X Governor Enjeksiyonu
+        run: |
+          cd common
+          echo "🔧 Walt-X Governor inject ediliyor..."
+          
+          cp "$GITHUB_WORKSPACE/governor-waltx.c" drivers/cpufreq/governor-waltx.c
+          
+          sed -i '/governor-waltx.o/d' drivers/cpufreq/Makefile
+          echo "obj-y += governor-waltx.o" >> drivers/cpufreq/Makefile
+          
+          if ! grep -q "CPU_FREQ_GOV_WALTX" drivers/cpufreq/Kconfig; then
+            sed -i '/^endmenu/d' drivers/cpufreq/Kconfig
+            cat >> drivers/cpufreq/Kconfig << 'KCONF'
+
+          config CPU_FREQ_GOV_WALTX
+                  bool "Walt-X CPU governor"
+                  default y
+                  help
+                    Walt-X v3.2 - Anti Parachute Max Hold Governor
+
+          config CPU_FREQ_DEFAULT_GOV_WALTX
+                  bool "Walt-X CPU default governor"
+                  default n
+                  select CPU_FREQ_GOV_WALTX
+                  help
+                    Use Walt-X as default CPU governor
+
+          endmenu
+          KCONF
+          fi
+          
+          echo "✅ Walt-X Governor inject edildi!"
+          
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
