@@ -85,6 +85,11 @@ jobs:
           if [ ! -d "AnyKernel3" ]; then
             git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           fi
+      - name: Clean Cached Root Stuff
+        run: |
+         cd common || true
+         rm -rf KernelSU-Next
+         rm -rf susfs4ksu
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
