@@ -52,11 +52,12 @@ jobs:
         run: |
           mkdir -p ${{ env.CCACHE_DIR }}
 
+      # ==================== CACHE'LER ====================
       - name: CCache Restore
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.ref }}-${{ github.run_id }}
+          key: ccache-${{ runner.os }}-${{ github.ref }}-${{ github.sha }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ github.ref }}-
 
@@ -64,14 +65,33 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/clang-zyc
-          key: clang-zyc-${{ runner.os }}-${{ github.run_id }}
+          key: clang-zyc-22.0.0git-20250928
           restore-keys: |
-            clang-zyc-${{ runner.os }}-
+            clang-zyc-
+
+      - name: Source Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            common
+            AnyKernel3
+          key: source-${{ runner.os }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            source-${{ runner.os }}-${{ github.ref }}-
+      # ===================================================
 
       - name: 2. Kaynakları Çek
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          if [ ! -d "common" ]; then
+            echo "Source cache bulunamadı, klonlanıyor..."
+            git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          else
+            echo "Source cache bulundu, klon atlanıyor."
+          fi
+
+          if [ ! -d "AnyKernel3" ]; then
+            git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          fi
 
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
