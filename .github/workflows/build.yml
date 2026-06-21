@@ -84,7 +84,7 @@ jobs:
         run: |
           if [ ! -d "common" ]; then
             echo "Source cache bulunamadı, klonlanıyor..."
-            git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+            git clone -b common-android14-6.1-lts https://android.googlesource.com/kernel/common --depth=1 common
           else
             echo "Source cache bulundu, klon atlanıyor."
           fi
