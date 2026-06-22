@@ -41,12 +41,10 @@ jobs:
           tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
-
       - name: 2. Kendi Kaynağını Çek (Bosyaf/my_work)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/Bosyaf/my_work.git --depth=1 common
-
       - name: 3. Full Kernel Config & Donanım Fixleri
         run: |
           cd common
@@ -58,6 +56,11 @@ jobs:
           
           CONFIG_FILE="out/.config"
           
+          # 2. Donanım ve Uyumluluk Fixleri (Senin Yamaların Çalışması İçin Şart)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_HDMI_HELPER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UNUSED_SYMBOLS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
+          
           # 3. Temel Performans ve Akıcılık Ayarları (Senin Tercihlerin)
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -67,7 +70,6 @@ jobs:
           
           # 4. Final Config Hazırlığı
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-
       - name: 4. Kernel Derleme (Image Üretimi)
         run: |
           cd common
@@ -80,7 +82,6 @@ jobs:
             Image
             
           echo "BOOTHASH=Bosyaf-Test-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 5. AnyKernel3 (Paketleme)
         run: |
           cd ./AnyKernel3
@@ -90,7 +91,6 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../Bosyaf_Pure_Image.zip" ./*
-
       - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
@@ -99,3 +99,4 @@ jobs:
           files: "Bosyaf_Pure_Image.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
