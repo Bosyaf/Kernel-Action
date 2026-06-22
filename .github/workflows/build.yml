@@ -57,8 +57,6 @@ jobs:
           CONFIG_FILE="out/.config"
           
           # 2. Donanım ve Uyumluluk Fixleri (Senin Yamaların Çalışması İçin Şart)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_HDMI_HELPER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UNUSED_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TRIM_UNUSED_KSYMS
           
           # 3. Temel Performans ve Akıcılık Ayarları (Senin Tercihlerin)
