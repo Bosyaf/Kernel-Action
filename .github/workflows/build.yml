@@ -58,11 +58,35 @@ jobs:
           
           # 3. Temel Performans ve Akıcılık Ayarları (Senin Tercihlerin)
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 250
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          # DRM
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_MIPI_DSI
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_KMS_HELPER
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_TTM
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_GEM_SHMEM_HELPER
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_PANEL
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_BRIDGE
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_PANEL_BRIDGE
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_PANEL_ORIENTATION_QUIRKS
+./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_NOMODESET
+./scripts/config --file $CONFIG_FILE --enable CONFIG_FB_CMDLINE
+
+# DRM Disable
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_DEBUG_MM
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_KUNIT_TEST
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_DEBUG_DP_MST_TOPOLOGY_REFS
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_DEBUG_MODESET_LOCK
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_LOAD_EDID_FIRMWARE
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_MSM
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_TEGRA
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_CDNS_DSI
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_CHIPONE_ICN6211
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_CHRONTEL_CH7033
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_DISPLAY_CONNECTOR
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_PANEL_MIPI_DBI
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_SIMPLEDRM
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DRM_LEGACY
+./scripts/config --file $CONFIG_FILE --disable CONFIG_FB
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
