@@ -57,11 +57,14 @@ jobs:
           CONFIG_FILE="out/.config"
           
           # 3. Temel Performans ve Akıcılık Ayarları (Senin Tercihlerin)
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 250
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe+"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           
           # 4. Final Config Hazırlığı
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
