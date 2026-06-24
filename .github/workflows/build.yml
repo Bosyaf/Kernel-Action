@@ -118,17 +118,75 @@ jobs:
           cd common
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-      - name: 5.4. Manuel Cerrahi Müdahale (clear_page alignment)
+      - name: 5.4. Manuel Cerrahi Müdahale (FAILED Olan Yamaların Fixi)
         run: |
           cd common
-          echo "🛠 clear_page fonksiyonu 16-byte hizalanıyor (SultanXDA Fix)..."
-          # Dosyada fonksiyonun başladığı yeri bul ve bir satır üstüne hizalamayı ekle
-          # Zaten varsa tekrar eklememesi için önce bir kontrol yaparız
+          echo "🛠 Otomatik yamada hata veren kritik dosyalar manuel işleniyor..."
+
+          # 1. clear_page alignment fix
           if ! grep -q "p2align 4" arch/arm64/lib/clear_page.S; then
             sed -i '/SYM_FUNC_START_PI(clear_page)/i \	.p2align 4' arch/arm64/lib/clear_page.S
-            echo "✅ Hizalama eklendi."
-          else
-            echo "⚠️ Hizalama zaten mevcut, atlanıyor."
+            echo "✅ clear_page hizalandı."
+          fi
+
+          # 2. CPUFreq Limit Re-write ve Unlikely Fix
+          if ! grep -q "get_cpumask_min_limit" drivers/cpufreq/cpufreq.c; then
+            # Veri yapılarını ekle
+            sed -i '/static LIST_HEAD(cpufreq_policy_list);/a \
+            \
+            #define MAX_CLUSTERS 3\
+            struct cpumask_uint_kv {\
+                cpumask_var_t key;\
+                unsigned int value;\
+            };\
+            static struct cpumask_uint_kv cpumask_min_limit_store[MAX_CLUSTERS] __read_mostly;\
+            \
+            static void store_cpumask_min_limit(const cpumask_var_t key, const unsigned int value) {\
+                int i;\
+                for (i = 0; i < MAX_CLUSTERS; i++) {\
+                    if (cpumask_equal(cpumask_min_limit_store[i].key, key) || unlikely(cpumask_empty(cpumask_min_limit_store[i].key))) {\
+                        cpumask_copy(cpumask_min_limit_store[i].key, key);\
+                        cpumask_min_limit_store[i].value = value;\
+                        return;\
+                    }\
+                }\
+                pr_err("cpumask_min_limit_store is full.\\n");\
+            }\
+            \
+            static unsigned int get_cpumask_min_limit(const cpumask_var_t key) {\
+                int i;\
+                for (i = 0; i < MAX_CLUSTERS; i++) {\
+                    if (cpumask_equal(cpumask_min_limit_store[i].key, key))\
+                        return cpumask_min_limit_store[i].value;\
+                }\
+                return INT_MAX;\
+            }' drivers/cpufreq/cpufreq.c
+
+            # Sysfs fonksiyonlarını ekle
+            sed -i '/static ssize_t show_cpuinfo_max_freq/i \
+            static ssize_t show_scaling_min_freq_limit(struct cpufreq_policy *policy, char *buf)\
+            {\
+                unsigned int val = get_cpumask_min_limit(policy->related_cpus);\
+                return sprintf(buf, "%u\\n", val);\
+            }\
+            \
+            static ssize_t store_scaling_min_freq_limit(struct cpufreq_policy *policy, const char *buf, size_t count)\
+            {\
+                unsigned int val;\
+                int ret = sscanf(buf, "%u", &val);\
+                if (ret != 1) return -EINVAL;\
+                store_cpumask_min_limit(policy->related_cpus, val);\
+                return count;\
+            }\
+            ' drivers/cpufreq/cpufreq.c
+
+            # Attribute tanımlarını ekle
+            sed -i '/cpufreq_freq_attr_rw(scaling_min_freq);/a cpufreq_freq_attr_rw(scaling_min_freq_limit);' drivers/cpufreq/cpufreq.c
+            sed -i '/&scaling_min_freq.attr,/a \	&scaling_min_freq_limit.attr,' drivers/cpufreq/cpufreq.c
+
+            # Asıl kısıtlama mantığını enjekte et
+            sed -i '/new_data.max = freq_qos_read_value(&policy->constraints, FREQ_QOS_MAX);/a \	new_data.min = min(new_data.min, get_cpumask_min_limit(policy->related_cpus));' drivers/cpufreq/cpufreq.c
+            echo "✅ CPUFreq Fix uygulandı."
           fi
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
@@ -266,7 +324,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
