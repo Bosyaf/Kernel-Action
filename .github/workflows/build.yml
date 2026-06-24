@@ -47,7 +47,7 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/Bosyaf/my_work.git --depth=1 common
 
-      - name: 3. Full Kernel Config & Kesin Dayatma
+      - name: 3. Full Kernel Config & Hassas Temizlik
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -58,42 +58,35 @@ jobs:
           
           CONFIG_FILE="out/.config"
           
-          # Google'ın kısıtlayıcı kontrolünü Makefile üzerinden devre dışı bırakalım
-          sed -i 's/check_defconfig//' build.config.gki || true
-          
-          # 2. Config Ayarlarını Uygula
+          # 2. İstediğin Pozitif Ayarlar (Netfilter ve Debug None)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
 
-          # 3. Bağımlılıkları Çöz (olddefconfig)
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          # 3. Bağımlılıkları Çöz (Pahole'u burada kör ediyoruz ki otomatik satır eklemesin)
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 PAHOLE=/bin/false olddefconfig
 
-          # 4. KESİN DAYATMA VE KONTROL (Mühendislik Garantisi)
-          # Eğer bir ayar olddefconfig sonrası düşmüşse, burası onu zorla geri yazar.
-          echo "Verifying and forcing critical configs..."
-          echo "CONFIG_NETFILTER_XT_TARGET_HL=y" >> $CONFIG_FILE
-          echo "CONFIG_NETFILTER_XT_TARGET_HMARK=y" >> $CONFIG_FILE
-          sed -i 's/CONFIG_DEBUG_INFO=y/# CONFIG_DEBUG_INFO is not set/' $CONFIG_FILE
-          echo "CONFIG_DEBUG_INFO_NONE=y" >> $CONFIG_FILE
+          # 4. NOKTA ATIŞI: Sadece bu 6 satırı dosyadan tamamen kazı (Delete)
+          # 'd' komutu satırı komple siler.
+          echo "⚠️  6 Hassas BTF/Pahole ayarı .config'den kazınıyor..."
+          sed -i '/CONFIG_DEBUG_INFO_BTF/d' $CONFIG_FILE
+          sed -i '/CONFIG_PAHOLE_HAS_SPLIT_BTF/d' $CONFIG_FILE
+          sed -i '/CONFIG_PAHOLE_HAS_BTF_TAG/d' $CONFIG_FILE
+          sed -i '/CONFIG_PAHOLE_HAS_LANG_EXCLUDE/d' $CONFIG_FILE
+          sed -i '/CONFIG_DEBUG_INFO_BTF_MODULES/d' $CONFIG_FILE
+          sed -i '/CONFIG_MODULE_ALLOW_BTF_MISMATCH/d' $CONFIG_FILE
           
-          # Son bir kez daha olddefconfig yaparak dosyayı mühürle
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-          
-          echo "✅ Configler mühürlendi."
+          echo "✅ .config dosyasında artık bu 6 satıra dair iz kalmadı."
 
       - name: 4. Kernel Derleme (Image Üretimi)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          # Derleme sırasında configin değişmemesi için KCONFIG_ALLCONFIG kullanılır
+          # Derleme sırasında PAHOLE=/bin/false geçmek, sistemin bu özellikleri tekrar tetiklemesini engeller.
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            PAHOLE=/bin/false \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse -Wno-error" \
