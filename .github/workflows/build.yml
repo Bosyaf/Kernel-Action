@@ -1,9 +1,12 @@
 name: Bosyaf Pure Test (Xiaomi 14)
+
 permissions:
   contents: write
   actions: write
+
 on:
   workflow_dispatch:
+
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
@@ -11,6 +14,8 @@ jobs:
     env:
       KBUILD_BUILD_USER: "bos"
       KBUILD_BUILD_HOST: "yaf"
+      DEFCONFIG: "gki_defconfig"
+
     steps:
       - name: Maximize Space
         uses: easimon/maximize-build-space@master
@@ -18,8 +23,10 @@ jobs:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
           swap-size-gb: 16
+
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
           sudo apt update -qq
@@ -35,62 +42,47 @@ jobs:
           tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
-      - name: 2. Kaynak & AnyKernel & ABK Çekimi
+
+      - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/Bosyaf/my_work.git --depth=1 common
-          git clone https://github.com/xingguangcuican6666/ABK_ABI_PATCH_SUITE.git --depth=1 abk_patch
-          git clone https://github.com/archlinux/linux.git --depth 1 --branch v7.0.12-arch1 reference/linux || true
-      - name: 3. ABK Display Release Spoof + Bridge
+          git clone https://github.com/xingguangcuican6666/ABK_ABI_PATCH_SUITE.git --depth=1 abk
+
+      - name: 3. Display Release Spoof (7.0.12)
         run: |
           cd common
-          # display_release_spoof - Kernel version'ı 7.0.12 olarak değiştir
-          sed -i 's/^VERSION = .*/VERSION = 7/' Makefile
-          sed -i 's/^PATCHLEVEL = .*/PATCHLEVEL = 0/' Makefile
-          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 12/' Makefile
-          # Bridge uygula
-          export KERNEL_ROOT="$GITHUB_WORKSPACE/common"
-          export ABK_MAINLINE_7012_ROOT="$GITHUB_WORKSPACE/reference/linux"
-          export ABK_ABI_BRIDGE_REPORT_DIR="$KERNEL_ROOT/abk_abi_patch_suite_reports/abi_bridge"
-          mkdir -p "$ABK_ABI_BRIDGE_REPORT_DIR"
-          cd "$GITHUB_WORKSPACE/abk_patch"
-          if [ -f setup.sh ]; then
-            chmod +x setup.sh
-            bash setup.sh || echo "⚠️ ABK setup skipped"
-          fi
-          # Python bridge script'lerini çalıştır
-          if [ -d scripts ]; then
-            for script in scripts/*.py; do
-              [ -f "$script" ] && python3 "$script" || true
-            done
-          fi
-          # Bridge report üret
-          if [ -f scripts/generate_bridge_report.py ]; then
-            python3 scripts/generate_bridge_report.py || true
-          fi
-          echo "✅ ABK spoof + bridge uygulandı"
-      - name: 4. Full Kernel Config & Donanım Fixleri
+          python3 "$GITHUB_WORKSPACE/abk/scripts/abk_display_spoof.py" "$PWD"
+          echo "✅ Display Release Spoof uygulandı"
+
+      - name: 4. Full Kernel Config
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           mkdir -p out
-          # 1. GKI Defconfig oluştur
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          
           CONFIG_FILE="out/.config"
+          
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          # Final Config Hazırlığı
+          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+
       - name: 5. Kernel Derleme (Image Üretimi)
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 -Wno-error" \
             Image
+            
           echo "BOOTHASH=Bosyaf-Test-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+
       - name: 6. AnyKernel3 (Paketleme)
         run: |
           cd ./AnyKernel3
@@ -99,6 +91,7 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../Bosyaf_Pure_Image.zip" ./*
+
       - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
