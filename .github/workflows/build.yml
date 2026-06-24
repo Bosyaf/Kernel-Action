@@ -21,7 +21,7 @@ jobs:
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
-          temp-reserve-mb: 2048
+          temp-size-mb: 2048
           swap-size-gb: 16
 
       - name: Checkout
@@ -35,7 +35,7 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-          echo "🔥 ZyC Clang 22 - ARMv9-a Optimized"
+          echo "🔥 ZyC Clang 22"
           CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
           curl -fLSs "$CLANG_URL" -o clang.tar.gz
           mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
@@ -49,11 +49,17 @@ jobs:
           git clone https://github.com/Bosyaf/my_work.git --depth=1 common
           git clone https://github.com/xingguangcuican6666/ABK_ABI_PATCH_SUITE.git --depth=1 abk
 
-      - name: 3. Display Release Spoof (7.0.12)
+      - name: 3. ABK Patch'leri Uygula
         run: |
           cd common
+          
+          echo "🎭 1/3 - Display Release Spoof (6.1 -> 7.0.12)"
           python3 "$GITHUB_WORKSPACE/abk/scripts/abk_display_spoof.py" "$PWD"
-          echo "✅ Display Release Spoof uygulandı"
+          
+          echo "🔗 2/3 - ABI Bridge"
+          python3 "$GITHUB_WORKSPACE/abk/scripts/abk_dual_abi_bridge_apply.py" "$PWD" global_7012
+          
+          echo "✅ Tüm ABK patch'leri uygulandı"
 
       - name: 4. Full Kernel Config
         run: |
@@ -70,7 +76,7 @@ jobs:
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
-      - name: 5. Kernel Derleme (Image Üretimi)
+      - name: 5. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
