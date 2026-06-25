@@ -1,157 +1,94 @@
-name: Kernel Build - Xiaomi Mi 14 GKI
+name: Bosyaf Pure Test (Xiaomi 14)
+
+permissions:
+  contents: write
+  actions: write
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04
-    
+  build-kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 420
+    env:
+      KBUILD_BUILD_USER: "bos"
+      KBUILD_BUILD_HOST: "yaf"
+
     steps:
-    - name: Checkout kernel source
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
+      - name: Maximize Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          swap-size-gb: 16
 
-    - name: Setup build environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          libncurses5-dev \
-          libssl-dev \
-          bison \
-          flex \
-          libelf-dev \
-          libkmod-dev \
-          cpio \
-          python3 \
-          python3-pip \
-          wget \
-          curl \
-          git \
-          lzop \
-          bc \
-          kmod \
-          xz-utils \
-          zip \
-          unzip \
-          device-tree-compiler \
-          gcc-aarch64-linux-gnu \
-          g++-aarch64-linux-gnu
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Download Android Clang (r487747c - Android 14 6.1)
-      run: |
-        mkdir -p $HOME/toolchain
-        cd $HOME/toolchain
-        echo "Downloading Clang r487747c..."
-        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz -O clang.tar.gz || \
-        wget -q https://storage.googleapis.com/android-global/clang/r487747c/linux-x86_64.tar.xz -O clang.tar.xz
-        
-        if [ -f clang.tar.gz ]; then
-          mkdir clang && tar -xf clang.tar.gz -C clang
-        else
-          tar -xf clang.tar.xz
-          mv clang-r487747c clang
-        fi
-        
-        echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
-        ls -la $HOME/toolchain/clang/bin/clang
+      - name: 1. Paketler ve ZyC Clang Çekimi
+        run: |
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            pkg-config zstd
+          echo "🔥 ZyC Clang 22 - ARMv9-a Optimized"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          rm -f clang.tar.gz
+          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
+      - name: 2. Kendi Kaynağını Çek (Bosyaf/my_work)
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone https://github.com/Bosyaf/my_work.git --depth=1 common
+      - name: 3. Full Kernel Config & Donanım Fixleri
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          mkdir -p out
+          
+          # 1. GKI Defconfig oluştur
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          
+          CONFIG_FILE="out/.config"
+          # 3. Temel Performans ve Akıcılık Ayarları (Senin Tercihlerin)
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          
+          # 4. Final Config Hazırlığı
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+      - name: 4. Kernel Derleme (Image Üretimi)
+        run: |
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" LD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            KCFLAGS="-O2 -Wno-error" \
+            Image
+            
+          echo "BOOTHASH=Bosyaf-Test-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+      - name: 5. AnyKernel3 (Paketleme)
+        run: |
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=Bosyaf Pure Test - Xiaomi 14/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          # houji (Xiaomi 14) için slot ayarı
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../Bosyaf_Pure_Image.zip" ./*
+      - name: 6. Release Yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "Bosyaf Pure Image (SM8650)"
+          files: "Bosyaf_Pure_Image.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Verify source structure
-      run: |
-        echo "=== Repo root ==="
-        ls -la
-        echo ""
-        echo "=== arch/arm64/configs/ ==="
-        ls -la arch/arm64/configs/
-        echo ""
-        echo "=== gki_defconfig exists? ==="
-        ls -la arch/arm64/configs/gki_defconfig
-
-    - name: Show clang version
-      run: |
-        clang --version
-        aarch64-linux-gnu-gcc --version
-
-    - name: Generate kernel config
-      run: |
-        make ARCH=arm64 \
-          CC=clang \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          gki_defconfig
-
-    - name: Build kernel
-      run: |
-        make -j$(nproc) ARCH=arm64 \
-          CC=clang \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          LD=ld.lld \
-          AR=llvm-ar \
-          NM=llvm-nm \
-          OBJCOPY=llvm-objcopy \
-          OBJDUMP=llvm-objdump \
-          STRIP=llvm-strip \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          2>&1 | tee build.log
-
-    - name: Check build output
-      if: always()
-      run: |
-        echo "=== Boot directory ==="
-        ls -la arch/arm64/boot/ 2>/dev/null || echo "boot/ not found"
-        echo ""
-        echo "=== Image files ==="
-        find arch/arm64/boot/ -name "Image*" -type f 2>/dev/null
-        find . -name "Image" -type f 2>/dev/null | head -10
-        find . -name "Image.gz*" -type f 2>/dev/null | head -10
-
-    - name: Upload Image
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: Image
-        path: arch/arm64/boot/Image
-        if-no-files-found: warn
-        retention-days: 14
-
-    - name: Upload Image.gz
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: Image.gz
-        path: arch/arm64/boot/Image.gz
-        if-no-files-found: warn
-        retention-days: 14
-
-    - name: Upload Image.gz-dtb
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: Image.gz-dtb
-        path: arch/arm64/boot/Image.gz-dtb
-        if-no-files-found: warn
-        retention-days: 14
-
-    - name: Upload all kernel modules
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: kernel-modules
-        path: |
-          **/*.ko
-        if-no-files-found: ignore
-        retention-days: 14
-
-    - name: Upload build log
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: build-log
-        path: build.log
-        retention-days: 14
+          
