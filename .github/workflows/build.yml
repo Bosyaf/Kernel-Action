@@ -93,10 +93,6 @@ jobs:
 
           # Bağımlılıkları çöz ve .config'i güncelle
           yes "" | make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-
-          
-          # 4. Final Config Hazırlığı
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
       - name: 4. Kernel Derleme (Image Üretimi)
         run: |
           cd common
