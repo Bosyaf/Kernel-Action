@@ -1,9 +1,7 @@
-name: Kernel Build
+name: Kernel Build - Xiaomi Mi 14 GKI
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -15,7 +13,7 @@ jobs:
     - name: Checkout kernel source
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
+        fetch-depth: 1
 
     - name: Setup build environment
       run: |
@@ -38,85 +36,117 @@ jobs:
           bc \
           kmod \
           xz-utils \
-          ca-certificates \
-          gnupg \
-          lsb-release \
-          software-properties-common
+          zip \
+          unzip \
+          device-tree-compiler \
+          gcc-aarch64-linux-gnu \
+          g++-aarch64-linux-gnu
 
-    - name: Download Android Clang
+    - name: Download Android Clang (r487747c - Android 14 6.1)
       run: |
-        mkdir -p $GITHUB_WORKSPACE/toolchain
-        cd $GITHUB_WORKSPACE/toolchain
-        wget -q https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
-        unzip -q android-ndk-r27c-linux.zip
-        mv android-ndk-r27c clang
-        echo "CLANG_PATH=$GITHUB_WORKSPACE/toolchain/clang" >> $GITHUB_ENV
+        mkdir -p $HOME/toolchain
+        cd $HOME/toolchain
+        echo "Downloading Clang r487747c..."
+        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz -O clang.tar.gz || \
+        wget -q https://storage.googleapis.com/android-global/clang/r487747c/linux-x86_64.tar.xz -O clang.tar.xz
+        
+        if [ -f clang.tar.gz ]; then
+          mkdir clang && tar -xf clang.tar.gz -C clang
+        else
+          tar -xf clang.tar.xz
+          mv clang-r487747c clang
+        fi
+        
+        echo "$HOME/toolchain/clang/bin" >> $GITHUB_PATH
+        ls -la $HOME/toolchain/clang/bin/clang
 
-    - name: Setup Clang path
+    - name: Verify source structure
       run: |
-        echo "$CLANG_PATH/bin" >> $GITHUB_PATH
-        export CC=$CLANG_PATH/bin/clang
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-
-    - name: Download GCC aarch64
-      run: |
-        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-        echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-
-    - name: Check kernel configuration
-      run: |
+        echo "=== Repo root ==="
+        ls -la
+        echo ""
+        echo "=== arch/arm64/configs/ ==="
         ls -la arch/arm64/configs/
-        cat arch/arm64/configs/gki_defconfig | head -50
+        echo ""
+        echo "=== gki_defconfig exists? ==="
+        ls -la arch/arm64/configs/gki_defconfig
 
-    - name: Generate kernel configuration
+    - name: Show clang version
       run: |
-        make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CC=$CLANG_PATH/bin/clang \
+        clang --version
+        aarch64-linux-gnu-gcc --version
+
+    - name: Generate kernel config
+      run: |
+        make ARCH=arm64 \
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          LLVM=1 \
+          LLVM_IAS=1 \
           gki_defconfig
 
     - name: Build kernel
       run: |
-        make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-          CLANG_TRIPLE=aarch64-linux-gnu- \
-          CC=$CLANG_PATH/bin/clang \
-          LD=$CLANG_PATH/bin/ld.lld \
-          AR=$CLANG_PATH/bin/llvm-ar \
-          NM=$CLANG_PATH/bin/llvm-nm \
-          OBJCOPY=$CLANG_PATH/bin/llvm-objcopy \
-          OBJDUMP=$CLANG_PATH/bin/llvm-objdump \
-          STRIP=$CLANG_PATH/bin/llvm-strip \
+        make -j$(nproc) ARCH=arm64 \
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          LD=ld.lld \
+          AR=llvm-ar \
+          NM=llvm-nm \
+          OBJCOPY=llvm-objcopy \
+          OBJDUMP=llvm-objdump \
+          STRIP=llvm-strip \
+          LLVM=1 \
           LLVM_IAS=1 \
           2>&1 | tee build.log
 
     - name: Check build output
+      if: always()
       run: |
-        ls -la arch/arm64/boot/
-        file arch/arm64/boot/Image
-        file arch/arm64/boot/Image.gz
-        file arch/arm64/boot/Image.gz-dtb
+        echo "=== Boot directory ==="
+        ls -la arch/arm64/boot/ 2>/dev/null || echo "boot/ not found"
+        echo ""
+        echo "=== Image files ==="
+        find arch/arm64/boot/ -name "Image*" -type f 2>/dev/null
+        find . -name "Image" -type f 2>/dev/null | head -10
+        find . -name "Image.gz*" -type f 2>/dev/null | head -10
 
-    - name: Upload kernel Image
+    - name: Upload Image
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: Image
         path: arch/arm64/boot/Image
-        retention-days: 7
+        if-no-files-found: warn
+        retention-days: 14
 
-    - name: Upload kernel Image.gz
+    - name: Upload Image.gz
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: Image.gz
         path: arch/arm64/boot/Image.gz
-        retention-days: 7
+        if-no-files-found: warn
+        retention-days: 14
 
-    - name: Upload kernel Image.gz-dtb
+    - name: Upload Image.gz-dtb
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: Image.gz-dtb
         path: arch/arm64/boot/Image.gz-dtb
-        retention-days: 7
+        if-no-files-found: warn
+        retention-days: 14
+
+    - name: Upload all kernel modules
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: kernel-modules
+        path: |
+          **/*.ko
+        if-no-files-found: ignore
+        retention-days: 14
 
     - name: Upload build log
       uses: actions/upload-artifact@v4
@@ -124,4 +154,4 @@ jobs:
       with:
         name: build-log
         path: build.log
-        retention-days: 7
+        retention-days: 14
