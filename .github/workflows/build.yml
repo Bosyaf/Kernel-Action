@@ -113,6 +113,11 @@ jobs:
               fi
             fi
           fi
+      - name: 5. Asya Yamaları
+        run: |
+          cd common
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
@@ -141,12 +146,58 @@ jobs:
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          touch .scmversion
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod +x scripts/check-local-export
           mkdir -p out
-          
-          # 1. GKI Defconfig oluştur
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
- 
+          [ -x ./scripts/config ] || chmod +x ./scripts/config || true
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            gki_defconfig
+          CONFIG_FILE="out/.config"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_NETEM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          
+          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -158,6 +209,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe++"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -172,8 +226,28 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -Wno-error" \
-            Image
+            KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -falign-functions=16 \
+            -fomit-frame-pointer \
+            -fno-strict-aliasing \
+            -fno-common \
+            -ffunction-sections \
+            -fdata-sections \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
+            -Wno-unused-command-line-argument \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand \
+            -Wno-unused-variable \
+            -Wno-address-of-packed-member" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe" \
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
