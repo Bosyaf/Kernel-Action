@@ -113,7 +113,16 @@ jobs:
               fi
             fi
           fi
-      
+      - name: 5. Wi-Fi ve Asya Yamaları
+        run: |
+          cd common
+          curl -fLSs https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
+          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
+            patch -p1 --forward < wifi.patch || true
+          fi
+          rm -f wifi.patch
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
       - name: 5.5. Özel Performans (Bosyaf Patches)
         run: |
           cd common
@@ -177,9 +186,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -190,7 +205,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_CUBIC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
           
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
@@ -204,7 +226,78 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe++"
+          
+          
+          # ========== Scheduler & Timer ==========
+./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
+./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
+./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
+./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
+./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
+
+./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
+./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
+./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
+./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
+
+./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+
+./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
+./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
+./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
+
+# ========== Thermal ==========
+./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
+./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+
+# ========== Memory ==========
+./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
+
+# ========== LLVM / LTO ==========
+./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
+./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+
+# ========== Debug ==========
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+
+# ========== Network ==========
+./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+
+./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_NETEM
+./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+
+./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
+./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_CUBIC
+./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
+
+./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+
+# ========== Filesystem ==========
+./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+
+# ========== Misc ==========
+./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+
+
+
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -242,7 +335,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
