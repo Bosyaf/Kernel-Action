@@ -104,7 +104,10 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
-
+        run: |
+          cd common
+          echo "📦 KernelSU-Next kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
       - name: 3.5. Multi-Manager Desteği
         id: ksu_patch_step
         run: |
