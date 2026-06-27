@@ -100,66 +100,10 @@ jobs:
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
 
       - name: 2. Kaynakları Çek
-        id: sources_step
         run: |
-          echo "🔍 ADIM 2: Kaynaklar Çekiliyor..."
-          echo "pending" > "$GITHUB_WORKSPACE/build_status/sources.status"
-          
-          # AnyKernel3
-          echo "📦 AnyKernel3 klonlanıyor..."
-          if git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3; then
-            if [ -f "AnyKernel3/anykernel.sh" ]; then
-              echo "  ✅ AnyKernel3: BAŞARILI"
-            else
-              echo "  ⚠️ AnyKernel3: Dosya eksik"
-            fi
-          else
-            echo "  ❌ AnyKernel3: BAŞARISIZ"
-          fi
-          
-          # common repo
-          echo "📦 common repo klonlanıyor..."
-          if git clone https://github.com/Bosyaf/my_work.git --depth=1 common; then
-            if [ -d "common" ] && [ ! -z "$(ls -A common)" ]; then
-              echo "  ✅ common repo: BAŞARILI"
-              echo "success" > "$GITHUB_WORKSPACE/build_status/sources.status"
-            else
-              echo "  ⚠️ common repo: Boş dizin"
-              echo "warning" > "$GITHUB_WORKSPACE/build_status/sources.status"
-            fi
-          else
-            echo "  ❌ common repo: BAŞARISIZ"
-            echo "failed" > "$GITHUB_WORKSPACE/build_status/sources.status"
-          fi
-
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
-        id: ksu_step
-        run: |
-          echo "🔍 ADIM 3: KernelSU-Next Kurulumu..."
-          echo "pending" > "$GITHUB_WORKSPACE/build_status/ksu.status"
-          
-          cd common
-          echo "📦 KernelSU-Next kuruluyor..."
-          
-          # KONTROL: common dizini var mı?
-          if [ ! -d "common" ]; then
-            echo "❌ HATA: common dizini bulunamadı!"
-            echo "failed" > "$GITHUB_WORKSPACE/build_status/ksu.status"
-            exit 1
-          fi
-          
-          if curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs; then
-            if [ -d "KernelSU-Next" ]; then
-              echo "✅ KernelSU-Next: BAŞARILI"
-              echo "success" > "$GITHUB_WORKSPACE/build_status/ksu.status"
-            else
-              echo "⚠️ KernelSU-Next: Dizin oluşturulmadı"
-              echo "warning" > "$GITHUB_WORKSPACE/build_status/ksu.status"
-            fi
-          else
-            echo "❌ KernelSU-Next: Kurulum başarısız"
-            echo "failed" > "$GITHUB_WORKSPACE/build_status/ksu.status"
-          fi
 
       - name: 3.5. Multi-Manager Desteği
         id: ksu_patch_step
