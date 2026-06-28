@@ -67,19 +67,6 @@ jobs:
           echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
 
-          echo "📦 SUSFS SPOOF_UNAME symbol fix uygulanıyor..."
-          cd "$GITHUB_WORKSPACE/common"
-          if [ -f "drivers/kernelsu/supercalls.c" ]; then
-          if grep -q "CONFIG_KSU_SUSFS_SPOOF_UNAME" drivers/kernelsu/supercalls.c; then
-          sed -i 's/#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME/#if 0 \/\/ DISABLED to fix build \*\//' \
-          drivers/kernelsu/supercalls.c
-          echo "  ✅ SPOOF_UNAME fix uygulandı!"
-          else
-          echo "  ℹ️ SPOOF_UNAME fix: Zaten uygulanmış veya gerek yok"
-          fi
-          else
-          echo "  ⚠️ supercalls.c bulunamadı, atlanıyor..."
-          fi
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
@@ -114,14 +101,7 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
-      - name: 4.5. KernelSU-Next Multi Manager Patch
-        run: |
-          cd common
-          echo "📦 Multi Manager patch'i uygulanıyor..."
-          if [ -f "KernelSU-Next/ksu-add-more-managers-support.patch" ]; then
-            patch -p1 < KernelSU-Next/ksu-add-more-managers-support.patch || true
-          fi
-          
+  
       - name: 5. Asya Yaması
         run: |
           cd common
