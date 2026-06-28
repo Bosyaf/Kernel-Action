@@ -255,26 +255,6 @@ jobs:
             echo "  ⚠️ supercalls.c: Dosya yok"
           fi
           
-          echo "📦 AVC spoof fix uygulanıyor..."
-          if [ -f "drivers/kernelsu/extras.c" ]; then
-            if grep -q "susfs_avc_log_spoofing_key_true" drivers/kernelsu/extras.c; then
-              if ! grep -q "__attribute__((weak))" drivers/kernelsu/extras.c; then
-                if printf '\n#ifdef CONFIG_KSU_SUSFS\n#ifndef susfs_avc_log_spoofing_key_true\n__attribute__((weak))\nstruct static_key_true susfs_avc_log_spoofing_key_true = STATIC_KEY_TRUE_INIT;\n#endif\n#endif\n' >> drivers/kernelsu/extras.c; then
-                  echo "  ✅ AVC spoof fix: BAŞARILI"
-                  PATCH_APPLIED=1
-                else
-                  echo "  ⚠️ AVC spoof fix: Yazma başarısız"
-                fi
-              else
-                echo "  ℹ️ AVC spoof fix: Zaten uygulanmış"
-              fi
-            else
-              echo "  ⚠️ AVC spoof fix: Anahtar kelime bulunamadı"
-            fi
-          else
-            echo "  ⚠️ extras.c: Dosya yok"
-          fi
-          
           if [ $PATCH_APPLIED -gt 0 ]; then
             echo "success" > "$GITHUB_WORKSPACE/build_status/ksu_multi.status"
           else
