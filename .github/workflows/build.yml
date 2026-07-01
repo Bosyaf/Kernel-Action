@@ -186,8 +186,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           
           # ========== LSE SCHEDULER (MODULE) ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LUNAR_SCHED_EXT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LUNAR_SCHED_EXT "m"
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_LUNAR_SCHED_EXT
           
           # ========== Thermal ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
