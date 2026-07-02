@@ -49,27 +49,6 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
-
-      - name: 2.5. Kaynak Kodunu BORE ve UCLAMP'tan Arındır (Nuclear Mode)
-        run: |
-          cd common
-          echo "🚀 Kaynak kodu cerrahi olarak temizleniyor..."
-
-          # 1. BORE kilitlerini 'if 0' yaparak mantığı tamamen devre dışı bırak
-          # Bu sayede #else bloklarındaki orijinal Google (RESERVE) kodları aktif olur.
-          find . -type f -name "*.[ch]" -exec sed -i 's/#ifdef CONFIG_SCHED_BORE/#if 0 \/* BORE_DISABLED *\//g' {} +
-          find . -type f -name "*.[ch]" -exec sed -i 's/#ifndef CONFIG_SCHED_BORE/#if 1 \/* BORE_FORCE_OFF *\//g' {} +
-
-          # 2. UCLAMP kilitlerini 'if 0' yaparak devre dışı bırak
-          find . -type f -name "*.[ch]" -exec sed -i 's/#ifdef CONFIG_UCLAMP_TASK/#if 0 \/* UCLAMP_DISABLED *\//g' {} +
-
-          # 3. Kconfig tanımlarını değiştirerek derleyicinin bu özellikleri tanımasını engelle
-          # Böylece .config dosyasında ne y ne de n olarak görünmezler, tamamen yok sayılırlar.
-          find . -name "Kconfig*" -exec sed -i 's/config SCHED_BORE/config BORE_REMOVED/g' {} +
-          find . -name "Kconfig*" -exec sed -i 's/config UCLAMP_TASK/config UCLAMP_REMOVED/g' {} +
-
-          echo "✅ Kaynak kod şu an bu yamalar hiç yapılmamış gibi tertemiz!"
-          
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -192,7 +171,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           
           # ========== Thermal ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
@@ -239,7 +218,7 @@ jobs:
 
           # ========== Misc ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-           
+          
           # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -272,9 +251,12 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -falign-functions=16 \
+            -falign-functions=32 \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
+            -fno-sched-spec \
+            -fmodulo-sched \
+            -fmodulo-sched-allow-regmoves \
             -fno-common \
             -ffunction-sections \
             -fdata-sections \
@@ -291,7 +273,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
