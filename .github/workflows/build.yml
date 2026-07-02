@@ -50,31 +50,16 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 2.5. Kaynak Kodunu Temizle (BORE ve UCLAMP'ı Hafızadan Sil)
+      - name: 2.5. Kconfig Sisteminden BORE ve UCLAMP'ı Kazı
         run: |
           cd common
-          echo "🔥 BORE ve UCLAMP tanımları Kconfig sisteminden cerrahi olarak sökülüyor..."
-          
-          # 1. Kconfig dosyalarından bu özelliklerin 'tanım' bloklarını tamamen siliyoruz.
-          # Tanım silindiği için kernel bu özellikleri bir seçenek olarak bile görmeyecek.
-          
-          # init/Kconfig içindeki BORE bloğunu sil
+          echo "🔥 Tanımlar Kconfig'lerden sökülüyor..."
+          # BORE bloğunu tamamen siler
           sed -i '/config SCHED_BORE/,/help/d' init/Kconfig || true
-          
-          # init/Kconfig veya kernel/sched/Kconfig içindeki UCLAMP bloklarını temizle
-          # (Dosya yolları staging ağacına göre değişebileceği için her ikisini de tarar)
+          # UCLAMP bloklarını tüm Kconfig dosyalarından temizler
           find . -name "Kconfig*" -exec sed -i '/config UCLAMP_TASK/,/help/d' {} + || true
           find . -name "Kconfig*" -exec sed -i '/config UCLAMP_BUCKETS_COUNT/,/default 20/d' {} + || true
           find . -name "Kconfig*" -exec sed -i '/config UCLAMP_TASK_GROUP/,/help/d' {} + || true
-
-          echo "✅ Kconfig tanımları silindi."
-
-          # Step 3'ün içine, gki_defconfig yapıldıktan hemen sonraya ekle:
-          
-          # .config dosyasında ne 'y' ne de 'is not set' kalsın. 
-          # Satırları fiziksel olarak dosyadan uçuruyoruz.
-          sed -i '/CONFIG_SCHED_BORE/d' out/.config
-          sed -i '/CONFIG_UCLAMP/d' out/.config
           
           # Bağımlılıkları kontrol et (olddefconfig) 
           # Kernel artık bu özellikleri tanımadığı için onları geri getirmeyecek.
