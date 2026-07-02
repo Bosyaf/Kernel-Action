@@ -50,20 +50,25 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
 
-      - name: 2.5. Kconfig Sisteminden BORE ve UCLAMP'ı Kazı
+      - name: 2.5. Kaynak Kodunu BORE ve UCLAMP'tan Arındır (Nuclear Mode)
         run: |
           cd common
-          echo "🔥 Tanımlar Kconfig'lerden sökülüyor..."
-          # BORE bloğunu tamamen siler
-          sed -i '/config SCHED_BORE/,/help/d' init/Kconfig || true
-          # UCLAMP bloklarını tüm Kconfig dosyalarından temizler
-          find . -name "Kconfig*" -exec sed -i '/config UCLAMP_TASK/,/help/d' {} + || true
-          find . -name "Kconfig*" -exec sed -i '/config UCLAMP_BUCKETS_COUNT/,/default 20/d' {} + || true
-          find . -name "Kconfig*" -exec sed -i '/config UCLAMP_TASK_GROUP/,/help/d' {} + || true
-          
-          # Bağımlılıkları kontrol et (olddefconfig) 
-          # Kernel artık bu özellikleri tanımadığı için onları geri getirmeyecek.
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+          echo "🚀 Kaynak kodu cerrahi olarak temizleniyor..."
+
+          # 1. BORE kilitlerini 'if 0' yaparak mantığı tamamen devre dışı bırak
+          # Bu sayede #else bloklarındaki orijinal Google (RESERVE) kodları aktif olur.
+          find . -type f -name "*.[ch]" -exec sed -i 's/#ifdef CONFIG_SCHED_BORE/#if 0 \/* BORE_DISABLED *\//g' {} +
+          find . -type f -name "*.[ch]" -exec sed -i 's/#ifndef CONFIG_SCHED_BORE/#if 1 \/* BORE_FORCE_OFF *\//g' {} +
+
+          # 2. UCLAMP kilitlerini 'if 0' yaparak devre dışı bırak
+          find . -type f -name "*.[ch]" -exec sed -i 's/#ifdef CONFIG_UCLAMP_TASK/#if 0 \/* UCLAMP_DISABLED *\//g' {} +
+
+          # 3. Kconfig tanımlarını değiştirerek derleyicinin bu özellikleri tanımasını engelle
+          # Böylece .config dosyasında ne y ne de n olarak görünmezler, tamamen yok sayılırlar.
+          find . -name "Kconfig*" -exec sed -i 's/config SCHED_BORE/config BORE_REMOVED/g' {} +
+          find . -name "Kconfig*" -exec sed -i 's/config UCLAMP_TASK/config UCLAMP_REMOVED/g' {} +
+
+          echo "✅ Kaynak kod şu an bu yamalar hiç yapılmamış gibi tertemiz!"
           
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
