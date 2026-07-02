@@ -254,9 +254,6 @@ jobs:
             -falign-functions=32 \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
-            -fno-sched-spec \
-            -fmodulo-sched \
-            -fmodulo-sched-allow-regmoves \
             -fno-common \
             -ffunction-sections \
             -fdata-sections \
