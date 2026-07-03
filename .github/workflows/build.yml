@@ -169,7 +169,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
              
           # ========== Thermal ==========
@@ -257,7 +257,6 @@ jobs:
             WERROR=0 \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-            -falign-functions=16 \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
             -fno-unwind-tables \
