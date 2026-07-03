@@ -256,7 +256,7 @@ jobs:
             STRIP="llvm-strip" \
             WERROR=0 \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crc+rcpc+lse \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -falign-functions=16 \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
