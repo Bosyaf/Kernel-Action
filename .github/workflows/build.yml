@@ -272,35 +272,6 @@ jobs:
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
-      - name: 7.5. BOLT Optimizasyonu (Sample-less / Heuristic Mode)
-        run: |
-          cd common
-          # Araç yollarını tanımlayalım
-          BOLT="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-bolt"
-          OBJCOPY="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-objcopy"
-          STRIP="$GITHUB_WORKSPACE/clang-zyc/bin/llvm-strip"
-          
-          if [ -f "out/vmlinux" ]; then
-            echo "⚡ BOLT Optimizasyonu Başlıyor..."
-            
-            # 1. vmlinux dosyasını BOLT ile optimize et
-            # Heuristic tabanlı (profilsiz) en iyi ayarlar:
-            $BOLT out/vmlinux -o out/vmlinux.bolt \
-              --reorder-blocks=ext-tsp \
-              --reorder-functions=hfsort \
-              --split-functions \
-              --strip-rep-ret \
-              --dyno-stats
-            
-            # 2. Optimize edilmiş dosyadan ham Image üret
-            # Bu işlem eski Image dosyasının üstüne yazar
-            echo "📦 BOLT binary dosyası ham Image formatına dönüştürülüyor..."
-            $OBJCOPY -O binary out/vmlinux.bolt out/arch/arm64/boot/Image
-            
-            echo "✅ BOLT İşlemi Başarıyla Tamamlandı."
-          else
-            echo "❌ HATA: vmlinux dosyası bulunamadı, BOLT atlanıyor!"
-          fi
       - name: 8. AnyKernel3 (Sadece Image Paketleme)
         run: |
           cd ./AnyKernel3
