@@ -238,37 +238,35 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
+      - name: 7. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          # KCFLAGS içine '-Wno-error' ekledim.
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            CC="clang" \
+            LD="ld.lld" \
+            HOSTCC="clang" \
+            HOSTCXX="clang++" \
+            HOSTLD="ld.lld" \
+            AR="llvm-ar" \
+            NM="llvm-nm" \
+            OBJCOPY="llvm-objcopy" \
+            OBJDUMP="llvm-objdump" \
+            STRIP="llvm-strip" \
+            WERROR=0 \
             KCFLAGS="-O2 \
-            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+            -march=armv9.2-a+crc+rcpc+lse \
             -falign-functions=16 \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
-            -fno-common \
-            -ffunction-sections \
-            -fdata-sections \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
-            -Wno-unused-command-line-argument \
-            -Wno-error \
             -Wno-format \
             -Wno-format-extra-args \
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
             -Wno-address-of-packed-member" \
-            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
