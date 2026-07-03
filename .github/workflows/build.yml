@@ -287,13 +287,10 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
             -fomit-frame-pointer \
             -fno-strict-aliasing \
-            -fno-unwind-tables \
-            -fno-asynchronous-unwind-tables \
+            -Wno-error \
             -Wno-format \
             -Wno-format-extra-args \
-            -Wno-constant-logical-operand \
-            -Wno-unused-variable \
-            Wno-address-of-packed-member" \
+            -Wno-constant-logical-operand" \
             KLDFLAGS="--threads=1" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
