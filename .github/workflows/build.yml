@@ -167,8 +167,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UCLAMP_TASK
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UCLAMP_TASK_GROUP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
              
