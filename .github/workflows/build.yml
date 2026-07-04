@@ -37,7 +37,7 @@ jobs:
             pkg-config zstd
             
           echo "🔥 Kusursuz Denge: ZyC Clang 20 (Ocak 2025 Sürümü - ARMv9-a Uyumlu)"
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250630-release/Clang-21.0.0git-20250630.tar.gz"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250705-release/Clang-21.0.0git-20250705.tar.gz"
           echo "ZyC Clang 20 indiriliyor: $CLANG_URL"
           
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
