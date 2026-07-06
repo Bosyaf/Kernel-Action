@@ -1,412 +1,120 @@
 name: Build Xiaomi 14 (houji) Kernel
 
-# Cihaz: Xiaomi 14 (houji) - Snapdragon 8 Gen 3 (SM8650 / Pineapple)
-# Kernel: 6.1.166 - mvaisakh/xiaomi14 @ monolithic-3
-# Monolithic build (GKI 2 devre dışı) → Image, dtbo.img, vendor_boot.img üretir
-# vendor_dlkm.img ÜRETILMEZ (modüller kernel ile birlikte linklenir)
+# Manuel calistirma + monolithic-3 branch push'larinda calisir.
 on:
   workflow_dispatch:
     inputs:
-      config:
-        description: 'Kernel defconfig'
+      clang_version:
+        description: 'AOSP Clang surumu (ornek: r510928, r530567)'
         required: true
-        default: 'houji_defconfig'
-        type: choice
-        options:
-          - houji_defconfig
-          - gki_defconfig
-      compiler:
-        description: 'Compiler'
-        required: true
-        default: 'clang'
-        type: choice
-        options:
-          - clang
-          - gcc
-      lto:
-        description: 'LTO modu'
-        required: true
-        default: 'thin'
-        type: choice
-        options:
-          - none
-          - thin
-          - full
-      ksunext:
-        description: 'KernelSU-Next patch (SukiSU)'
-        required: true
-        default: 'off'
-        type: choice
-        options:
-          - off
-          - on
-      release:
-        description: 'GitHub Release oluştur'
+        default: 'r530567'
+      build_dtbo:
+        description: 'dtbo.img denemesi yapilsin mi?'
         required: true
         default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-  schedule:
-    # Her Pazar gece 03:00 TR saatinde otomatik build (UTC 00:00)
-    - cron: '0 0 * * 0'
+      build_bootimg:
+        description: 'boot.img/vendor_boot.img denemesi yapilsin mi? (ramdisk/dtb gerekir)'
+        required: true
+        default: 'false'
   push:
     branches:
       - monolithic-3
-    paths:
-      - '.github/workflows/**'
-
-permissions:
-  contents: write
 
 env:
-  KERNEL_REPO: https://github.com/mvaisakh/xiaomi14
-  KERNEL_BRANCH: monolithic-3
-  KERNEL_NAME: HOUJI
-  AK3_REPO: https://github.com/mvaisakh/AnyKernel3
-  DEFCONFIG: houji_defconfig
-  # clang-r530567 = AOSP main içinden son stabil clang (kernel 6.1 uyumlu)
-  CLANG_VERSION: clang-r530567
-  # GCC 13.2.0 - Qualcomm/ARM64 cross toolchain
-  GCC_VERSION: 13.2.0
+  DEVICE: houji
+  SOC: pineapple
+  OUT: out
 
 jobs:
   build:
-    name: Build (${{ matrix.arch }})
     runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64]
+    timeout-minutes: 180
 
     steps:
-      # ---------------------------------------------------------------
-      # 1. KAYNAK KODU
-      # ---------------------------------------------------------------
-      - name: 📥 Kernel source checkout
+      - name: Kernel source'unu cek
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.KERNEL_REPO }}
-          ref: ${{ env.KERNEL_BRANCH }}
-          path: kernel
-          submodules: recursive
+          ref: monolithic-3
           fetch-depth: 1
 
-      - name: 📦 AnyKernel3 checkout
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.AK3_REPO }}
-          path: AnyKernel3
-          fetch-depth: 1
-
-      # ---------------------------------------------------------------
-      # 2. TEMEL BAĞIMLILIKLAR
-      # Ubuntu 22.04 üzerinde kernel 6.1 derlemek için gerekli paketler
-      # ---------------------------------------------------------------
-      - name: 🛠️ Install build dependencies
+      - name: Derleme bagimliliklarini kur
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends \
-            bc bison build-essential ccache curl flex \
-            g++-multilib gcc-multilib git gnupg gperf \
-            imagemagick lib32readline-dev lib32z1-dev \
-            libelf-dev liblz4-tool libsdl1.2-dev \
-            libssl-dev libxml2 libxml2-utils lzop \
-            pngcrush rsync schedtool squashfs-tools \
-            xsltproc zip zlib1g-dev python3 python-is-python3
-          # repo aracı (Android için)
-          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
-            -o /usr/local/bin/repo
-          chmod a+x /usr/local/bin/repo
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            bc bison build-essential cpio device-tree-compiler flex \
+            git libelf-dev libncurses5-dev libssl-dev lld llvm \
+            p7zip-full python3 python3-pip unzip wget zip
 
-      # ---------------------------------------------------------------
-      # 3. CLANG TOOLCHAIN
-      # AOSP clang Linux 6.1.x ile tam uyumlu, KASLR/PKVM/CFI destekli
-      # ---------------------------------------------------------------
-      - name: 🔧 Setup AOSP Clang
-        if: ${{ inputs.compiler == 'clang' || inputs.compiler == '' }}
+      - name: AOSP Clang toolchain indir
         run: |
-          mkdir -p $GITHUB_WORKSPACE/toolchain/clang
-          cd $GITHUB_WORKSPACE/toolchain/clang
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/${CLANG_VERSION}.tar.gz"
-          echo "📥 Clang indiriliyor: ${CLANG_URL}"
-          curl -fsSL "${CLANG_URL}" | tar -xz
-          ls -la bin/ | head
-          bin/clang --version
+          mkdir -p "$GITHUB_WORKSPACE/toolchain"
+          cd "$GITHUB_WORKSPACE/toolchain"
+          CLANG_VER="${{ github.event.inputs.clang_version || 'r530567' }}"
+          echo "Indiriliyor: clang-${CLANG_VER}"
+          wget -q --show-progress \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${CLANG_VER}.tar.gz" \
+            -O clang.tar.gz
+          tar -xzf clang.tar.gz
+          echo "TC=$GITHUB_WORKSPACE/toolchain/bin" >> "$GITHUB_ENV"
 
-      # ---------------------------------------------------------------
-      # 4. GCC TOOLCHAIN (yedek / yalnızca COMPAT 32-bit)
-      # Ana derleme clang ile, GCC sadece arm32 compat (varsa) için
-      # ---------------------------------------------------------------
-      - name: 🔧 Setup GCC arm64 cross-compiler
-        if: ${{ inputs.compiler == 'gcc' }}
+      - name: Defconfig olustur (GKI + Pineapple/SM8650 vendor)
         run: |
-          sudo apt-get install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
-            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabihf
-          aarch64-linux-gnu-gcc --version
+          export PATH="$TC:$PATH"
+          make O="$OUT" ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            gki_defconfig
 
-      # ---------------------------------------------------------------
-      # 5. KERNELSU-NEXT (opsiyonel - SukiSU)
-      # mvaisakh kaynak ana hatta müdahale etmediği için kendimiz patch'liyoruz
-      # ---------------------------------------------------------------
-      - name: 🛡️ Apply KernelSU-Next (SukiSU) patch
-        if: ${{ inputs.ksunext == 'on' }}
+          # Pineapple (SM8650) vendor configini merge et
+          ./scripts/kconfig/merge_config.sh -m "$OUT/.config" \
+            arch/arm64/configs/vendor/pineapple_GKI.config
+
+          make O="$OUT" ARCH=arm64 olddefconfig
+
+      - name: Kernel Image + DTB derle
         run: |
-          cd $GITHUB_WORKSPACE/kernel
-          echo "📥 KernelSU-Next indiriliyor..."
-          curl -fsSL "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" -o setup.sh
-          chmod +x setup.sh
-          # Kernel 6.1.166 uyumlu driver
-          SUKISU_TAG=$(curl -fsSL "https://api.github.com/repos/ShirkNeko/SukiSU-Ultra/releases/latest" \
-            | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "SukiSU tag: ${SUKISU_TAG}"
-          sed -i "s|KERNELSU_TAG=.*|KERNELSU_TAG=\"${SUKISU_TAG}\"|" setup.sh
-          bash setup.sh
+          export PATH="$TC:$PATH"
+          make O="$OUT" ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 \
+            -j"$(nproc)" Image dtbs
 
-          # defconfig'e KSU opsiyonlarını ekle
-          CFG=arch/arm64/configs/houji_defconfig
-          cat >> $CFG << 'EOF'
-
-          # --- KernelSU-Next (SukiSU) ---
-          CONFIG_KSU=y
-          CONFIG_KSU_DEBUG=y
-          CONFIG_KSU_KPROBES_HOOK=n
-          CONFIG_KSU_MANUAL_HOOK=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
-          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_KSU_SUSFS_SUS_SU=y
-          CONFIG_TMPFS_XATTR=y
-          CONFIG_KPROBES=y
-          CONFIG_HAVE_KPROBES=y
-          CONFIG_KPROBE_EVENTS=y
-          EOF
-          echo "✅ KernelSU eklenmiş houji_defconfig: $CFG"
-
-      # ---------------------------------------------------------------
-      # 6. LTO / OPTIMIZASYON AYARLARI
-      # ---------------------------------------------------------------
-      - name: ⚡ Apply LTO configuration
+      - name: dtbo.img dene
+        if: github.event.inputs.build_dtbo != 'false'
+        continue-on-error: true
         run: |
-          CFG=$GITHUB_WORKSPACE/kernel/arch/arm64/configs/houji_defconfig
-          case "${{ inputs.lto }}" in
-            thin)
-              echo "CONFIG_LTO_CLANG_THIN=y" >> $CFG
-              echo "CONFIG_LTO_NONE=n"     >> $CFG
-              echo "CONFIG_THINLTO=y"      >> $CFG
-              ;;
-            full)
-              echo "CONFIG_LTO_CLANG=y"    >> $CFG
-              echo "CONFIG_LTO_NONE=n"     >> $CFG
-              echo "CONFIG_LTO_CLANG_THIN=n" >> $CFG
-              ;;
-            *)
-              echo "CONFIG_LTO_NONE=y"     >> $CFG
-              ;;
-          esac
+          export PATH="$TC:$PATH"
+          make O="$OUT" ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 LLVM_IAS=1 \
+            dtbo.img || echo "UYARI: dtbo.img hedefi basarisiz oldu (cihaz agaci veya overlay eksik olabilir)."
 
-      # ---------------------------------------------------------------
-      # 7. DEFCONFIG → .config
-      # ARCH=arm64, CROSS_COMPILE=aarch64, monolithik derleme
-      # ---------------------------------------------------------------
-      - name: 🧬 Make defconfig
-        working-directory: ${{ github.workspace }}/kernel
+      - name: boot.img / vendor_boot.img dene
+        if: github.event.inputs.build_bootimg == 'true'
+        continue-on-error: true
         run: |
-          mkdir -p out
-          if [ "${{ inputs.compiler }}" = "gcc" ]; then
-            make O=out ${{ inputs.config }} \
-              ARCH=arm64 \
-              CROSS_COMPILE=aarch64-linux-gnu-
-          else
-            export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$PATH"
-            export CC=clang
-            export LD=ld.lld
-            export AR=llvm-ar
-            export NM=llvm-nm
-            export OBJCOPY=llvm-objcopy
-            export OBJDUMP=llvm-objdump
-            export STRIP=llvm-strip
-            export CROSS_COMPILE=aarch64-linux-gnu-
-            make O=out ${{ inputs.config }} \
-              ARCH=arm64 \
-              LLVM=1 \
-              LLVM_IAS=1
-          fi
-          echo "📄 .config oluşturuldu"
-          ls -la out/.config
+          echo "UYARI: boot.img/vendor_boot.img icin cihaza ozel ramdisk, DTB ve mkbootimg argumanlari gerekir."
+          echo "Bu repoda yalnizca kernel source var; image olusturmak icin vendor/device tree repo'yu da entegre etmelisin."
+          ls -la "$OUT/arch/arm64/boot/"
 
-      # ---------------------------------------------------------------
-      # 8. ASIL KERNEL DERLEME
-      # ÇIKTILAR:
-      #   out/arch/arm64/boot/Image         (GKI kernel image)
-      #   out/arch/arm64/boot/dtbo.img      (device tree overlay)
-      # ---------------------------------------------------------------
-      - name: 🔨 Build kernel
-        working-directory: ${{ github.workspace }}/kernel
+      - name: Ciktilari listele
         run: |
-          export KBUILD_BUILD_USER=github-actions
-          export KBUILD_BUILD_HOST=runner
-          export KBUILD_BUILD_VERSION=${GITHUB_RUN_NUMBER}
-          export KBUILD_BUILD_TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          echo "=== Kernel ciktilari ==="
+          find "$OUT/arch/arm64/boot" -maxdepth 3 -type f -printf '%p  %s byte\\n' | sort
 
-          if [ "${{ inputs.compiler }}" = "gcc" ]; then
-            make O=out -j$(nproc) \
-              ARCH=arm64 \
-              CROSS_COMPILE=aarch64-linux-gnu- \
-              CROSS_COMPILE_COMPAT=arm-linux-gnueabihf- \
-              Image dtbs dtbo.img
-          else
-            export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$PATH"
-            export CC=clang
-            export LD=ld.lld
-            export AR=llvm-ar
-            export NM=llvm-nm
-            export OBJCOPY=llvm-objcopy
-            export OBJDUMP=llvm-objdump
-            export STRIP=llvm-strip
-            export CROSS_COMPILE=aarch64-linux-gnu-
-            make O=out -j$(nproc) \
-              ARCH=arm64 \
-              LLVM=1 \
-              LLVM_IAS=1 \
-              CROSS_COMPILE=aarch64-linux-gnu- \
-              Image dtbs dtbo.img
-          fi
-
-          echo "============ ÇIKTI KONTROL ============"
-          ls -la out/arch/arm64/boot/
-
-      # ---------------------------------------------------------------
-      # 9. vendor_boot.img OLUŞTURMA
-      # Monolithic → dtbo.img kullanılmaz, vendor_boot gerekli olabilir
-      # Bu adım, kaynak ROM'dan mkbootimg ile yeniden oluşturur
-      # ---------------------------------------------------------------
-      - name: 📦 Build vendor_boot.img (ramdisk ile)
-        working-directory: ${{ github.workspace }}/kernel
-        run: |
-          # vendor_boot için ramdisk gerekli - bu kaynak genelde
-          # kendine ait ramdisk taşımaz, cihaz ROM'undan alınmalı.
-          # Burada sadece dtb'leri vendor_boot'a katıyoruz.
-          echo "ℹ️  vendor_boot.img oluşturmak için cihazınızın orijinal"
-          echo "    vendor_boot.img dosyasındaki ramdisk'e ihtiyaç var."
-          echo "    Bu workflow Image + dtbo üretir; ramdisk'i sonradan"
-          echo "    fastboot --kernel Image --dtb dtbo.img ile kullanabilirsiniz."
-
-      # ---------------------------------------------------------------
-      # 10. AnyKernel3 PAKETLEME
-      # mvaisakh/AnyKernel3 - houji slot bilgisi
-      # ---------------------------------------------------------------
-      - name: 📲 Pack AnyKernel3 zip
-        run: |
-          AK=$GITHUB_WORKSPACE/AnyKernel3
-          K=$GITHUB_WORKSPACE/kernel/out/arch/arm64/boot
-
-          # Çekirdek görüntüsü
-          cp -f $K/Image         $AK/Image
-          # DTBO (varsa, çoğu SM8650 cihazda dtbo KERNEL içindedir)
-          if [ -f $K/dtbo.img ]; then
-            cp -f $K/dtbo.img    $AK/dtbo.img
-          fi
-          # Birleşik dtb (yedek)
-          if [ -f $K/dtb.img ]; then
-            cp -f $K/dtb.img     $AK/dtb.img
-          fi
-
-          # anykernel.sh - Xiaomi 14 (houji) ayarları
-          cat > $AK/anykernel.sh << 'EOF'
-          # AnyKernel3 - Xiaomi 14 (houji)
-          properties() {
-          kernel.string="HOUJI-Kernel by mvaisakh+"
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          supported.versions=14
-          supported.patchlevels=
-          supported.vendorpatchlevels=
-          device.name1=houji
-          device.name2=
-          device.name3=
-          device.name4=
-          device.name5=
-          block=/dev/block/bootdevice/by-name/boot
-          is_slot_device=1
-          ramdisk_compression=auto
-          patch_vbmeta_flag=0
-          }
-          EOF
-
-          cd $AK
-          OUT="AnyKernel3-${KERNEL_NAME}-$(date +'%Y%m%d-%H%M')-r${GITHUB_RUN_NUMBER}.zip"
-          zip -r9 "../$OUT" * -x ".git*" "README.md" "*.placeholder" "LICENSE"
-          cd ..
-          echo "📦 ZIP: $OUT"
-          ls -lh $OUT
-
-      # ---------------------------------------------------------------
-      # 11. ARTIFACTS
-      # ---------------------------------------------------------------
-      - name: 📤 Upload build artifacts
+      - name: Artifact olarak yukle
         uses: actions/upload-artifact@v4
         with:
-          name: HOUJI-Kernel-r${{ github.run_number }}
+          name: xiaomi14-${{ env.DEVICE }}-kernel-${{ github.run_number }}
           path: |
-            AnyKernel3/*.zip
-            kernel/out/arch/arm64/boot/Image
-            kernel/out/arch/arm64/boot/dtbo.img
-            kernel/out/arch/arm64/boot/dtb.img
-          if-no-files-found: warn
-          retention-days: 14
-
-      # ---------------------------------------------------------------
-      # 12. GITHUB RELEASE (opsiyonel)
-      # ---------------------------------------------------------------
-      - name: 🚀 Create GitHub Release
-        if: ${{ inputs.release == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: houji-r${{ github.run_number }}
-          name: "Xiaomi 14 (houji) Kernel — r${{ github.run_number }}"
-          body: |
-            ## Xiaomi 14 (houji) — Snapdragon 8 Gen 3
-            - **Kernel**: Linux 6.1.166 (monolithic)
-            - **SoC**: SM8650 (Pineapple)
-            - **Defconfig**: `${{ inputs.config }}`
-            - **Compiler**: `${{ inputs.compiler }}` (LTO: ${{ inputs.lto }})
-            - **KernelSU-Next**: ${{ inputs.ksunext }}
-
-            ### Flash talimatı (AnyKernel3)
-            ```
-            adb push AnyKernel3-HOUJI-*.zip /sdcard/
-            # TWRP'den flaşla veya:
-            fastboot boot twrp-*.img
-            adb sideload AnyKernel3-HOUJI-*.zip
-            ```
-
-            ### Flash talimatı (ham Image)
-            ```
-            fastboot flash boot_a Image
-            fastboot flash boot_b Image
-            fastboot reboot
-            ```
-          files: |
-            AnyKernel3/*.zip
-            kernel/out/arch/arm64/boot/Image
-          fail_on_unmatched_files: false
+            ${{ github.workspace }}/out/arch/arm64/boot/Image
+            ${{ github.workspace }}/out/arch/arm64/boot/Image.gz
+            ${{ github.workspace }}/out/arch/arm64/boot/dts/**/*.dtb
+            ${{ github.workspace }}/out/arch/arm64/boot/dtbo.img
+          if-no-files-found: ignore
           
