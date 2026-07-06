@@ -48,7 +48,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          git clone -b lineage-22.2 https://github.com/Bosyaf/android_kernel_qcom_sm8650.git --depth=1 common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -147,6 +147,13 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
+            echo "📦 gki_defconfig + pineapple_GKI.config merge"
+
+           ARCH=arm64 scripts/kconfig/merge_config.sh \
+          -m \
+          -O out \
+          out/.config \
+          arch/arm64/configs/vendor/pineapple_GKI.config
           CONFIG_FILE="out/.config"
           # ========== CMDLINE ==========
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
