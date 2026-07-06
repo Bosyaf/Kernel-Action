@@ -170,32 +170,32 @@ jobs:
           CFG=arch/arm64/configs/houji_defconfig
           cat >> $CFG << 'EOF'
 
-# --- KernelSU-Next (SukiSU) ---
-CONFIG_KSU=y
-CONFIG_KSU_DEBUG=y
-CONFIG_KSU_KPROBES_HOOK=n
-CONFIG_KSU_MANUAL_HOOK=y
-CONFIG_KSU_SUSFS=y
-CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-CONFIG_KSU_SUSFS_SUS_PATH=y
-CONFIG_KSU_SUSFS_SUS_MOUNT=y
-CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-CONFIG_KSU_SUSFS_SUS_KSTAT=y
-CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
-CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
-CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-CONFIG_KSU_SUSFS_ENABLE_LOG=y
-CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-CONFIG_KSU_SUSFS_SUS_SU=y
-CONFIG_TMPFS_XATTR=y
-CONFIG_KPROBES=y
-CONFIG_HAVE_KPROBES=y
-CONFIG_KPROBE_EVENTS=y
-EOF
+          # --- KernelSU-Next (SukiSU) ---
+          CONFIG_KSU=y
+          CONFIG_KSU_DEBUG=y
+          CONFIG_KSU_KPROBES_HOOK=n
+          CONFIG_KSU_MANUAL_HOOK=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
+          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          CONFIG_KSU_SUSFS_SUS_SU=y
+          CONFIG_TMPFS_XATTR=y
+          CONFIG_KPROBES=y
+          CONFIG_HAVE_KPROBES=y
+          CONFIG_KPROBE_EVENTS=y
+          EOF
           echo "✅ KernelSU eklenmiş houji_defconfig: $CFG"
 
       # ---------------------------------------------------------------
@@ -329,28 +329,28 @@ EOF
 
           # anykernel.sh - Xiaomi 14 (houji) ayarları
           cat > $AK/anykernel.sh << 'EOF'
-# AnyKernel3 - Xiaomi 14 (houji)
-properties() {
-  kernel.string="HOUJI-Kernel by mvaisakh+"
-  do.devicecheck=1
-  do.modules=0
-  do.systemless=1
-  do.cleanup=1
-  do.cleanuponabort=0
-  supported.versions=14
-  supported.patchlevels=
-  supported.vendorpatchlevels=
-  device.name1=houji
-  device.name2=
-  device.name3=
-  device.name4=
-  device.name5=
-  block=/dev/block/bootdevice/by-name/boot
-  is_slot_device=1
-  ramdisk_compression=auto
-  patch_vbmeta_flag=0
-}
-EOF
+          # AnyKernel3 - Xiaomi 14 (houji)
+          properties() {
+          kernel.string="HOUJI-Kernel by mvaisakh+"
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          supported.versions=14
+          supported.patchlevels=
+          supported.vendorpatchlevels=
+          device.name1=houji
+          device.name2=
+          device.name3=
+          device.name4=
+          device.name5=
+          block=/dev/block/bootdevice/by-name/boot
+          is_slot_device=1
+          ramdisk_compression=auto
+          patch_vbmeta_flag=0
+          }
+          EOF
 
           cd $AK
           OUT="AnyKernel3-${KERNEL_NAME}-$(date +'%Y%m%d-%H%M')-r${GITHUB_RUN_NUMBER}.zip"
