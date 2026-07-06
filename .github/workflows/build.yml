@@ -1,120 +1,282 @@
-name: Build Xiaomi 14 (houji) Kernel
+# GitHub Actions Workflow — Xiaomi 14 (houji) Kernel Build
+# .github/workflows/build-kernel.yml
+# 
+# Bu dosyayı .github/workflows/build-kernel.yml olarak kernel
+# reponuza veya ayrı bir CI reponuza ekleyin.
 
-# Manuel calistirma + monolithic-3 branch push'larinda calisir.
+name: Build Xiaomi 14 (houji) Kernel - Monolithic
+
 on:
   workflow_dispatch:
     inputs:
-      clang_version:
-        description: 'AOSP Clang surumu (ornek: r510928, r530567)'
+      kernel_branch:
+        description: 'Kernel branch to build'
         required: true
-        default: 'r530567'
-      build_dtbo:
-        description: 'dtbo.img denemesi yapilsin mi?'
+        default: 'monolithic-3'
+        type: choice
+        options:
+          - monolithic-3
+          - monolithic-2
+          - monolithic
+      enable_gki:
+        description: 'Also build GKI defconfig'
         required: true
-        default: 'true'
-      build_bootimg:
-        description: 'boot.img/vendor_boot.img denemesi yapilsin mi? (ramdisk/dtb gerekir)'
+        default: false
+        type: boolean
+      enable_ksu:
+        description: 'Integrate KernelSU (optional)'
         required: true
-        default: 'false'
+        default: false
+        type: boolean
   push:
-    branches:
-      - monolithic-3
+    branches: [ monolithic-3 ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.github/**'
 
 env:
-  DEVICE: houji
+  KERNEL_REPO: mvaisakh/xiaomi14
+  KERNEL_BRANCH: monolithic-3
+  DEFCONFIG: houji_defconfig
+  DEVICE_CODENAME: houji
+  DEVICE_NAME: "Xiaomi 14"
   SOC: pineapple
-  OUT: out
+  CHIPSET: SM8650
+  KERNEL_VERSION: "6.1"
 
 jobs:
-  build:
+  # ============================================================
+  # JOB 1: ANALYZE - Kaynak kontrolü
+  # ============================================================
+  analyze:
+    name: "🔍 Kaynak Analizi"
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
-
+    outputs:
+      defconfig_exists: ${{ steps.check.outputs.defconfig_exists }}
+      vendor_config_exists: ${{ steps.check.outputs.vendor_config_exists }}
+      dts_exists: ${{ steps.check.outputs.dts_exists }}
+      kernel_version: ${{ steps.check.outputs.kernel_version }}
     steps:
-      - name: Kernel source'unu cek
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          ref: monolithic-3
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ github.event.inputs.kernel_branch || env.KERNEL_BRANCH }}
           fetch-depth: 1
 
-      - name: Derleme bagimliliklarini kur
+      - name: Kaynak yapısını kontrol et
+        id: check
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            bc bison build-essential cpio device-tree-compiler flex \
-            git libelf-dev libncurses5-dev libssl-dev lld llvm \
-            p7zip-full python3 python3-pip unzip wget zip
+          VERSION=$(grep "^VERSION = " Makefile | awk '{print $3}')
+          PATCHLEVEL=$(grep "^PATCHLEVEL = " Makefile | awk '{print $3}')
+          SUBLEVEL=$(grep "^SUBLEVEL = " Makefile | awk '{print $3}')
+          echo "Kernel Version: $VERSION.$PATCHLEVEL.$SUBLEVEL"
+          echo "kernel_version=$VERSION.$PATCHLEVEL.$SUBLEVEL" >> $GITHUB_OUTPUT
 
-      - name: AOSP Clang toolchain indir
+          if [ -f "arch/arm64/configs/${{ env.DEFCONFIG }}" ]; then
+            echo "✅ houji_defconfig mevcut"
+            echo "defconfig_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ houji_defconfig BULUNAMADI"
+            echo "defconfig_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
+            echo "✅ pineapple_GKI.config mevcut"
+            echo "vendor_config_exists=true" >> $GITHUB_OUTPUT
+          fi
+
+          DTS_COUNT=$(find arch/arm64/boot/dts/qcom -name "*houji*" -o -name "*pineapple*" 2>/dev/null | wc -l)
+          echo "DTB dosyaları: $DTS_COUNT adet"
+          echo "dts_exists=true" >> $GITHUB_OUTPUT
+
+  # ============================================================
+  # JOB 2: BUILD KERNEL
+  # ============================================================
+  build-kernel:
+    name: "🔨 Kernel Derle (houji)"
+    needs: analyze
+    runs-on: ubuntu-22.04
+    if: needs.analyze.outputs.defconfig_exists == 'true'
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ github.event.inputs.kernel_branch || env.KERNEL_BRANCH }}
+          fetch-depth: 1
+
+      - name: Gerekli paketleri kur
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/toolchain"
-          cd "$GITHUB_WORKSPACE/toolchain"
-          CLANG_VER="${{ github.event.inputs.clang_version || 'r530567' }}"
-          echo "Indiriliyor: clang-${CLANG_VER}"
-          wget -q --show-progress \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${CLANG_VER}.tar.gz" \
-            -O clang.tar.gz
-          tar -xzf clang.tar.gz
-          echo "TC=$GITHUB_WORKSPACE/toolchain/bin" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libssl-dev make libc6-dev libncurses5-dev \
+            build-essential kmod cpio libelf-dev dwarves python3 \
+            device-tree-compiler clang-17 llvm-17 lld-17 lz4 zstd rsync \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 
-      - name: Defconfig olustur (GKI + Pineapple/SM8650 vendor)
+          sudo ln -sf /usr/bin/clang-17 /usr/bin/clang
+          sudo ln -sf /usr/bin/ld.lld-17 /usr/bin/ld.lld
+          sudo ln -sf /usr/bin/llvm-ar-17 /usr/bin/llvm-ar
+          sudo ln -sf /usr/bin/llvm-strip-17 /usr/bin/llvm-strip
+
+      - name: mkbootimg tools kur
         run: |
-          export PATH="$TC:$PATH"
-          make O="$OUT" ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 LLVM_IAS=1 \
-            gki_defconfig
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg tools/mkbootimg
 
-          # Pineapple (SM8650) vendor configini merge et
-          ./scripts/kconfig/merge_config.sh -m "$OUT/.config" \
-            arch/arm64/configs/vendor/pineapple_GKI.config
-
-          make O="$OUT" ARCH=arm64 olddefconfig
-
-      - name: Kernel Image + DTB derle
+      - name: (Opsiyonel) KernelSU entegrasyonu
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
         run: |
-          export PATH="$TC:$PATH"
-          make O="$OUT" ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            LLVM=1 LLVM_IAS=1 \
-            -j"$(nproc)" Image dtbs
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
-      - name: dtbo.img dene
-        if: github.event.inputs.build_dtbo != 'false'
-        continue-on-error: true
+      - name: Defconfig oluştur
         run: |
-          export PATH="$TC:$PATH"
-          make O="$OUT" ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LLVM=1 LLVM_IAS=1 \
-            dtbo.img || echo "UYARI: dtbo.img hedefi basarisiz oldu (cihaz agaci veya overlay eksik olabilir)."
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
 
-      - name: boot.img / vendor_boot.img dene
-        if: github.event.inputs.build_bootimg == 'true'
-        continue-on-error: true
+          make ${{ env.DEFCONFIG }}
+
+          # Vendor fragment ekle
+          if [ -f "arch/arm64/configs/vendor/pineapple_GKI.config" ]; then
+            scripts/kconfig/merge_config.sh -m -r .config \
+              arch/arm64/configs/vendor/pineapple_GKI.config
+          fi
+          if [ -f "arch/arm64/configs/vendor/pineapple_consolidate.config" ]; then
+            scripts/kconfig/merge_config.sh -m -r .config \
+              arch/arm64/configs/vendor/pineapple_consolidate.config
+          fi
+
+      - name: Kernel derle
         run: |
-          echo "UYARI: boot.img/vendor_boot.img icin cihaza ozel ramdisk, DTB ve mkbootimg argumanlari gerekir."
-          echo "Bu repoda yalnizca kernel source var; image olusturmak icin vendor/device tree repo'yu da entegre etmelisin."
-          ls -la "$OUT/arch/arm64/boot/"
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+          export KBUILD_BUILD_HOST=github-actions
+          export KBUILD_BUILD_USER=runner
 
-      - name: Ciktilari listele
+          make -j$(nproc) 2>&1 | tee build.log
+
+          if [ -f "arch/arm64/boot/Image" ]; then
+            echo "✅ Kernel derleme başarılı!"
+            ls -lh arch/arm64/boot/Image
+          else
+            echo "❌ Kernel derleme başarısız!"
+            tail -100 build.log
+            exit 1
+          fi
+
+      - name: DTBO image oluştur
         run: |
-          echo "=== Kernel ciktilari ==="
-          find "$OUT/arch/arm64/boot" -maxdepth 3 -type f -printf '%p  %s byte\\n' | sort
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CC=clang
+          export LLVM=1
 
-      - name: Artifact olarak yukle
+          make dtbs -j$(nproc) 2>/dev/null
+
+          DTB_DIR="arch/arm64/boot/dts/qcom"
+          HOUJI_DTBS=$(find $DTB_DIR -name "*houji*.dtb" -o -name "*pineapple*.dtb" 2>/dev/null)
+          if [ -n "$HOUJI_DTBS" ]; then
+            python3 tools/mkbootimg/mkdtboimg.py create dtbo.img --page_size=4096 $HOUJI_DTBS
+            echo "✅ dtbo.img oluşturuldu: $(du -h dtbo.img | cut -f1)"
+          fi
+
+      - name: AnyKernel3 Zip Paketi Hazırla
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
+          rm -rf AnyKernel3/.git
+
+          if [ -f "arch/arm64/boot/Image" ]; then
+            cp arch/arm64/boot/Image AnyKernel3/Image
+          fi
+          if [ -f "dtbo.img" ]; then
+            cp dtbo.img AnyKernel3/dtbo.img
+          fi
+
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' AnyKernel3/anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' AnyKernel3/anykernel.sh
+
+          cd AnyKernel3
+          zip -r9 ../${{ env.DEVICE_CODENAME }}-kernel-anykernel3.zip * -x .git* README*
+          cd ..
+
+      - name: vendor_boot.img açıklaması
+        run: |
+          echo "============================================================"
+          echo "⚠️ vendor_boot.img HAKKINDA ÖNEMLİ NOT"
+          echo "============================================================"
+          echo ""
+          echo "Monolithic build'de vendor driver'lar kernel içinde BUILT-IN."
+          echo "vendor_boot.img için stock vendor_boot'tan repack gerekir."
+          echo ""
+          echo "SEÇENEK: Stock vendor_boot.img'yi kullanmaya devam et."
+          echo "Çünkü vendor modüller zaten kernel Image içinde gömülü."
+          echo "============================================================"
+
+      - name: Çıktıları yükle
         uses: actions/upload-artifact@v4
         with:
-          name: xiaomi14-${{ env.DEVICE }}-kernel-${{ github.run_number }}
+          name: ${{ env.DEVICE_CODENAME }}-kernel-build
           path: |
-            ${{ github.workspace }}/out/arch/arm64/boot/Image
-            ${{ github.workspace }}/out/arch/arm64/boot/Image.gz
-            ${{ github.workspace }}/out/arch/arm64/boot/dts/**/*.dtb
-            ${{ github.workspace }}/out/arch/arm64/boot/dtbo.img
-          if-no-files-found: ignore
-          
+            arch/arm64/boot/Image
+            arch/arm64/boot/dts/**/*.dtb
+            dtbo.img
+            ${{ env.DEVICE_CODENAME }}-kernel-anykernel3.zip
+            build.log
+          retention-days: 30
+          if-no-files-found: error
+
+  # ============================================================
+  # JOB 3: GKI BUILD (Opsiyonel)
+  # ============================================================
+  build-gki:
+    name: "📦 GKI Kernel Derle"
+    needs: analyze
+    runs-on: ubuntu-22.04
+    if: ${{ github.event.inputs.enable_gki == 'true' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ github.event.inputs.kernel_branch || env.KERNEL_BRANCH }}
+          fetch-depth: 1
+
+      - name: Paketler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libssl-dev make libc6-dev \
+            build-essential kmod cpio libelf-dev dwarves \
+            clang-17 llvm-17 lld-17 gcc-aarch64-linux-gnu
+
+          sudo ln -sf /usr/bin/clang-17 /usr/bin/clang
+          sudo ln -sf /usr/bin/ld.lld-17 /usr/bin/ld.lld
+
+      - name: GKI Derle
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make gki_defconfig
+          make -j$(nproc) 2>&1 | tee gki_build.log
+
+      - name: Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gki-kernel-build
+          path: |
+            arch/arm64/boot/Image
+            gki_build.log
+          retention-days: 14
