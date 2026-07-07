@@ -49,22 +49,7 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone https://github.com/Bosyaf/work.git --depth=1 kernel
-      - name: 2.5. Kconfig.ext ve Kbuild Güncelleme (Techpack Aktifleştirme)
-        run: |
-          cd kernel
-          echo "🔧 Kconfig.ext güncelleniyor..."
-          echo '# SPDX-License-Identifier: GPL-2.0' > Kconfig.ext
-          echo 'source "techpack/Kconfig.ext"' >> Kconfig.ext
-          
-          echo "🔧 Kbuild güncelleniyor (techpack ekleniyor)..."
-          sed -i '/obj-y\s*+=\s*drivers\//a obj-y\t\t\t+= techpack/' Kbuild
-          
-          echo "🔧 Script izinleri düzeltiliyor..."
-          chmod +x scripts/*.sh
-          chmod +x scripts/**/*.sh 2>/dev/null || true
-          find scripts -name "*.sh" -exec chmod +x {} \;
-          
-          echo "✅ Techpack aktif!"
+      
       
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
