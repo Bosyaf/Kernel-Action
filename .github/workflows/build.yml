@@ -170,65 +170,50 @@ jobs:
           export OBJCOPY=llvm-objcopy
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
-          
-          # Script izinlerini tekrar kontrol et
-          chmod +x scripts/*.sh
-          find scripts -name "*.sh" -exec chmod +x {} \;
-          
+
+          chmod +x scripts/*.sh 2>/dev/null || true
+          find scripts -type f -name "*.sh" -exec chmod +x {} \;
+          chmod +x scripts/config 2>/dev/null || true
+          chmod +x scripts/kconfig/merge_config.sh 2>/dev/null || true
+
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
+
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
           EOF
           chmod +x scripts/check-local-export
+
           mkdir -p out
-          [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          
-          # ========== BASE GKI DEFCONFIG ==========
+
           echo "📦 gki_defconfig oluşturuluyor..."
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            gki_defconfig
-          
-          # ========== CONFIG MERGE (Sıralı) ==========
-          CONFIG_FILE="out/.config"
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+
           echo "📦 Config merge başlatılıyor..."
-          
-          # 1. Pineapple SoC config
-          if [ -f "arch/arm64/configs/pineapple_GKI.config" ]; then
-            echo "  → pineapple_GKI.config ekleniyor..."
-            ./scripts/config --file $CONFIG_FILE -G arch/arm64/configs/pineapple_GKI.config
-          fi
-          
-          # 2. Houji device config
-          if [ -f "arch/arm64/configs/houji_GKI.config" ]; then
-            echo "  → houji_GKI.config ekleniyor..."
-            ./scripts/config --file $CONFIG_FILE -G arch/arm64/configs/houji_GKI.config
-          fi
-          
-          # 3. Pineapple consolidate
-          if [ -f "arch/arm64/configs/pineapple_consolidate.config" ]; then
-            echo "  → pineapple_consolidate.config ekleniyor..."
-            ./scripts/config --file $CONFIG_FILE -G arch/arm64/configs/pineapple_consolidate.config
-          fi
-          
-          # 4. Houji consolidate
-          if [ -f "arch/arm64/configs/houji_consolidate.config" ]; then
-            echo "  → houji_consolidate.config ekleniyor..."
-            ./scripts/config --file $CONFIG_FILE -G arch/arm64/configs/houji_consolidate.config
-          fi
-          
+          scripts/kconfig/merge_config.sh -m -r -O out \
+            arch/arm64/configs/gki_defconfig \
+            arch/arm64/configs/pineapple_GKI.config \
+            arch/arm64/configs/houji_GKI.config \
+            arch/arm64/configs/pineapple_consolidate.config \
+            arch/arm64/configs/houji_consolidate.config
+
+          echo "📦 olddefconfig çalıştırılıyor..."
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+
+          CONFIG_FILE="out/.config"
+
           # ========== CMDLINE ==========
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
+
           # ========== HZ Settings ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          
+
           # ========== Scheduler & Timer ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
@@ -240,29 +225,29 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-                 
+
           # ========== Thermal ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          
+
           # ========== Memory ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          
+
           # ========== LLVM / LTO ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          
+
           # ========== Debug ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
+
           # ========== Network ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
@@ -277,14 +262,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          
+
           # ========== Filesystem ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
+
           # ========== Misc ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          
-          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
+
+          # ========== KERNELSU & SUSFS ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -295,17 +280,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
-          
+
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          sed -i 's/check_defconfig//' build.config.gki || true
-          
-          # ========== OLDDEFCONFIG ==========
-          echo "📦 olddefconfig çalıştırılıyor..."
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            olddefconfig
-          
+
+          echo "📦 Final olddefconfig..."
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
+
           echo "✅ Config hazır!"
           
       - name: 8. Kernel Derleme (Image + dtbo + modules)
