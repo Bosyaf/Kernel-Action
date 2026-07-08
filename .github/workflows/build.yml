@@ -149,7 +149,7 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
           # ========== CMDLINE ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off loglevel=4 kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # ========== HZ Settings ==========
