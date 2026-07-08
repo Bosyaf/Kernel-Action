@@ -149,7 +149,7 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
           # ========== CMDLINE ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off loglevel=4 kmemleak=off debug_guardpage_minorder=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # ========== HZ Settings ==========
@@ -201,7 +201,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_CUBIC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_CUBIC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
@@ -256,7 +256,7 @@ jobs:
            KLDFLAGS="-Wl,--as-needed \
            -Wl,--strip-debug \
            -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+           Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 Paketleme
         run: |
