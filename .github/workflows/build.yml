@@ -168,16 +168,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_UNLOAD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULES_TREE_LOOKUP
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_ALL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_FORCE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODULE_SIG_PROTECT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MODVERSIONS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MODULE_ALLOW_MISSING_NAMESPACE_IMPORTS
+ 
 
           # ========== Thermal ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
