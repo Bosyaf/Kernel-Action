@@ -272,7 +272,7 @@ jobs:
             -Wl,--icf=safe" \
             Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 8. AnyKernel3 (Sadece Image Paketleme)
+      - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -280,12 +280,15 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../Bosyaf.zip" ./*
+          mkdir -p modules/vendor/lib/modules
+          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
+          zip -r "../CG-Galadriel.zip" ./*
+          echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "Bosyaf (ZyC Clang 22)"
+          name: "CG+ Galadriel (Yuki Clang +BOLT Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
