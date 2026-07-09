@@ -1,0 +1,670 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: BORE Scheduler Port
+Date: 2025
+Subject: [PATCH] BORE 5.9.6 backported to linux-6.1
+
+---
+ include/linux/sched.h |  21 +-
+ init/Kconfig          |  17 ++
+ kernel/sched/core.c   | 190 +++++++++++++++++
+ kernel/sched/debug.c  |   3 +
+ kernel/sched/fair.c   | 296 +++++++++++++++++++++++++++----
+ 5 files changed, 498 insertions(+), 29 deletions(-)
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -555,6 +555,23 @@ struct sched_entity {
+ 	u64				sum_exec_runtime;
+ 	u64				vruntime;
+ 	u64				prev_sum_exec_runtime;
++#ifdef CONFIG_SCHED_BORE
++	struct sched_burst_cache {
++		u8		score;
++		u32		count;
++		u64		timestamp;
++		spinlock_t	lock;
++	} child_burst;
++	struct sched_burst_cache group_burst;
++	u64				burst_time;
++	u8				prev_burst_penalty;
++	u8				curr_burst_penalty;
++	u8				burst_penalty;
++	u8				burst_score;
++#endif
++
+ 	u64				nr_migrations;
+ 
+ 	struct sched_statistics		stats;
+diff --git a/init/Kconfig b/init/Kconfig
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -1280,6 +1280,23 @@ config CHECKPOINT_RESTORE
+ 	  If unsure, say N here.
+ 
++config SCHED_BORE
++	bool "Burst-Oriented Response Enhancer"
++	default y
++	help
++	  In Desktop and Mobile computing, one might prefer interactive
++	  tasks to keep responsive no matter what they run in the background.
++
++	  Enabling this kernel feature modifies the scheduler to discriminate
++	  tasks by their burst time (runtime since it last went sleeping or
++	  yielding state) and prioritize those that run less bursty.
++	  Such tasks usually include window compositor, widgets backend,
++	  terminal emulator, video playback, games and so on.
++	  With a little impact to scheduling fairness, it may improve
++	  responsiveness especially under heavy background workload.
++
++	  If unsure, say Y here.
++
+ config SCHED_AUTOGROUP
+ 	bool "Automatic process group scheduling"
+ 	select CGROUPS
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -4368,6 +4368,187 @@ int wake_up_state(struct task_struct *p, unsigned int state)
+ 	return try_to_wake_up(p, state, 0);
+ }
+ 
++#ifdef CONFIG_SCHED_BORE
++
++extern u8 __read_mostly sched_burst_fork_atavistic;
++extern uint __read_mostly sched_burst_cache_lifetime;
++
++static u32 count_entries_upto2(struct list_head *head)
++{
++	struct list_head *next = head->next;
++	return (next != head) + (next->next != head);
++}
++
++static inline bool task_is_bore_eligible(struct task_struct *p)
++{
++	return p && p->sched_class == &fair_sched_class && !p->exit_state;
++}
++
++static inline bool burst_cache_expired(struct sched_burst_cache *bc, u64 now)
++{
++	return (s64)(bc->timestamp + sched_burst_cache_lifetime - now) < 0;
++}
++
++static inline void update_burst_cache(struct sched_burst_cache *bc,
++	struct task_struct *p, u32 cnt, u32 sum, u64 now)
++{
++	u8 avg = cnt ? sum / cnt : 0;
++	bc->score = max(avg, p->se.burst_penalty);
++	bc->count = cnt;
++	bc->timestamp = now;
++}
++
++#define for_each_child(p, t) \
++	list_for_each_entry(t, &(p)->children, sibling)
++
++static inline void update_child_burst_direct(struct task_struct *p, u64 now)
++{
++	u32 cnt = 0, sum = 0;
++	struct task_struct *child;
++
++	for_each_child(p, child) {
++		if (!task_is_bore_eligible(child)) continue;
++		cnt++;
++		sum += child->se.burst_penalty;
++	}
++	update_burst_cache(&p->se.child_burst, p, cnt, sum, now);
++}
++
++static inline u8 inherit_burst_direct(
++	struct task_struct *p, u64 now, u64 clone_flags)
++{
++	struct task_struct *parent = p;
++	struct sched_burst_cache *bc;
++
++	if (clone_flags & CLONE_PARENT)
++		parent = parent->real_parent;
++
++	bc = &parent->se.child_burst;
++	spin_lock(&bc->lock);
++	if (burst_cache_expired(bc, now))
++		update_child_burst_direct(parent, now);
++	burst = bc->score;
++	spin_unlock(&bc->lock);
++
++	return burst;
++}
++
++static void update_child_burst_topological(
++	struct task_struct *p, u64 now, u32 depth, u32 *acnt, u32 *asum)
++{
++	u32 cnt = 0, dcnt = 0, sum = 0;
++	struct task_struct *child, *dec;
++	struct sched_burst_cache *bc;
++
++	for_each_child(p, child) {
++		dec = child;
++		while ((dcnt = count_entries_upto2(&dec->children)) == 1)
++			dec = list_first_entry(&dec->children, struct task_struct, sibling);
++
++		if (!dcnt || !depth) {
++			if (!task_is_bore_eligible(dec)) continue;
++			cnt++;
++			sum += dec->se.burst_penalty;
++			continue;
++		}
++		bc = &dec->se.child_burst;
++		spin_lock(&bc->lock);
++		if (!burst_cache_expired(bc, now)) {
++			cnt += bc->count;
++			sum += (u32)bc->score * bc->count;
++			spin_unlock(&bc->lock);
++			break;
++		}
++		spin_unlock(&bc->lock);
++		update_child_burst_topological(dec, now, depth - 1, &cnt, &sum);
++	}
++	update_burst_cache(&p->se.child_burst, p, cnt, sum, now);
++	*acnt += cnt;
++	*asum += sum;
++}
++
++static inline u8 inherit_burst_topological(
++	struct task_struct *p, u64 now, u64 clone_flags)
++{
++	struct task_struct *anc = p;
++	struct sched_burst_cache *bc;
++	u32 cnt = 0, sum = 0;
++	u32 base_child_cnt = 0;
++
++	if (clone_flags & CLONE_PARENT) {
++		anc = anc->real_parent;
++		base_child_cnt = 1;
++	}
++
++	for (struct task_struct *next;
++		anc != (next = anc->real_parent) &&
++		count_entries_upto2(&anc->children) <= base_child_cnt;
++		anc = next);
++
++	bc = &anc->se.child_burst;
++	spin_lock(&bc->lock);
++	if (burst_cache_expired(bc, now))
++		update_child_burst_topological(
++			anc, now, sched_burst_fork_atavistic - 1, &cnt, &sum);
++	burst = bc->score;
++	spin_unlock(&bc->lock);
++
++	return burst;
++}
++
++static inline void update_tg_burst(struct task_struct *p, u64 now)
++{
++	struct task_struct *task;
++	u32 cnt = 0, sum = 0;
++
++	for_each_thread(p, task) {
++		if (!task_is_bore_eligible(task)) continue;
++		cnt++;
++		sum += task->se.burst_penalty;
++	}
++	update_burst_cache(&p->se.group_burst, p, cnt, sum, now);
++}
++
++static inline u8 inherit_burst_tg(struct task_struct *p, u64 now)
++{
++	struct task_struct *parent = rcu_dereference(p->group_leader);
++	struct sched_burst_cache *bc = &parent->se.group_burst;
++
++	spin_lock(&bc->lock);
++	if (burst_cache_expired(bc, now))
++		update_tg_burst(parent, now);
++	burst = bc->score;
++	spin_unlock(&bc->lock);
++
++	return burst;
++}
++
++void sched_clone_bore(struct task_struct *p,
++	struct task_struct *parent, u64 clone_flags, u64 now)
++{
++	struct sched_entity *se = &p->se;
++	u8 penalty;
++
++	spin_lock_init(&p->se.child_burst.lock);
++	spin_lock_init(&p->se.group_burst.lock);
++
++	if (!task_is_bore_eligible(p)) return;
++
++	if (clone_flags & CLONE_THREAD) {
++		rcu_read_lock();
++		penalty = inherit_burst_tg(parent, now);
++		rcu_read_unlock();
++	} else {
++		read_lock(&tasklist_lock);
++		penalty = likely(sched_burst_fork_atavistic) ?
++			inherit_burst_topological(parent, now, clone_flags) :
++			inherit_burst_direct(parent, now, clone_flags);
++		read_unlock(&tasklist_lock);
++	}
++
++	se->burst_penalty = se->prev_burst_penalty =
++		max(se->prev_burst_penalty, penalty);
++	se->child_burst.timestamp = 0;
++	se->group_burst.timestamp = 0;
++}
++
++void __init sched_init_bore(void)
++{
++	init_task.se.burst_time = 0;
++	init_task.se.prev_burst_penalty = 0;
++	init_task.se.curr_burst_penalty = 0;
++	init_task.se.burst_penalty = 0;
++	init_task.se.burst_score = 0;
++	init_task.se.child_burst.timestamp = 0;
++	init_task.se.group_burst.timestamp = 0;
++	spin_lock_init(&init_task.se.child_burst.lock);
++	spin_lock_init(&init_task.se.group_burst.lock);
++}
++
++void inline sched_fork_bore(struct task_struct *p)
++{
++	p->se.burst_time = 0;
++	p->se.curr_burst_penalty = 0;
++	p->se.burst_score = 0;
++	p->se.child_burst.timestamp = 0;
++	p->se.group_burst.timestamp = 0;
++	spin_lock_init(&p->se.child_burst.lock);
++	spin_lock_init(&p->se.group_burst.lock);
++}
++#endif /* CONFIG_SCHED_BORE */
++
+ /*
+  * Perform scheduler related setup for a newly forked process p.
+  * p is forked by current.
+@@ -4384,6 +4565,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
+ 	p->se.prev_sum_exec_runtime	= 0;
+ 	p->se.nr_migrations		= 0;
+ 	p->se.vruntime			= 0;
++#ifdef CONFIG_SCHED_BORE
++	sched_fork_bore(p);
++#endif
+ 	INIT_LIST_HEAD(&p->se.group_node);
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED
+@@ -4689,6 +4873,9 @@ void sched_cgroup_fork(struct task_struct *p, struct kernel_clone_args *kargs)
+ void sched_post_fork(struct task_struct *p)
+ {
++#ifdef CONFIG_SCHED_BORE
++	sched_clone_bore(p, current, 0, p->start_time);
++#endif
+ 	uclamp_post_fork(p);
+ }
+ 
+@@ -9675,6 +9862,11 @@ void __init sched_init(void)
+ 	BUG_ON(&dl_sched_class != &stop_sched_class + 1);
+ #endif
+ 
++#ifdef CONFIG_SCHED_BORE
++	sched_init_bore();
++	printk(KERN_INFO "BORE (Burst-Oriented Response Enhancer) CPU Scheduler modification 5.9.6 by Masahito Suzuki\n");
++#endif
++
+ 	wait_bit_init();
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED
+diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -547,6 +547,9 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
+ 		SPLIT_NS(schedstat_val_or_zero(p->stats.sum_sleep_runtime)),
+ 		SPLIT_NS(schedstat_val_or_zero(p->stats.sum_block_runtime)));
+ 
++#ifdef CONFIG_SCHED_BORE
++	SEQ_printf(m, " %2d", p->se.burst_score);
++#endif
+ #ifdef CONFIG_NUMA_BALANCING
+ 	SEQ_printf(m, " %d %d", task_node(p), task_numa_group_id(p));
+ #endif
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -19,6 +19,9 @@
+  *
+  * Adaptive scheduling granularity, math enhancements by Peter Zijlstra
+  * Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra
++ *
++ * Burst-Oriented Response Enhancer (BORE) CPU Scheduler
++ * Copyright (C) 2021-2025 Masahito Suzuki
+  */
+ #include <linux/sched.h>
+ #include <linux/sched/cpufreq.h>
+@@ -126,6 +129,115 @@ static unsigned int normalized_sysctl_sched_wakeup_granularity = 1000000UL;
+ 
+ const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
+ 
++#ifdef CONFIG_SCHED_BORE
++u8 __read_mostly sched_bore = 1;
++u8 __read_mostly sched_burst_exclude_kthreads = 1;
++u8 __read_mostly sched_burst_smoothness_long = 1;
++u8 __read_mostly sched_burst_smoothness_short = 0;
++u8 __read_mostly sched_burst_fork_atavistic = 2;
++u8 __read_mostly sched_burst_parity_threshold = 2;
++u8 __read_mostly sched_burst_penalty_offset = 24;
++uint __read_mostly sched_burst_penalty_scale = 1280;
++uint __read_mostly sched_burst_cache_stop_count = 64;
++uint __read_mostly sched_burst_cache_lifetime = 75000000;
++uint __read_mostly sched_deadline_boost_mask = ENQUEUE_INITIAL | ENQUEUE_WAKEUP;
++
++static int __maybe_unused sixty_four = 64;
++static int __maybe_unused maxval_u8 = 255;
++static int __maybe_unused maxval_12_bits = 4095;
++
++#define MAX_BURST_PENALTY (39U << 2)
++
++static inline u32 calc_burst_penalty(u64 burst_time)
++{
++	u64 greed, scaled_penalty, integral, excess_bits;
++
++	greed = (u64)sched_burst_penalty_scale * burst_time;
++	scaled_penalty = div64_u64(greed, NSEC_PER_SEC);
++
++	integral = min(scaled_penalty, (u64)sched_burst_penalty_offset + 64);
++	excess_bits = integral - sched_burst_penalty_offset;
++
++	if (excess_bits >= 64)
++		return MAX_BURST_PENALTY;
++
++	scaled_penalty = (1ULL << excess_bits) - 1;
++	scaled_penalty >>= 55 - (excess_bits > 16);
++
++	return min(MAX_BURST_PENALTY, scaled_penalty >> 16);
++}
++
++static inline u64 scale_slice(u64 delta, struct sched_entity *se)
++{
++	return mul_u64_u32_shr(delta, sched_prio_to_wmult[se->burst_score], 22);
++}
++
++static inline u8 effective_prio(struct task_struct *p)
++{
++	u8 prio = p->static_prio - MAX_RT_PRIO;
++	if (likely(sched_bore))
++		prio += p->se.burst_score;
++	return min(39, prio);
++}
++
++void update_burst_score(struct sched_entity *se)
++{
++	if (!entity_is_task(se)) return;
++	struct task_struct *p = task_of(se);
++	u8 prev_prio = effective_prio(p);
++
++	u8 burst_score = 0;
++	if (!((p->flags & PF_KTHREAD) && likely(sched_burst_exclude_kthreads)))
++		burst_score = se->burst_penalty >> 2;
++	se->burst_score = burst_score;
++
++	u8 new_prio = effective_prio(p);
++	if (new_prio != prev_prio)
++		reweight_task(p, new_prio);
++}
++
++void update_burst_penalty(struct sched_entity *se)
++{
++	se->curr_burst_penalty = calc_burst_penalty(se->burst_time);
++	se->burst_penalty = max(se->prev_burst_penalty, se->curr_burst_penalty);
++	update_burst_score(se);
++}
++
++static inline u32 binary_smooth(u32 new, u32 old)
++{
++	int increment = new - old;
++	return (0 >= increment) ?
++		old + ( increment >> (int)sched_burst_smoothness_long) :
++		old - (-increment >> (int)sched_burst_smoothness_short);
++}
++
++static void revolve_burst_penalty(struct sched_entity *se)
++{
++	se->prev_burst_penalty =
++		binary_smooth(se->curr_burst_penalty, se->prev_burst_penalty);
++	se->burst_time = 0;
++	se->curr_burst_penalty = 0;
++}
++
++void restart_burst(struct sched_entity *se)
++{
++	revolve_burst_penalty(se);
++	se->burst_penalty = se->prev_burst_penalty;
++	update_burst_score(se);
++}
++
++static void reset_task_weights_bore(void)
++{
++	struct task_struct *task;
++	struct rq *rq;
++	struct rq_flags rf;
++
++	write_lock_irq(&tasklist_lock);
++	for_each_process(task) {
++		if (!task_is_bore_eligible(task)) continue;
++		rq = task_rq(task);
++		rq_pin_lock(rq, &rf);
++		update_rq_clock(rq);
++		reweight_task(task, effective_prio(task));
++		rq_unpin_lock(rq, &rf);
++	}
++	write_unlock_irq(&tasklist_lock);
++}
++
++int sched_bore_update_handler(struct ctl_table *table, int write,
++	void __user *buffer, size_t *lenp, loff_t *ppos)
++{
++	int ret = proc_dou8vec_minmax(table, write, buffer, lenp, ppos);
++	if (ret || !write)
++		return ret;
++	reset_task_weights_bore();
++	return 0;
++}
++#endif /* CONFIG_SCHED_BORE */
++
+ int sched_thermal_decay_shift;
+ static int __init setup_sched_thermal_decay_shift(char *str)
+ {
+@@ -180,6 +292,79 @@ static unsigned int sysctl_sched_cfs_bandwidth_slice = 5000UL;
+ 
+ #ifdef CONFIG_SYSCTL
+ static struct ctl_table sched_fair_sysctls[] = {
++#ifdef CONFIG_SCHED_BORE
++	{
++		.procname = "sched_bore",
++		.data = &sched_bore,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = sched_bore_update_handler,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = SYSCTL_ONE,
++	},
++	{
++		.procname = "sched_burst_exclude_kthreads",
++		.data = &sched_burst_exclude_kthreads,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = proc_dou8vec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = SYSCTL_ONE,
++	},
++	{
++		.procname = "sched_burst_smoothness_long",
++		.data = &sched_burst_smoothness_long,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = proc_dou8vec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = SYSCTL_ONE,
++	},
++	{
++		.procname = "sched_burst_smoothness_short",
++		.data = &sched_burst_smoothness_short,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = proc_dou8vec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = SYSCTL_ONE,
++	},
++	{
++		.procname = "sched_burst_fork_atavistic",
++		.data = &sched_burst_fork_atavistic,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = proc_dou8vec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = SYSCTL_THREE,
++	},
++	{
++		.procname = "sched_burst_parity_threshold",
++		.data = &sched_burst_parity_threshold,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = proc_dou8vec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = &maxval_u8,
++	},
++	{
++		.procname = "sched_burst_penalty_offset",
++		.data = &sched_burst_penalty_offset,
++		.maxlen = sizeof(u8),
++		.mode = 0644,
++		.proc_handler = proc_dou8vec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = &sixty_four,
++	},
++	{
++		.procname = "sched_burst_penalty_scale",
++		.data = &sched_burst_penalty_scale,
++		.maxlen = sizeof(uint),
++		.mode = 0644,
++		.proc_handler = proc_douintvec_minmax,
++		.extra1 = SYSCTL_ZERO,
++		.extra2 = &maxval_12_bits,
++	},
++	{
++		.procname = "sched_burst_cache_lifetime",
++		.data = &sched_burst_cache_lifetime,
++		.maxlen = sizeof(uint),
++		.mode = 0644,
++		.proc_handler = proc_douintvec,
++	},
++#endif /* CONFIG_SCHED_BORE */
+ 	{
+ 		.procname = "sched_child_runs_first",
+ 		.data = &sysctl_sched_child_runs_first,
+@@ -695,7 +880,6 @@ static inline u64 calc_delta_fair(u64 delta, struct sched_entity *se)
+ {
+ 	if (unlikely(se->load.weight != NICE_0_LOAD))
+ 		delta = __calc_delta(delta, NICE_0_LOAD, &se->load);
+-	return delta;
+ }
+ 
+@@ -905,7 +1089,13 @@ static void update_curr(struct cfs_rq *cfs_rq)
+ 	curr->sum_exec_runtime += delta_exec;
+ 	schedstat_add(cfs_rq->exec_clock, delta_exec);
+ 
++#ifdef CONFIG_SCHED_BORE
++	curr->burst_time += delta_exec;
++	update_burst_penalty(curr);
++	curr->vruntime += max(1ULL, calc_delta_fair(delta_exec, curr));
++#else
+ 	curr->vruntime += calc_delta_fair(delta_exec, curr);
++#endif
+ 
+ 	update_min_vruntime(cfs_rq);
+ 
+@@ -6171,6 +6361,14 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+ 	bool was_sched_idle = sched_idle_rq(rq);
+ 
+ 	util_est_dequeue(&rq->cfs, p);
++
++#ifdef CONFIG_SCHED_BORE
++	if (task_sleep) {
++		cfs_rq = cfs_rq_of(se);
++		if (cfs_rq->curr == se)
++			update_curr(cfs_rq);
++		restart_burst(se);
++	}
++#endif
+ 
+ 	for_each_sched_entity(se) {
+ 		cfs_rq = cfs_rq_of(se);
+@@ -7939,24 +8137,31 @@ static void yield_task_fair(struct rq *rq)
+ 	/*
+ 	 * Are we the only task in the tree?
+ 	 */
++#if !defined(CONFIG_SCHED_BORE)
+ 	if (unlikely(rq->nr_running == 1))
+ 		return;
+-
+ 	clear_buddies(cfs_rq, se);
++#endif
+ 
+-	if (curr->policy != SCHED_BATCH) {
+-		update_rq_clock(rq);
+-		/*
+-		 * Update run-time statistics of the 'current'.
+-		 */
+-		update_curr(cfs_rq);
+-		/*
+-		 * Tell update_rq_clock() that we've just updated,
+-		 * so we don't do microscopic update in schedule()
+-		 * and double the fastpath cost.
+-		 */
+-		rq_clock_skip_update(rq);
+-	}
++	update_rq_clock(rq);
++	/*
++	 * Update run-time statistics of the 'current'.
++	 */
++	update_curr(cfs_rq);
++
++#ifdef CONFIG_SCHED_BORE
++	restart_burst(se);
++	if (unlikely(rq->nr_running == 1))
++		return;
++
++	clear_buddies(cfs_rq, se);
++#endif
++
++	/*
++	 * Tell update_rq_clock() that we've just updated,
++	 * so we core.c'de tanımlı fonksiyonları çağır
++	 * so we don't do microscopic update in schedule()
++	 * and double the fastpath cost.
++	 */
++	rq_clock_skip_update(rq);
+ 
+ 	set_skip_buddy(se);
+ }
+@@ -11869,6 +12074,9 @@ static void task_fork_fair(struct task_struct *p)
+ 		update_curr(cfs_rq);
+ 		se->vruntime = curr->vruntime;
+ 	}
++#ifdef CONFIG_SCHED_BORE
++	update_burst_score(se);
++#endif
+ 	place_entity(cfs_rq, se, 1);
+ 
+ 	if (sysctl_sched_child_runs_first && curr && entity_before(curr, se)) {
+@@ -12368,6 +12576,14 @@ static void switched_from_fair(struct rq *rq, struct task_struct *p)
+ {
++#ifdef CONFIG_SCHED_BORE
++	p->se.burst_time = 0;
++	p->se.prev_burst_penalty = 0;
++	p->se.curr_burst_penalty = 0;
++	p->se.burst_penalty = 0;
++	p->se.burst_score = 0;
++#endif
+ 	detach_task_cfs_rq(p);
+ }
+ 
+-- 
+2.34.1
