@@ -245,8 +245,8 @@ jobs:
             KCFLAGS="-O2 \
            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3+rng \
            -mtune=generic \
-           -falign-functions=32 \
-           -falign-loops=32 \
+           -falign-functions=16 \
+           -falign-loops=16 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
