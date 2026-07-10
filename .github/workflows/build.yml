@@ -246,7 +246,7 @@ jobs:
            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3+rng \
            -mtune=generic \
            -falign-functions=16 \
-           -falign-loops=16 \
+           -falign-loops=32 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
