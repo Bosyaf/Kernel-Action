@@ -247,6 +247,7 @@ jobs:
            -mtune=generic \
            -falign-functions=16 \
            -falign-loops=32 \
+           -falign-jumps=16 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
