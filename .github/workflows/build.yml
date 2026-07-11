@@ -225,7 +225,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Bosyaf+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Waltrix"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -243,8 +243,9 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
-           -falign-functions=32 \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3+rng+i8mm+fp16+rpres \
+           -falign-functions=16 \
+           -falign-loops=32 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
