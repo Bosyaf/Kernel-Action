@@ -131,43 +131,21 @@ jobs:
             echo "🎉 Özel yamalar tamamlandı!"
           fi
           
-      - name: 5.6. BORE Scheduler 5.9.6 Güncelleme
+      - name: 5.6. BORE Scheduler 5.9.6 Uygula
         run: |
-         cd common
-         echo "🔍 Mevcut BORE versiyonu kontrol ediliyor..."
-    
-         # Mevcut BORE var mı kontrol et
-         if grep -q "CONFIG_SCHED_BORE" init/Kconfig; then
-         echo "✅ BORE zaten mevcut (güncellenecek)"
-       
-         # Versiyon kontrolü (eğer varsa)
-         if grep -q "5.1.0" kernel/sched/fair.c 2>/dev/null; then
-         echo "📋 Mevcut: BORE 5.1.0"
-         echo "📋 Hedef: BORE 5.9.6"
-         fi
-         else
-         echo "⚠️ BORE bulunamadı (yeni eklenecek)"
-         fi
-    
-         echo "🔥 BORE Scheduler 5.9.6 güncelleniyor..."
-    
-         BORE_PATCH="$GITHUB_WORKSPACE/patches/bore/bore5.9.6scheulder.patch"
-         if [ -f "$BORE_PATCH" ]; then
-         echo "📦 Patch: $BORE_PATCH"
-       
-         # -N = Normal mode (zaten olanı skip et)
-         # --forward = İleriye doğru yama (geri alma)
-         # --batch = Soru sorma (otomatik devam et)
-         patch -p1 -N --batch < "$BORE_PATCH" && \
-         echo "✅ BORE 5.9.6 güncelleme başarılı!" || \
-         echo "⚠️ Bazı hunks atlandı (zaten uygulanmış olabilir)"
-      
-         # .rej dosyalarını temizle
-         find . -name "*.rej" -delete 2>/dev/null || true
-         else
-         echo "❌ BORE patch dosyası bulunamadı!"
-         exit 1
-         fi
+          cd common
+          echo "🔥 BORE Scheduler 5.9.6 indiriliyor..."
+          BORE_PATCH="bore-5.9.6.patch"
+          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/bore/bore5.9.6scheulder.patch" -o "$BORE_PATCH"
+          if [ -f "$BORE_PATCH" ] && [ -s "$BORE_PATCH" ]; then
+            echo "✅ Patch indirildi: $(wc -l < $BORE_PATCH) satır"
+            patch -p1 -N --batch < "$BORE_PATCH" && echo "✅ BORE 5.9.6 uygulandı!" || echo "⚠️ Bazı hunks atlandı"
+            rm -f "$BORE_PATCH"
+            find . -name "*.rej" -delete 2>/dev/null || true
+          else
+            echo "❌ Patch indirilemedi!"
+            exit 1
+          fi
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
