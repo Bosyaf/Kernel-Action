@@ -48,7 +48,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 -b android14-6.1-lts https://android.googlesource.com/kernel/common.git common
+          git clone -b a14-6.1 --depth=1 https://github.com/ahmed-alnassif/android_kernel_common-6.1.git common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -130,7 +130,23 @@ jobs:
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
-              
+      - name: 5.6. BORE 5.9.6 Backport (6.1 Uyumlu)
+        run: |
+          cd common
+          echo "🔥 BORE 5.9.6 backport uygulanıyor (6.1 uyumlu)..."
+    
+          BORE_PATCH="$GITHUB_WORKSPACE/patches/bore-5.9.6-6.1-backport.patch"
+          if [ -f "$BORE_PATCH" ] && [ -s "$BORE_PATCH" ]; then
+          echo "✅ Patch bulundu: $(wc -l < $BORE_PATCH) satır"
+          patch -p1 --batch < "$BORE_PATCH" && \
+          echo "✅ BORE 5.9.6 uygulandı!" || \
+          echo "⚠️ Bazı hunks atlandı"
+          rm -f "$BORE_PATCH"
+          find . -name "*.rej" -delete 2>/dev/null || true
+          else
+          echo "❌ BORE patch bulunamadı!"
+          exit 1
+          fi
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -169,7 +185,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          
+
  
 
           # ========== Thermal ==========
@@ -261,7 +277,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 Paketleme
         run: |
@@ -284,5 +300,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-          
