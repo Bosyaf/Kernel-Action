@@ -169,7 +169,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
  
 
           # ========== Thermal ==========
