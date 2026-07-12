@@ -48,7 +48,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/android_kernel_common-6.1.git common
+          git clone --depth=1 -b android14-6.1-lts https://android.googlesource.com/kernel/common.git common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -169,7 +169,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          
  
 
           # ========== Thermal ==========
@@ -261,7 +261,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 Paketleme
         run: |
