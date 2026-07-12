@@ -135,16 +135,17 @@ jobs:
           cd common
           echo "🔥 BORE 5.9.6 backport uygulanıyor (6.1 uyumlu)..."
     
-          BORE_PATCH="$GITHUB_WORKSPACE/patches/bore-5.9.6-6.1-backport.patch"
+          BORE_PATCH="$GITHUB_WORKSPACE/bore/bore-5.9.6-6.1-backport.patch"
           if [ -f "$BORE_PATCH" ] && [ -s "$BORE_PATCH" ]; then
           echo "✅ Patch bulundu: $(wc -l < $BORE_PATCH) satır"
           patch -p1 --batch < "$BORE_PATCH" && \
           echo "✅ BORE 5.9.6 uygulandı!" || \
           echo "⚠️ Bazı hunks atlandı"
-          rm -f "$BORE_PATCH"
           find . -name "*.rej" -delete 2>/dev/null || true
           else
           echo "❌ BORE patch bulunamadı!"
+          echo "📁 Kontrol edilecek yol: $BORE_PATCH"
+          ls -la "$GITHUB_WORKSPACE/bore/" || true
           exit 1
           fi
       - name: 6. Full Kernel Config & Derleme Hazırlığı
