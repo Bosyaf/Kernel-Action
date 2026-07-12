@@ -1,0 +1,30 @@
+From a00dfdaec0a875335c0b9f2efd07cd0c7a935963 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E9=99=88=E5=8D=8E?=
+ <144014896+mrcxlinux@users.noreply.github.com>
+Date: Sat, 7 Feb 2026 16:21:41 +0200
+Subject: [PATCH] Add manager support for kowsu, MamboSU, KernelSU NEXT,
+ WildKSU
+
+---
+ kernel/apk_sign.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/kernel/apk_sign.c b/kernel/apk_sign.c
+index 91f56d13..421d516b 100644
+--- a/kernel/apk_sign.c
++++ b/kernel/apk_sign.c
+@@ -33,6 +33,10 @@ static apk_sign_key_t apk_sign_keys[] = {
+     { EXPECTED_SIZE_WEISHU, EXPECTED_HASH_WEISHU }, // weishu/KernelSU
+     { EXPECTED_SIZE_5EC1CFF, EXPECTED_HASH_5EC1CFF }, // 5ec1cff/KernelSU
+     { EXPECTED_SIZE_RSUNTK, EXPECTED_HASH_RSUNTK }, // rsuntk/KernelSU
+     { EXPECTED_SIZE_SHIRKNEKO, EXPECTED_HASH_SHIRKNEKO }, // SukiSU
++    { 0x375, "484fcba6e6c43b1fb09700633bf2fb4758f13cb0b2f4457b80d075084b26c588" }, // kowsu
++    { 0x384, "a9462b8b98ea1ca7901b0cbdcebfaa35f0aa95e51b01d66e6b6d2c81b97746d8" }, // MamboSU
++    { 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7" }, // KSUN
++    { 0x39b, "593d4ce870c02468639efeef631e07ca4d852d63f154be56706229f9a5be0800" }, // WildKSU
+ #ifdef EXPECTED_SIZE
+     { EXPECTED_SIZE, EXPECTED_HASH }, // Custom
+ #endif
+-- 
+2.53.0
+
