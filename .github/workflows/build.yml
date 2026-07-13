@@ -48,7 +48,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b a14-6.1 --depth=1 https://github.com/ahmed-alnassif/android_kernel_common-6.1.git common
+          git clone --depth=1 https://github.com/Bosyaf/my_work.git common
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -130,24 +130,7 @@ jobs:
             echo "----------------------------------------------------"
             echo "🎉 Özel yamalar tamamlandı!"
           fi
-      - name: 5.6. BORE 5.9.6 Backport (6.1 Uyumlu)
-        run: |
-          cd common
-          echo "🔥 BORE 5.9.6 backport uygulanıyor (6.1 uyumlu)..."
-    
-          BORE_PATCH="$GITHUB_WORKSPACE/bore/bore-5.9.6-6.1-backport.patch"
-          if [ -f "$BORE_PATCH" ] && [ -s "$BORE_PATCH" ]; then
-          echo "✅ Patch bulundu: $(wc -l < $BORE_PATCH) satır"
-          patch -p1 --batch < "$BORE_PATCH" && \
-          echo "✅ BORE 5.9.6 uygulandı!" || \
-          echo "⚠️ Bazı hunks atlandı"
-          find . -name "*.rej" -delete 2>/dev/null || true
-          else
-          echo "❌ BORE patch bulunamadı!"
-          echo "📁 Kontrol edilecek yol: $BORE_PATCH"
-          ls -la "$GITHUB_WORKSPACE/bore/" || true
-          exit 1
-          fi
+              
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -186,7 +169,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-
+         
  
 
           # ========== Thermal ==========
@@ -260,25 +243,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+fp16 \
-           -falign-functions=16 \
-           -falign-loops=32 \
-           -fomit-frame-pointer \
-           -ffunction-sections \
-           -fdata-sections \
-           -fno-unwind-tables \
-           -fno-asynchronous-unwind-tables \
-           -Wno-unused-command-line-argument \
-           -Wno-format \
-           -Wno-format-extra-args \
-           -Wno-constant-logical-operand \
-           -Wno-unused-variable \
-           -Wno-address-of-packed-member" \
-           KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 Paketleme
         run: |
@@ -301,3 +266,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+
+
+          
