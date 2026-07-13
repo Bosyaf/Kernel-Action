@@ -48,8 +48,59 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my_work.git common
-      
+          git clone -b a14-6.1 --depth=1 https://github.com/ahmed-alnassif/android_kernel_common-6.1.git common
+      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
+        run: |
+          cd common
+          echo "📦 KernelSU-Next kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
+          if [ -f "$PATCH" ]; then
+          echo "🔥 Multi-manager patch uygulanıyor..."
+          patch -p1 --forward < "$PATCH" && \
+          echo "✅ Multi-manager patch başarılı!" || \
+          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
+          else
+          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
+      - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
+        run: |
+          cd common
+          echo "📦 SUSFS4KSU kuruluyor..."
+          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
+          echo "📦 SUSFS dosyaları kopyalanıyor..."
+          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
+          cp -R susfs4ksu/kernel_patches/include/* ./include/
+          echo "📦 Patch dosyaları listesi:"
+          ls -la susfs4ksu/kernel_patches/*.patch
+          echo "📦 SUSFS patch uygulanıyor..."
+          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
+          if [ -n "$SUSFS_PATCH" ]; then
+            echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
+            patch -p1 < "$SUSFS_PATCH" || true
+          else
+            echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
+          echo "📦 namespace.c SUSFS patch uygulanıyor..."
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
+          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then
+            patch -p1 < fs_namespace.patch || true
+            echo "  ✅ Uygulandı"
+          else
+            echo "  ⚠️ Patch bulunamadı"
+          fi
+          rm -f fs_namespace.patch
+          
+          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
+          echo "  ✅ Canlı Yama Başarılı!"
+          find . -name "*.rej" -delete 2>/dev/null || true
+  
       - name: 5. Asya Yaması
         run: |
           cd common
@@ -118,9 +169,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-         
- 
-
+       
           # ========== Thermal ==========
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
@@ -146,16 +195,29 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_NETEM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_PFIFO_FAST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_FIFO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_PIE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_SFQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_HTB
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_TBF
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_INGRESS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_BBR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_RENO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_CUBIC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "cake"
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            olddefconfig
           # ========== Filesystem ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           # ========== Misc ==========
@@ -191,6 +253,25 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            KCFLAGS="-O2 \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+fp16 \
+           -falign-functions=16 \
+           -falign-loops=32 \
+           -fomit-frame-pointer \
+           -ffunction-sections \
+           -fdata-sections \
+           -fno-unwind-tables \
+           -fno-asynchronous-unwind-tables \
+           -Wno-unused-command-line-argument \
+           -Wno-format \
+           -Wno-format-extra-args \
+           -Wno-constant-logical-operand \
+           -Wno-unused-variable \
+           -Wno-address-of-packed-member" \
+           KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 8. AnyKernel3 Paketleme
@@ -214,6 +295,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-
-          
