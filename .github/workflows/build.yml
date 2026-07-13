@@ -49,23 +49,6 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_work.git common
-      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
-        run: |
-          cd common
-          echo "📦 KernelSU-Next kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
-          if [ -f "$PATCH" ]; then
-          echo "🔥 Multi-manager patch uygulanıyor..."
-          patch -p1 --forward < "$PATCH" && \
-          echo "✅ Multi-manager patch başarılı!" || \
-          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
-          else
-          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
-          fi
       
       - name: 5. Asya Yaması
         run: |
