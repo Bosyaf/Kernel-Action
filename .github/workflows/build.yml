@@ -49,6 +49,11 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_work.git common
+      - name: 2.5. Script İzinlerini Düzelt
+        run: |
+          cd common
+          find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
+          find scripts/ -type f -executable -exec chmod +x {} \;
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
