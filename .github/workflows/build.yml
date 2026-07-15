@@ -132,7 +132,7 @@ jobs:
       - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           cat << 'EOF' > scripts/check-local-export
@@ -245,7 +245,7 @@ jobs:
       - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           # KCFLAGS içine '-Wno-error' ekledim.
           # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
