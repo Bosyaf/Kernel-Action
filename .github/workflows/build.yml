@@ -66,20 +66,45 @@ jobs:
               fi
             done
           fi         
-      - name: 2.6. KernelSU-Next Kurulumu
+      - name: 3. KernelSU + SUSFS Kurulumu
         run: |
           cd common
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+          echo "📦 KernelSU kuruluyor..."
+          git clone https://github.com/tiann/KernelSU
+          cd KernelSU
+          git reset --soft HEAD~1
 
-      - name: 2.7. SUSFS4KSU Kurulumu
+          echo "📦 SUSFS çekiliyor..."
+          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs4ksu
+
+          echo "📦 Patch'ler uygulanıyor..."
+          PATCH_DIR="$GITHUB_WORKSPACE/patches/ksu"
+          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-avc-log-spoofing.patch" || echo "⚠️ avc-log-spoofing atlandı"
+          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-add-multiple-managers.patch" || echo "⚠️ multi-manager atlandı"
+          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-throne_tracker-offload-to-kthread.patch" || echo "⚠️ throne_tracker atlandı"
+          patch -p1 --fuzz=3 < "../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || echo "⚠️ susfs_for_ksu atlandı"
+          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-escape-persistent_allow_list-to-kthread.patch" || echo "⚠️ escape_persistent atlandı"
+          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-supercalls-allow-userspace-to-pull-list-entries.patch" || echo "⚠️ supercalls atlandı"
+
+          echo "📦 KernelSU setup çalıştırılıyor..."
+          bash "KernelSU/kernel/setup.sh" "main"
+
+          echo "📦 SUSFS dosyaları kopyalanıyor..."
+          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
+          cp -R susfs4ksu/kernel_patches/include/linux/* ./include/linux/
+
+          echo "📦 SUSFS patch uygulanıyor..."
+          patch -p1 --fuzz=3 < susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ SUSFS patch atlandı"
+
+      - name: 3.5. fs_namespace Patch
         run: |
           cd common
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-          
-          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
-          echo "  ✅ Canlı Yama Başarılı!"
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
+          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then
+            patch -p1 --fuzz=3 < fs_namespace.patch && echo "✅ fs_namespace uygulandı" || echo "⚠️ fs_namespace atlandı"
+          fi
+          rm -f fs_namespace.patch
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
