@@ -143,7 +143,9 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
-          
+          # ========== CMDLINE ==========
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           # ========== Scheduler & Timer ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
