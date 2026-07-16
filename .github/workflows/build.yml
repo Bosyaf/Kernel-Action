@@ -66,45 +66,11 @@ jobs:
               fi
             done
           fi         
-      - name: 3. KernelSU + SUSFS Kurulumu
+      - name: 2.93. KernelSU-Next + SUSFS (LTS)
         run: |
-          cd common
-          echo "📦 KernelSU kuruluyor..."
-          git clone https://github.com/tiann/KernelSU
-          cd KernelSU
-          git reset --soft HEAD~1
-
-          echo "📦 SUSFS çekiliyor..."
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs4ksu
-
-          echo "📦 Patch'ler uygulanıyor..."
-          PATCH_DIR="$GITHUB_WORKSPACE/hes"
-          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-avc-log-spoofing.patch" || echo "⚠️ avc-log-spoofing atlandı"
-          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-add-multiple-managers.patch" || echo "⚠️ multi-manager atlandı"
-          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-throne_tracker-offload-to-kthread.patch" || echo "⚠️ throne_tracker atlandı"
-          patch -p1 --fuzz=3 < "../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || echo "⚠️ susfs_for_ksu atlandı"
-          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-escape-persistent_allow_list-to-kthread.patch" || echo "⚠️ escape_persistent atlandı"
-          patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-supercalls-allow-userspace-to-pull-list-entries.patch" || echo "⚠️ supercalls atlandı"
-
-          echo "📦 KernelSU setup çalıştırılıyor..."
-          bash "KernelSU/kernel/setup.sh" "main"
-
-          echo "📦 SUSFS dosyaları kopyalanıyor..."
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -R susfs4ksu/kernel_patches/include/linux/* ./include/linux/
-
-          echo "📦 SUSFS patch uygulanıyor..."
-          patch -p1 --fuzz=3 < susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || echo "⚠️ SUSFS patch atlandı"
-
-      - name: 3.5. fs_namespace Patch
-        run: |
-          cd common
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
-          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then
-            patch -p1 --fuzz=3 < fs_namespace.patch && echo "✅ fs_namespace uygulandı" || echo "⚠️ fs_namespace atlandı"
-          fi
-          rm -f fs_namespace.patch
+          cd common 
+          # KernelSU-Next kur (SUSFS otomatik indiriliyor + patch'ler uygulanıyor)
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -155,6 +121,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+                    # ========== KERNELSU + SUSFS CONFIG ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
