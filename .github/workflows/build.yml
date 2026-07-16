@@ -181,6 +181,21 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          # ========== Netfilter ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+
+          # ========== Connector ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CONNECTOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROC_EVENTS
+
+          # ========== NTFS3 ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NTFS3_FS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NTFS3_64BIT_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NTFS3_LZX_XPRESS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NTFS3_FS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
