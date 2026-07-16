@@ -74,7 +74,7 @@ jobs:
       - name: 3.5. Multi-Manager Desteği
         run: |
           cd common/KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksu-add-manager.patch"
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/rksu-add-mambosu-manager-support.patch"
           if [ -f "$PATCH" ]; then
           echo "🔥 Multi-manager patch uygulanıyor..."
           patch -p1 --forward < "$PATCH" && \
