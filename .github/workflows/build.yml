@@ -144,7 +144,7 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
           # ========== CMDLINE ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off kmemleak=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           # ========== Scheduler & Timer ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
@@ -180,7 +180,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
