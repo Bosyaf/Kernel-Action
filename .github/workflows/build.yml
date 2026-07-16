@@ -71,18 +71,7 @@ jobs:
           cd common
           echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/rksu-add-mambosu-manager-support.patch"
-          if [ -f "$PATCH" ]; then
-          echo "🔥 Multi-manager patch uygulanıyor..."
-          patch -p1 --forward < "$PATCH" && \
-          echo "✅ Multi-manager patch başarılı!" || \
-          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
-          else
-          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
-          fi
+      
       - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
@@ -117,6 +106,18 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/rksu-add-mambosu-manager-support.patch"
+          if [ -f "$PATCH" ]; then
+          echo "🔥 Multi-manager patch uygulanıyor..."
+          patch -p1 --forward < "$PATCH" && \
+          echo "✅ Multi-manager patch başarılı!" || \
+          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
+          else
+          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
      
       - name: 2.55. Asya Yaması
         run: |
