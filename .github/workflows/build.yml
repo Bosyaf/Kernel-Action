@@ -1,4 +1,4 @@
-name: Bosyaf (Yuki Clang 22)
+name: Bosyaf (Neutron Clang)
 
 permissions:
   contents: write
@@ -47,89 +47,8 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_work.git common
-      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
-        run: |
-          cd common
-          echo "📦 KernelSU-Next kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-      - name: 3.5. Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
-          if [ -f "$PATCH" ]; then
-          echo "🔥 Multi-manager patch uygulanıyor..."
-          patch -p1 --forward < "$PATCH" && \
-          echo "✅ Multi-manager patch başarılı!" || \
-          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
-          else
-          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
-          fi
-      - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
-        run: |
-          cd common
-          echo "📦 SUSFS4KSU kuruluyor..."
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-          echo "📦 SUSFS dosyaları kopyalanıyor..."
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -R susfs4ksu/kernel_patches/include/* ./include/
-          echo "📦 Patch dosyaları listesi:"
-          ls -la susfs4ksu/kernel_patches/*.patch
-          echo "📦 SUSFS patch uygulanıyor..."
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then
-            echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
-            patch -p1 < "$SUSFS_PATCH" || true
-          else
-            echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
-          fi
-          echo "📦 namespace.c SUSFS patch uygulanıyor..."
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
-          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then
-            patch -p1 < fs_namespace.patch || true
-            echo "  ✅ Uygulandı"
-          else
-            echo "  ⚠️ Patch bulunamadı"
-          fi
-          rm -f fs_namespace.patch
-          
-          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
-          echo "  ✅ Canlı Yama Başarılı!"
-          find . -name "*.rej" -delete 2>/dev/null || true
-  
-      - name: 5. Asya Yaması
-        run: |
-          cd common
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-      - name: 5.5. Özel Performans (Bosyaf Patches)
-        run: |
-          cd common
-          echo "🔥 Repo içerisindeki özel yamalar uygulanıyor..."
-          PATCH_DIR="../patches"
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "❌ HATA: $PATCH_DIR dizini bulunamadı!"
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "----------------------------------------------------"
-              echo "📦 İşleniyor: $filename"
-              if [ "$filename" == "susfs_dentry_checks.patch" ]; then
-                echo "⚠️ SUSFS ekstra yaması algılandı, entegre ediliyor..."
-              fi
-              if patch -p1 --forward < "$patch_file"; then
-                echo "✅ BAŞARILI: $filename"
-              else
-                echo "❌ ATLANDI: $filename"
-              fi
-            done
-            echo "----------------------------------------------------"
-            echo "🎉 Özel yamalar tamamlandı!"
-          fi
-              
-      - name: 6. Full Kernel Config & Derleme Hazırlığı
+                
+      - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
@@ -147,133 +66,41 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
-          # ========== CMDLINE ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
-          # ========== HZ Settings ==========
+          # ========== Scheduler & Timer ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-          # ========== Scheduler & Timer ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-        
-          # ========== Thermal ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           
-          # ========== Memory ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          # ========== LLVM / LTO ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          # ========== Debug ==========
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
-          # ========== Network ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_NETEM
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_PFIFO_FAST
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_FIFO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_PIE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_SFQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_HTB
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_TBF
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_INGRESS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_CAKE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_RENO
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TCP_CONG_CUBIC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-          
-          # ========== Filesystem ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          # ========== Misc ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          
-          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
-          
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Waltrix"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-      - name: 7. Kernel Derleme (NÜKLEER MOD - HATA TANIMAZ)
+      - name: 4. Kernel Derleme
         run: |
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          # KCFLAGS içine '-Wno-error' ekledim.
-          # Bu şu demek: "Ne hata bulursan bul, sadece uyar ama derlemeyi DURDURMA, o Zip'i bana ver!"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+fp16 \
-           -falign-functions=16 \
-           -falign-loops=32 \
-           -fomit-frame-pointer \
-           -ffunction-sections \
-           -fdata-sections \
-           -fno-unwind-tables \
-           -fno-asynchronous-unwind-tables \
-           -Wno-unused-command-line-argument \
-           -Wno-format \
-           -Wno-format-extra-args \
-           -Wno-constant-logical-operand \
-           -Wno-unused-variable \
-           -Wno-address-of-packed-member" \
-           KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 8. AnyKernel3 Paketleme
+      - name: 5. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -281,15 +108,13 @@ jobs:
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           cp ../common/out/arch/arm64/boot/Image .
-          mkdir -p modules/vendor/lib/modules
-          find ../common/out -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \;
           zip -r "../CG-Galadriel.zip" ./*
           echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-      - name: 9. Release Yükle
+      - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (Yuki Clang +BOLT Full LTO)"
+          name: "CG+ Galadriel (Neutron Clang)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
