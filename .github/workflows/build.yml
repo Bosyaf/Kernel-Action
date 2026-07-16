@@ -84,11 +84,11 @@ jobs:
           echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
       
-      - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
+      - name: 3.5 SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
           echo "📦 SUSFS4KSU kuruluyor..."
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-lts-dev susfs4ksu
+          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
           echo "📦 SUSFS dosyaları kopyalanıyor..."
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/
           cp -R susfs4ksu/kernel_patches/include/* ./include/
@@ -120,7 +120,7 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
       
      
-      - name: 2.55. Asya Yaması
+      - name: 3.7 Asya Yaması
         run: |
           cd common
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
@@ -188,7 +188,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
+          # Localversion
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -241,5 +243,6 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
           
