@@ -52,18 +52,6 @@ jobs:
           echo "开始安装 SukiSU Ultra..."
           cd "$CONFIG"
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
-      - name: 2.1 Multi-Manager Desteği
-        run: |
-          cd common/KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
-          if [ -f "$PATCH" ]; then
-          echo "🔥 Multi-manager patch uygulanıyor..."
-          patch -p1 --forward < "$PATCH" && \
-          echo "✅ Multi-manager patch başarılı!" || \
-          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
-          else
-          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
-          fi
       - name: 2.2 SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
