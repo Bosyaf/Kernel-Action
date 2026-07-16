@@ -47,11 +47,7 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_work.git common
-      - name: 添加 SukiSU
-        run: |
-          echo "开始安装 SukiSU Ultra..."
-          cd "$CONFIG"
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+      
       - name: 2.5 Özel Yamalar
         run: |
           cd common
@@ -70,7 +66,24 @@ jobs:
               fi
             done
           fi
-      - name: 2.2 SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
+      - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
+        run: |
+          cd common
+          echo "📦 KernelSU-Next kuruluyor..."
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksu-add-manager.patch"
+          if [ -f "$PATCH" ]; then
+          echo "🔥 Multi-manager patch uygulanıyor..."
+          patch -p1 --forward < "$PATCH" && \
+          echo "✅ Multi-manager patch başarılı!" || \
+          echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
+          else
+          echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
+      - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
           echo "📦 SUSFS4KSU kuruluyor..."
@@ -104,24 +117,7 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
-      - name: 2.5 Özel Yamalar
-        run: |
-          cd common
-          PATCH_DIR="../aches"
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "📦 İşleniyor: $filename"
-              if patch -p1 < "$patch_file"; then
-                echo "✅ $filename"
-              else
-                echo "❌ $filename"
-                exit 1
-              fi
-            done
-          fi         
+     
       - name: 2.55. Asya Yaması
         run: |
           cd common
