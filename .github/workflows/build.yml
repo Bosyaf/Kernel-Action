@@ -66,6 +66,65 @@ jobs:
               fi
             done
           fi         
+      - name: 3.4 KernelSU-Next Kurulumu (LTS)
+        run: |
+          cd common
+          echo "📦 KernelSU-Next kuruluyor (next-susfs branch)..."
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/next-susfs/kernel/setup.sh" | bash -s next-susfs
+
+      - name: 3.5. Multi-Manager Desteği
+        run: |
+          cd common/KernelSU-Next
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
+          if [ -f "$PATCH" ]; then
+            echo "🔥 Multi-manager patch uygulanıyor..."
+            if patch -p1 < "$PATCH"; then
+              echo "✅ Multi-manager patch başarılı!"
+            else
+              echo "❌ Multi-manager patch uygulanamadı — LTS ile uyumsuz olabilir!"
+              exit 1
+            fi
+          else
+            echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
+
+      - name: 4. SUSFS4KSU Kurulumu (gki-android14-6.1-lts-dev)
+        run: |
+          cd common
+          echo "📦 SUSFS4KSU kuruluyor (LTS branch)..."
+          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-lts-dev susfs4ksu
+          echo "📦 SUSFS dosyaları kopyalanıyor..."
+          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
+          cp -R susfs4ksu/kernel_patches/include/* ./include/
+          echo "📦 Patch dosyaları listesi:"
+          ls -la susfs4ksu/kernel_patches/*.patch
+          echo "📦 SUSFS patch uygulanıyor..."
+          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
+          if [ -n "$SUSFS_PATCH" ]; then
+            echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
+            patch -p1 < "$SUSFS_PATCH" || { echo "❌ SUSFS patch uygulanamadı!"; exit 1; }
+          else
+            echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
+          fi
+          echo "📦 namespace.c SUSFS patch uygulanıyor..."
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
+          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then
+            if patch -p1 < fs_namespace.patch; then
+              echo "  ✅ Uygulandı"
+            else
+              echo "  ❌ fs_namespace.patch uygulanamadı — LTS ile uyumsuz olabilir!"
+              exit 1
+            fi
+          else
+            echo "  ⚠️ Patch bulunamadı"
+          fi
+          rm -f fs_namespace.patch
+          
+          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
+          echo "  ✅ Canlı Yama Başarılı!"
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
