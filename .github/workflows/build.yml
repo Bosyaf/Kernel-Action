@@ -52,6 +52,24 @@ jobs:
           echo "开始安装 SukiSU Ultra..."
           cd "$CONFIG"
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+      - name: 2.5 Özel Yamalar
+        run: |
+          cd common
+          PATCH_DIR="../aches"
+          if [ ! -d "$PATCH_DIR" ]; then
+            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
+          else
+            for patch_file in "$PATCH_DIR"/*.patch; do
+              filename=$(basename "$patch_file")
+              echo "📦 İşleniyor: $filename"
+              if patch -p1 < "$patch_file"; then
+                echo "✅ $filename"
+              else
+                echo "❌ $filename"
+                exit 1
+              fi
+            done
+          fi
       - name: 2.2 SUSFS4KSU Kurulumu (gki-android14-6.1-dev)
         run: |
           cd common
