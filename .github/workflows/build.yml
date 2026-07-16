@@ -78,7 +78,7 @@ jobs:
           git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1 ../susfs4ksu
 
           echo "📦 Patch'ler uygulanıyor..."
-          PATCH_DIR="$GITHUB_WORKSPACE/patches/ksu"
+          PATCH_DIR="$GITHUB_WORKSPACE/hes"
           patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-avc-log-spoofing.patch" || echo "⚠️ avc-log-spoofing atlandı"
           patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-add-multiple-managers.patch" || echo "⚠️ multi-manager atlandı"
           patch -p1 --fuzz=3 < "$PATCH_DIR/0001-feat-throne_tracker-offload-to-kthread.patch" || echo "⚠️ throne_tracker atlandı"
