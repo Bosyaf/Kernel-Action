@@ -48,7 +48,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b a14-6.1 --depth=1 https://github.com/ahmed-alnassif/android_kernel_common-6.1.git common
+          git clone --depth=1 https://github.com/Bosyaf/my_work.git common
       
       - name: 2.5 Özel Yamalar
         run: |
@@ -160,6 +160,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -224,9 +225,9 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+fp16 \
-           -falign-functions=32 \
+            KCFLAGS="-O3 \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+           -falign-functions=16 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
@@ -264,4 +265,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
-          
+
+        
