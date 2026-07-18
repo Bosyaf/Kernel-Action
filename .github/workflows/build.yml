@@ -133,6 +133,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
+          echo "-Laerwen" > .version
           cat << 'EOF' > scripts/check-local-export
           #!/bin/sh
           exit 0
