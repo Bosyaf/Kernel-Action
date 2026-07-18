@@ -146,7 +146,7 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
           # ========== CMDLINE ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off kmemleak=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           # ========== Scheduler & Timer ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
@@ -161,7 +161,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_MSM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
