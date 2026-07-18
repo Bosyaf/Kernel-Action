@@ -67,6 +67,8 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Waltrix"
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
     
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
