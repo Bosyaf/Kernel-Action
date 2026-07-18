@@ -161,6 +161,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DRM_MSM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
