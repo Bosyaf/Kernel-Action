@@ -181,8 +181,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           # ========== Netfilter ==========
@@ -190,10 +188,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-
-          # ========== Connector ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CONNECTOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PROC_EVENTS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
 
           # ========== NTFS3 ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NTFS3_FS
