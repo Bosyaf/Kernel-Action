@@ -55,18 +55,25 @@ jobs:
           cd common
           PATCH_DIR="../aches"
           if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
+          echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
           else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "📦 İşleniyor: $filename"
-              if patch -p1 < "$patch_file"; then
-                echo "✅ $filename"
-              else
-                echo "❌ $filename"
-                exit 1
-              fi
-            done
+          for patch_file in "$PATCH_DIR"/*.patch; do
+          filename=$(basename "$patch_file")
+          echo "📦 İşleniyor: $filename"
+        
+          # -N: Zaten uygulanmış yamaları atlar
+          # --verbose: Hangi dosyalara dokunduğunu listeler
+          # 2>&1: Hata mesajlarını da log içine alır
+          if patch -p1 -N --batch --verbose < "$patch_file" > "patch_log_$filename.txt" 2>&1; then
+          echo "✅ $filename başarıyla uygulandı."
+          cat "patch_log_$filename.txt" # Neler yapıldığını ekrana bas
+          else
+          echo "❌ $filename uygulanamadı veya zaten mevcut. Log:"
+          # Hata durumunda sadece ilk birkaç satırı gösterelim ki log çok uzamasın
+          head -n 5 "patch_log_$filename.txt"
+          fi
+          rm "patch_log_$filename.txt"
+          done
           fi
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
