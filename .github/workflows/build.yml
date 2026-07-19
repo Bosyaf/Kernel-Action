@@ -137,7 +137,7 @@ jobs:
           #!/bin/sh
           exit 0
           EOF
-          chmod +x scripts/check-local-export
+          chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
