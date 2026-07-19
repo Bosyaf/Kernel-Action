@@ -96,6 +96,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_NAP
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
