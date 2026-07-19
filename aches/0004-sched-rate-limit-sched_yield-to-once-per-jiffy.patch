@@ -1,0 +1,43 @@
+From f1cc2d57f3efce711685c11bb1139a50758057a3 Mon Sep 17 00:00:00 2001
+From: Colin Ian King <colin.i.king@intel.com>
+Date: Thu, 17 Oct 2024 16:29:50 +0100
+Subject: [PATCH 04/18] sched: rate-limit sched_yield to once per jiffy
+
+- fixes Proton/Wine games that spam yield
+
+Co-authored-by: Colin Ian King <colin.i.king@intel.com>
+Signed-off-by: Salman Wahib <sxlmnwb.dev@gmail.com>
+---
+ kernel/sched/syscalls.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/kernel/sched/syscalls.c b/kernel/sched/syscalls.c
+index b215b0ead9a6..a47e70232d6d 100644
+--- a/kernel/sched/syscalls.c
++++ b/kernel/sched/syscalls.c
+@@ -1332,10 +1332,22 @@ SYSCALL_DEFINE3(sched_getaffinity, pid_t, pid, unsigned int, len,
+ 	return ret;
+ }
+ 
++static DEFINE_PER_CPU(unsigned long, last_yield);
++
+ static void do_sched_yield(void)
+ {
+ 	struct rq_flags rf;
+ 	struct rq *rq;
++	int cpu = raw_smp_processor_id();
++
++	cond_resched();
++
++	/* rate limit yielding to something sensible */
++
++	if (!time_after(jiffies, per_cpu(last_yield, cpu)))
++		return;
++
++	per_cpu(last_yield, cpu) = jiffies;
+ 
+ 	rq = this_rq_lock_irq(&rf);
+ 
+-- 
+2.55.0
+

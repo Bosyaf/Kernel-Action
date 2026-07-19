@@ -1,0 +1,29 @@
+From bb1e63a558c1d90c613f12c366104378306c926e Mon Sep 17 00:00:00 2001
+From: Salman Wahib <sxlmnwb.dev@gmail.com>
+Date: Tue, 26 May 2026 16:22:38 +0700
+Subject: [PATCH 07/18] iommu: enable posted MSI by default
+
+- lower PCIe interrupt latency for GPU
+
+Co-authored-by: Mauri de Souza Meneguzzo <mauri870@gmail.com>
+Signed-off-by: Salman Wahib <sxlmnwb.dev@gmail.com>
+---
+ drivers/iommu/irq_remapping.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/iommu/irq_remapping.c b/drivers/iommu/irq_remapping.c
+index c2443659812a..0e71a648f403 100644
+--- a/drivers/iommu/irq_remapping.c
++++ b/drivers/iommu/irq_remapping.c
+@@ -24,7 +24,7 @@ int no_x2apic_optout;
+ 
+ int disable_irq_post = 0;
+ 
+-bool enable_posted_msi __ro_after_init;
++bool enable_posted_msi __ro_after_init = true;
+ 
+ static int disable_irq_remap;
+ static struct irq_remap_ops *remap_ops;
+-- 
+2.55.0
+
