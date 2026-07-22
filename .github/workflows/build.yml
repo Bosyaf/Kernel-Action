@@ -154,7 +154,9 @@ jobs:
           #!/bin/sh
           exit 0
           EOF
-          chmod +x scripts/check-local-export
+          chmod -R +x scripts/
+          mkdir -p out
+          [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
