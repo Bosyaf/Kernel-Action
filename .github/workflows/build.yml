@@ -43,14 +43,17 @@ jobs:
         
           echo "Arşiv Çıkarılıyor..."
           mkdir -p "$GITHUB_WORKSPACE/xclang"
-          # Orijinal kodunuzda eksik olan çıkarma komutu eklendi:
           tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/xclang" --strip-components=1
         
-          echo "PATH değişkeni ayarlanıyor..."
-          # GitHub Actions ortamında PATH'i sonraki adımlarda kalıcı yapmak için:
+          echo "PATH ve Kütüphane değişkenleri ayarlanıyor..."
+          # GitHub Actions ortamında PATH'i ayarlıyoruz
           echo "$GITHUB_WORKSPACE/xclang/bin" >> $GITHUB_PATH
+          
+          # LLD Linker'ın özel kütüphaneleri bulabilmesi için LD_LIBRARY_PATH ekliyoruz (YENİ EKLENEN KISIM)
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/xclang/lib:$GITHUB_WORKSPACE/xclang/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         
-          echo "✅ XClang İndirildi, Çıkarıldı ve PATH'e eklendi!"
+          echo "✅ XClang İndirildi, Çıkarıldı ve PATH/Kütüphane ayarları yapıldı!"
+
 
           
       - name: 2. Kaynakları Çek
