@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve LLVM 22.1.8 Çekimi
+      - name: 1. Greenforce Clang 24 (En Güncel - Temmuz 2026)
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -34,32 +34,16 @@ jobs:
           libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
           rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
           pkg-config zstd
-
-          echo "🔥 LLVM 22.1.8 Toolchain"
-
-          CLANG_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-Linux-X64.tar.xz"
-
-          echo "LLVM indiriliyor: $CLANG_URL"
-
-          curl -fL# "$CLANG_URL" -o llvm.tar.xz || {
-          echo "HATA: LLVM indirilemedi!"
-          exit 1
-          }
-
-          mkdir -p "$GITHUB_WORKSPACE/clang"
-
-          tar -xf llvm.tar.xz \
-          --strip-components=1 \
-          -C "$GITHUB_WORKSPACE/clang"
-
-          rm -f llvm.tar.xz
-
-          echo "$GITHUB_WORKSPACE/clang/bin" >> "$GITHUB_PATH"
-
-          clang --version
-          ld.lld --version
-
-
+    
+          CLANG_URL="https://github.com/greenforce-project/greenforce_clang/releases/download/20260716/gf-clang-24.0.0-20260716.tar.gz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz
+    
+          mkdir -p "$GITHUB_WORKSPACE/greenforce-clang"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/greenforce-clang"
+          rm -f clang.tar.gz
+    
+          echo "$GITHUB_WORKSPACE/greenforce-clang/bin" >> "$GITHUB_PATH"
+          "$GITHUB_WORKSPACE/greenforce-clang/bin/clang" --version
           
       - name: 2. Kaynakları Çek
         run: |
@@ -146,6 +130,7 @@ jobs:
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
+          export PATH="$(pwd)/greenforce-clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           cat << 'EOF' > scripts/check-local-export
@@ -235,6 +220,7 @@ jobs:
       - name: 4. Kernel Derleme
         run: |
           cd common
+          export PATH="$(pwd)/greenforce-clang/bin:$PATH"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -277,5 +263,6 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 
