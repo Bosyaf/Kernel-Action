@@ -54,7 +54,6 @@ jobs:
         
           echo "✅ XClang İndirildi, Çıkarıldı ve PATH/Kütüphane ayarları yapıldı!"
 
-
           
       - name: 2. Kaynakları Çek
         run: |
