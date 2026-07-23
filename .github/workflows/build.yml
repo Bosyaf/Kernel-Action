@@ -131,7 +131,7 @@ jobs:
           cd common
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-      - name: 3. Full Kernel Config & Derleme Hazırlığı
+      - name: 6. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$YUKI_BIN:$PATH"
@@ -162,59 +162,60 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
-          # ========== CMDLINE ==========
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          # ========== Scheduler & Timer ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_500
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
-
+          # ========== FULL LTO CONFIG =============================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_FULL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CFI_CLANG
+          # ========================================================
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          # ========== Netfilter ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_PSCI_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARM_CPUIDLE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_MENU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_IDLE_GOV_TEO
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_GOV_FAIR_SHARE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-
-          # ========== NTFS3 ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NTFS3_FS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NTFS3_64BIT_CLUSTER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NTFS3_LZX_XPRESS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NTFS3_FS_POSIX_ACL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
+          # ========== KERNELSU & SUSFS CONFIG'LERI ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -225,8 +226,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          # ========== KERNELSU & SUSFS CONFIG'LERI BITIS ==========
           # Localversion
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Galadriel"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -298,5 +300,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          
-          
