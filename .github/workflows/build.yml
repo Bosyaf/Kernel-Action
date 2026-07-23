@@ -125,12 +125,6 @@ jobs:
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
-          curl -fLSs --retry 3 https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          rm -f wifi.patch
-          wget -q --tries=3 --timeout=30 -O setup_bb.sh \
             https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null || \
           curl -fLSs --retry 3 -o setup_bb.sh \
             https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null || true
