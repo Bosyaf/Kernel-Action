@@ -37,7 +37,7 @@ jobs:
             pkg-config zstd
             
           echo "🔥 Kusursuz Denge: ZyC Clang 20 (Ocak 2025 Sürümü - ARMv9-a Uyumlu)"
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250122-release/Clang-20.0.0git-20250122.tar.gz"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250715-release/Clang-21.0.0git-20250715.tar.gz"
           echo "ZyC Clang 20 indiriliyor: $CLANG_URL"
           
           curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang URL'si patlak (404)!"; exit 1; }
@@ -125,11 +125,6 @@ jobs:
       - name: 5. Wi-Fi ve Asya Yamaları
         run: |
           cd common
-          curl -fLSs --retry 3 https://github.com/OnePlus-12-Development/android_kernel_qcom_sm8650/commit/3e0cb08.patch > wifi.patch || true
-          if [ -s wifi.patch ] && grep -q "diff" wifi.patch; then
-            patch -p1 --forward < wifi.patch || true
-          fi
-          rm -f wifi.patch
           wget -q --tries=3 --timeout=30 -O setup_bb.sh \
             https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh 2>/dev/null || \
           curl -fLSs --retry 3 -o setup_bb.sh \
@@ -246,8 +241,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
@@ -297,8 +292,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
-            -falign-functions=32 \
-            -fno-stack-protector \
+            -falign-functions=16 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
