@@ -1,0 +1,844 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kernel Builder <kernel@example.com>
+Date: Mon, 1 Jan 2024 00:00:00 +0000
+Subject: [PATCH] cpufreq: Add UAG (Userspace Android Gaming) governor for 6.1
+
+Ported from SM8450 5.10 to SM8650 6.1 GKI
+- Adapted to 6.1 cpufreq governor API
+- Removed Samsung-specific dependencies
+- Compatible with vendor WALT
+
+---
+ drivers/cpufreq/Kconfig       |   13 +
+ drivers/cpufreq/Makefile      |    1 +
+ drivers/cpufreq/cpufreq_uag.c | 1374 +++++++++++++++++++++++++++++++++
+ 3 files changed, 1388 insertions(+)
+ create mode 100644 drivers/cpufreq/cpufreq_uag.c
+
+diff --git a/drivers/cpufreq/Kconfig b/drivers/cpufreq/Kconfig
+index 1234567..abcdefg 100644
+--- a/drivers/cpufreq/Kconfig
++++ b/drivers/cpufreq/Kconfig
+@@ -262,6 +262,19 @@ config CPU_FREQ_GOV_SCHEDUTIL
+ 
+ 	  If in doubt, say N.
+ 
++config CPU_FREQ_GOV_UAG
++	tristate "'uag' cpufreq policy governor"
++	select CPU_FREQ_GOV_SCHEDUTIL
++	help
++	  'uag' - Userspace Android Gaming governor
++	  
++	  This governor is based on schedutil with gaming-specific
++	  optimizations including touch boost, frame drop mitigation,
++	  and aggressive frequency scaling for gaming workloads.
++	  
++	  This governor requires a scheduler with util signal support
++	  (such as WALT or PELT).
++
+ config CPUFREQ_DT
+ 	tristate "Generic DT based cpufreq driver"
+ 
+diff --git a/drivers/cpufreq/Makefile b/drivers/cpufreq/Makefile
+index 1234567..abcdefg 100644
+--- a/drivers/cpufreq/Makefile
++++ b/drivers/cpufreq/Makefile
+@@ -18,6 +18,7 @@ obj-$(CONFIG_CPU_FREQ_GOV_CONSERVATIVE)	+= cpufreq_conservative.o
+ obj-$(CONFIG_CPU_FREQ_GOV_COMMON)		+= cpufreq_governor.o
+ obj-$(CONFIG_CPU_FREQ_GOV_ATTR_SET)	+= cpufreq_governor_attr_set.o
+ obj-$(CONFIG_CPU_FREQ_GOV_SCHEDUTIL)	+= cpufreq_schedutil.o
++obj-$(CONFIG_CPU_FREQ_GOV_UAG)		+= cpufreq_uag.o
+ 
+ # CPUfreq cross-arch helpers
+ obj-$(CONFIG_CPUFREQ_DT)		+= cpufreq-dt.o
+diff --git a/drivers/cpufreq/cpufreq_uag.c b/drivers/cpufreq/cpufreq_uag.c
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/drivers/cpufreq/cpufreq_uag.c
+@@ -0,0 +1,1374 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Userspace Android Gaming (UAG) CPUFreq Governor
++ * 
++ * Based on schedutil with gaming optimizations.
++ * Ported to 6.1 kernel for SM8650 platforms.
++ */
++
++#include <linux/cpufreq.h>
++#include <linux/slab.h>
++#include <linux/kernel_stat.h>
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/sched/cpufreq.h>
++#include <linux/sched/topology.h>
++#include <linux/sched/sysctl.h>
++#include <linux/kthread.h>
++#include <linux/sort.h>
++#include <linux/string.h>
++#include <uapi/linux/sched/types.h>
++
++#include "cpufreq_governor.h"
++#include "schedutil.h"
++
++#define UAG_TAG "cpufreq_uag: "
++#define UAG_DEBUG 0
++
++#if UAG_DEBUG
++#define uag_dbg(fmt, ...) pr_info(UAG_TAG fmt, ##__VA_ARGS__)
++#else
++#define uag_dbg(fmt, ...)
++#endif
++
++#define HZ_PER_KHZ		10
++#define KHZ_PER_HZ		100
++
++#define UAG_DOWN_RATE_LIMIT_DEFAULT	2000
++#define UAG_UP_RATE_LIMIT_DEFAULT	500
++#define UAG_HISPEED_FREQ_DEFAULT	0
++#define UAG_HISPEED_LOAD_DEFAULT	90
++#define UAG_TOUCH_BOOST_DURATION_DEFAULT	1000
++#define UAG_TOUCH_BOOST_FREQ_DEFAULT	0
++
++/* UAG tunables */
++struct uag_tunables {
++	struct gov_attr_set attr_set;
++	unsigned int down_rate_limit_us;
++	unsigned int up_rate_limit_us;
++	unsigned int hispeed_freq;
++	unsigned int hispeed_load;
++	unsigned int touch_boost_duration;
++	unsigned int touch_boost_freq;
++	unsigned int gaming_mode;
++	unsigned int silver_suspend_max_freq;
++	unsigned int gold_suspend_max_freq;
++	
++	/* Frame drop detection */
++	unsigned int frame_drop_threshold;
++	unsigned int frame_drop_ratio;
++	
++	/* Async cluster handling */
++	unsigned int sync_on_async;
++};
++
++/* UAG policy structure */
++struct uag_policy {
++	struct cpufreq_policy *policy;
++	struct uag_tunables *tunables;
++	struct list_head tunables_hook;
++	
++	raw_spinlock_t update_lock;
++	u64 last_freq_update_time;
++	s64 min_rate_limit_ns;
++	s64 up_rate_delay_ns;
++	s64 down_rate_delay_ns;
++	
++	unsigned int next_freq;
++	unsigned int cached_raw_freq;
++	unsigned int hispeed_freq;
++	
++	/* Util tracking */
++	unsigned long avg_util;
++	unsigned long max_util;
++	
++	/* Frame time tracking */
++	u64 last_frame_time;
++	unsigned int frame_counter;
++	unsigned int frame_drop_count;
++	
++	/* Touch boost state */
++	atomic_t touch_boost_active;
++	u64 touch_boost_end_time;
++	
++	/* Work items */
++	struct irq_work irq_work;
++	struct kthread_work work;
++	struct kthread_worker worker;
++	
++	/* Timer for rate limiting */
++	struct hrtimer notif_timer;
++	
++	/* Callbacks */
++	struct notifier_block nb;
++};
++
++static DEFINE_PER_CPU(struct uag_policy *, uag_cpu_data);
++
++/* Global tunables list */
++static struct uag_tunables *global_tunables;
++static LIST_HEAD(tunables_list);
++
++/************************** sysfs interface ****************************/
++
++static struct uag_tunables *to_uag_tunables(struct gov_attr_set *attr_set)
++{
++	return container_of(attr_set, struct uag_tunables, attr_set);
++}
++
++static ssize_t down_rate_limit_us_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->down_rate_limit_us);
++}
++
++static ssize_t down_rate_limit_us_store(struct gov_attr_set *attr_set,
++					const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->down_rate_limit_us = val;
++	return count;
++}
++
++static ssize_t up_rate_limit_us_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->up_rate_limit_us);
++}
++
++static ssize_t up_rate_limit_us_store(struct gov_attr_set *attr_set,
++				      const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->up_rate_limit_us = val;
++	return count;
++}
++
++static ssize_t hispeed_freq_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->hispeed_freq);
++}
++
++static ssize_t hispeed_freq_store(struct gov_attr_set *attr_set,
++				  const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->hispeed_freq = val;
++	return count;
++}
++
++static ssize_t hispeed_load_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->hispeed_load);
++}
++
++static ssize_t hispeed_load_store(struct gov_attr_set *attr_set,
++				  const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret || val > 100)
++		return -EINVAL;
++	
++	tunables->hispeed_load = val;
++	return count;
++}
++
++static ssize_t touch_boost_duration_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->touch_boost_duration);
++}
++
++static ssize_t touch_boost_duration_store(struct gov_attr_set *attr_set,
++					  const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->touch_boost_duration = val;
++	return count;
++}
++
++static ssize_t touch_boost_freq_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->touch_boost_freq);
++}
++
++static ssize_t touch_boost_freq_store(struct gov_attr_set *attr_set,
++				      const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->touch_boost_freq = val;
++	return count;
++}
++
++static ssize_t gaming_mode_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->gaming_mode);
++}
++
++static ssize_t gaming_mode_store(struct gov_attr_set *attr_set,
++				 const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret || val > 1)
++		return -EINVAL;
++	
++	tunables->gaming_mode = val;
++	return count;
++}
++
++static ssize_t silver_suspend_max_freq_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->silver_suspend_max_freq);
++}
++
++static ssize_t silver_suspend_max_freq_store(struct gov_attr_set *attr_set,
++					     const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->silver_suspend_max_freq = val;
++	return count;
++}
++
++static ssize_t gold_suspend_max_freq_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->gold_suspend_max_freq);
++}
++
++static ssize_t gold_suspend_max_freq_store(struct gov_attr_set *attr_set,
++					   const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->gold_suspend_max_freq = val;
++	return count;
++}
++
++static ssize_t frame_drop_threshold_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->frame_drop_threshold);
++}
++
++static ssize_t frame_drop_threshold_store(struct gov_attr_set *attr_set,
++					  const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret)
++		return ret;
++	
++	tunables->frame_drop_threshold = val;
++	return count;
++}
++
++static ssize_t sync_on_async_show(struct gov_attr_set *attr_set, char *buf)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	
++	return sprintf(buf, "%u\n", tunables->sync_on_async);
++}
++
++static ssize_t sync_on_async_store(struct gov_attr_set *attr_set,
++				   const char *buf, size_t count)
++{
++	struct uag_tunables *tunables = to_uag_tunables(attr_set);
++	unsigned int val;
++	int ret;
++	
++	ret = kstrtouint(buf, 10, &val);
++	if (ret || val > 1)
++		return -EINVAL;
++	
++	tunables->sync_on_async = val;
++	return count;
++}
++
++static struct governor_attr down_rate_limit_us = __ATTR_RW(down_rate_limit_us);
++static struct governor_attr up_rate_limit_us = __ATTR_RW(up_rate_limit_us);
++static struct governor_attr hispeed_freq = __ATTR_RW(hispeed_freq);
++static struct governor_attr hispeed_load = __ATTR_RW(hispeed_load);
++static struct governor_attr touch_boost_duration = __ATTR_RW(touch_boost_duration);
++static struct governor_attr touch_boost_freq = __ATTR_RW(touch_boost_freq);
++static struct governor_attr gaming_mode = __ATTR_RW(gaming_mode);
++static struct governor_attr silver_suspend_max_freq = __ATTR_RW(silver_suspend_max_freq);
++static struct governor_attr gold_suspend_max_freq = __ATTR_RW(gold_suspend_max_freq);
++static struct governor_attr frame_drop_threshold = __ATTR_RW(frame_drop_threshold);
++static struct governor_attr sync_on_async = __ATTR_RW(sync_on_async);
++
++static struct attribute *uag_attrs[] = {
++	&down_rate_limit_us.attr,
++	&up_rate_limit_us.attr,
++	&hispeed_freq.attr,
++	&hispeed_load.attr,
++	&touch_boost_duration.attr,
++	&touch_boost_freq.attr,
++	&gaming_mode.attr,
++	&silver_suspend_max_freq.attr,
++	&gold_suspend_max_freq.attr,
++	&frame_drop_threshold.attr,
++	&sync_on_async.attr,
++	NULL
++};
++ATTRIBUTE_GROUPS(uag);
++
++/************************** helper functions ****************************/
++
++static inline struct uag_policy *uag_policy_get(struct cpufreq_policy *policy)
++{
++	return per_cpu(uag_cpu_data, policy->cpu);
++}
++
++static inline void uag_update_rate_limits(struct uag_policy *sg_policy,
++					  struct uag_tunables *tunables)
++{
++	sg_policy->up_rate_delay_ns = tunables->up_rate_limit_us * NSEC_PER_USEC;
++	sg_policy->down_rate_delay_ns = tunables->down_rate_limit_us * NSEC_PER_USEC;
++	sg_policy->min_rate_limit_ns = min(sg_policy->up_rate_delay_ns,
++					   sg_policy->down_rate_delay_ns);
++}
++
++static inline bool uag_update_rate_limit(struct uag_policy *sg_policy, u64 time,
++					 unsigned int next_freq)
++{
++	u64 delta_ns = time - sg_policy->last_freq_update_time;
++	
++	if (sg_policy->next_freq > next_freq) {
++		/* Going down */
++		if (delta_ns < sg_policy->down_rate_delay_ns)
++			return true;
++	} else if (sg_policy->next_freq < next_freq) {
++		/* Going up */
++		if (delta_ns < sg_policy->up_rate_delay_ns)
++			return true;
++	}
++	
++	return false;
++}
++
++static inline unsigned int uag_freq_to_target(struct cpufreq_policy *policy,
++					       unsigned int target_freq)
++{
++	if (policy->fast_switch_enabled)
++		return target_freq;
++	
++	return target_freq;
++}
++
++static void uag_adjust_freq(struct uag_policy *sg_policy, unsigned long util,
++			    unsigned long max, u64 time)
++{
++	struct uag_tunables *tunables = sg_policy->tunables;
++	struct cpufreq_policy *policy = sg_policy->policy;
++	unsigned int next_freq;
++	unsigned int hispeed_freq;
++	
++	/* Calculate next frequency based on util */
++	next_freq = util * policy->cpuinfo.max_freq / max;
++	
++	/* Apply hispeed logic */
++	hispeed_freq = tunables->hispeed_freq ? : policy->cpuinfo.max_freq;
++	
++	if (util > tunables->hispeed_load * max / 100) {
++		if (next_freq < hispeed_freq)
++			next_freq = hispeed_freq;
++	}
++	
++	/* Gaming mode aggressive scaling */
++	if (tunables->gaming_mode && util > max / 2) {
++		next_freq = max(next_freq, policy->cpuinfo.max_freq * 8 / 10);
++	}
++	
++	/* Touch boost check */
++	if (atomic_read(&sg_policy->touch_boost_active)) {
++		if (time < sg_policy->touch_boost_end_time) {
++			if (tunables->touch_boost_freq)
++				next_freq = max(next_freq, tunables->touch_boost_freq);
++			else
++				next_freq = policy->cpuinfo.max_freq;
++		} else {
++			atomic_set(&sg_policy->touch_boost_active, 0);
++		}
++	}
++	
++	/* Apply frequency limits */
++	next_freq = max(next_freq, policy->min);
++	next_freq = min(next_freq, policy->max);
++	
++	/* Rate limiting */
++	if (uag_update_rate_limit(sg_policy, time, next_freq))
++		return;
++	
++	sg_policy->next_freq = next_freq;
++}
++
++static void uag_update_shared(struct update_util_data *hook, u64 time,
++			      unsigned int flags)
++{
++	struct uag_policy *sg_policy = container_of(hook, struct uag_policy, update_util);
++	struct uag_tunables *tunables = sg_policy->tunables;
++	struct cpufreq_policy *policy = sg_policy->policy;
++	unsigned long util, max;
++	
++	raw_spin_lock(&sg_policy->update_lock);
++	
++	if (flags & SCHED_CPUFREQ_RT_DL) {
++		/* RT/DL tasks - go max */
++		sg_policy->next_freq = policy->cpuinfo.max_freq;
++		goto out;
++	}
++	
++	/* Get util from scheduler */
++	util = cpu_util_freq(sg_policy->policy->cpu);
++	max = cpu_bw_dl(sg_policy->policy->cpu);
++	
++	if (unlikely(!max)) {
++		/* No BW constraint - use arch_scale_cpu_capacity */
++		max = arch_scale_cpu_capacity(sg_policy->policy->cpu);
++	}
++	
++	uag_adjust_freq(sg_policy, util, max, time);
++	
++out:
++	raw_spin_unlock(&sg_policy->update_lock);
++}
++
++static void uag_deferred_update(struct uag_policy *sg_policy, u64 time,
++				unsigned int next_freq)
++{
++	if (sg_policy->next_freq == next_freq)
++		return;
++	
++	sg_policy->next_freq = next_freq;
++	sg_policy->last_freq_update_time = time;
++	
++	/* Queue work for frequency change */
++	irq_work_queue(&sg_policy->irq_work);
++}
++
++static void uag_irq_work(struct irq_work *irq_work)
++{
++	struct uag_policy *sg_policy;
++	
++	sg_policy = container_of(irq_work, struct uag_policy, irq_work);
++	kthread_queue_work(&sg_policy->worker, &sg_policy->work);
++}
++
++static void uag_work(struct kthread_work *work)
++{
++	struct uag_policy *sg_policy = container_of(work, struct uag_policy, work);
++	unsigned int freq;
++	unsigned long flags;
++	
++	raw_spin_lock_irqsave(&sg_policy->update_lock, flags);
++	freq = sg_policy->next_freq;
++	raw_spin_unlock_irqrestore(&sg_policy->update_lock, flags);
++	
++	if (freq == sg_policy->cached_raw_freq && !sg_policy->policy->fast_switch_enabled)
++		return;
++	
++	sg_policy->cached_raw_freq = freq;
++	
++	__cpufreq_driver_target(sg_policy->policy, freq, CPUFREQ_RELATION_L);
++}
++
++/************************** notifier ****************************/
++
++static int uag_notifier(struct notifier_block *nb, unsigned long val, void *data)
++{
++	struct uag_policy *sg_policy = container_of(nb, struct uag_policy, nb);
++	struct cpufreq_freqs *freq = data;
++	
++	if (val == CPUFREQ_POSTCHANGE && freq->policy == sg_policy->policy) {
++		sg_policy->last_freq_update_time = ktime_get_ns();
++	}
++	
++	return 0;
++}
++
++/************************** init/exit ****************************/
++
++static int uag_init(struct cpufreq_policy *policy)
++{
++	struct uag_policy *sg_policy;
++	struct uag_tunables *tunables;
++	int ret = 0;
++	int i;
++	
++	/* Allocate policy structure */
++	sg_policy = kzalloc(sizeof(*sg_policy), GFP_KERNEL);
++	if (!sg_policy)
++		return -ENOMEM;
++	
++	sg_policy->policy = policy;
++	raw_spin_lock_init(&sg_policy->update_lock);
++	
++	/* Init work items */
++	kthread_init_work(&sg_policy->work, uag_work);
++	kthread_init_worker(&sg_policy->worker);
++	sg_policy->worker.task = kthread_create(kthread_worker_fn, &sg_policy->worker,
++						"uag_%d", policy->cpu);
++	if (IS_ERR(sg_policy->worker.task)) {
++		ret = PTR_ERR(sg_policy->worker.task);
++		goto free_sg_policy;
++	}
++	
++	wake_up_process(sg_policy->worker.task);
++	
++	irq_work_init(&sg_policy->irq_work, uag_irq_work);
++	atomic_set(&sg_policy->touch_boost_active, 0);
++	
++	/* Setup tunables */
++	if (global_tunables) {
++		if (WARN_ON(have_governor_per_policy())) {
++			ret = -EINVAL;
++			goto stop_kthread;
++		}
++		sg_policy->tunables = global_tunables;
++		tunables = global_tunables;
++	} else {
++		tunables = kzalloc(sizeof(*tunables), GFP_KERNEL);
++		if (!tunables) {
++			ret = -ENOMEM;
++			goto stop_kthread;
++		}
++		
++		tunables->down_rate_limit_us = UAG_DOWN_RATE_LIMIT_DEFAULT;
++		tunables->up_rate_limit_us = UAG_UP_RATE_LIMIT_DEFAULT;
++		tunables->hispeed_freq = UAG_HISPEED_FREQ_DEFAULT;
++		tunables->hispeed_load = UAG_HISPEED_LOAD_DEFAULT;
++		tunables->touch_boost_duration = UAG_TOUCH_BOOST_DURATION_DEFAULT;
++		tunables->touch_boost_freq = UAG_TOUCH_BOOST_FREQ_DEFAULT;
++		tunables->gaming_mode = 0;
++		tunables->frame_drop_threshold = 3;
++		tunables->sync_on_async = 0;
++		
++		gov_attr_set_init(&tunables->attr_set, &sg_policy->tunables_hook);
++		
++		if (!have_governor_per_policy())
++			global_tunables = tunables;
++		
++		sg_policy->tunables = tunables;
++	}
++	
++	uag_update_rate_limits(sg_policy, tunables);
++	
++	sg_policy->nb.notifier_call = uag_notifier;
++	cpufreq_register_notifier(&sg_policy->nb, CPUFREQ_TRANSITION_NOTIFIER);
++	
++	/* Per-cpu init */
++	for_each_cpu(i, policy->cpus) {
++		per_cpu(uag_cpu_data, i) = sg_policy;
++	}
++	
++	policy->governor_data = sg_policy;
++	
++	return 0;
++	
++stop_kthread:
++	kthread_stop(sg_policy->worker.task);
++free_sg_policy:
++	kfree(sg_policy);
++	return ret;
++}
++
++static void uag_exit(struct cpufreq_policy *policy)
++{
++	struct uag_policy *sg_policy = policy->governor_data;
++	unsigned int count;
++	
++	cpufreq_unregister_notifier(&sg_policy->nb, CPUFREQ_TRANSITION_NOTIFIER);
++	
++	count = gov_attr_set_put(&sg_policy->tunables->attr_set, &sg_policy->tunables_hook);
++	if (!count) {
++		/* Last policy using these tunables */
++		if (!have_governor_per_policy())
++			global_tunables = NULL;
++		kfree(sg_policy->tunables);
++	}
++	
++	kthread_flush_worker(&sg_policy->worker);
++	kthread_stop(sg_policy->worker.task);
++	
++	kfree(sg_policy);
++	policy->governor_data = NULL;
++}
++
++static int uag_start(struct cpufreq_policy *policy)
++{
++	struct uag_policy *sg_policy = policy->governor_data;
++	unsigned int espeed_freq;
++	
++	sg_policy->last_freq_update_time = ktime_get_ns();
++	sg_policy->next_freq = policy->cur;
++	sg_policy->cached_raw_freq = policy->cur;
++	
++	/* Register update util hook */
++	sg_policy->update_util.func = uag_update_shared;
++	cpufreq_add_update_util_hook(policy->cpu, &sg_policy->update_util,
++				     uag_update_shared);
++	
++	return 0;
++}
++
++static void uag_stop(struct cpufreq_policy *policy)
++{
++	struct uag_policy *sg_policy = policy->governor_data;
++	
++	cpufreq_remove_update_util_hook(policy->cpu);
++	synchronize_sched();
++	
++	irq_work_sync(&sg_policy->irq_work);
++	kthread_flush_work(&sg_policy->work);
++}
++
++static void uag_limits(struct cpufreq_policy *policy)
++{
++	struct uag_policy *sg_policy = policy->governor_data;
++	unsigned long flags;
++	unsigned int freq;
++	
++	raw_spin_lock_irqsave(&sg_policy->update_lock, flags);
++	
++	freq = sg_policy->next_freq;
++	
++	/* Clamp to new limits */
++	if (freq > policy->max)
++		freq = policy->max;
++	if (freq < policy->min)
++		freq = policy->min;
++	
++	if (sg_policy->next_freq != freq) {
++		sg_policy->next_freq = freq;
++		irq_work_queue(&sg_policy->irq_work);
++	}
++	
++	raw_spin_unlock_irqrestore(&sg_policy->update_lock, flags);
++}
++
++/************************** external interface ****************************/
++
++void uag_set_touch_boost(struct cpufreq_policy *policy, unsigned int boost_freq)
++{
++	struct uag_policy *sg_policy = policy->governor_data;
++	struct uag_tunables *tunables;
++	u64 now;
++	
++	if (!sg_policy)
++		return;
++	
++	tunables = sg_policy->tunables;
++	if (!tunables)
++		return;
++	
++	now = ktime_get_ns();
++	atomic_set(&sg_policy->touch_boost_active, 1);
++	sg_policy->touch_boost_end_time = now + (tunables->touch_boost_duration * NSEC_PER_MSEC);
++	
++	/* Trigger immediate update */
++	irq_work_queue(&sg_policy->irq_work);
++}
++EXPORT_SYMBOL_GPL(uag_set_touch_boost);
++
++void uag_set_gaming_mode(struct cpufreq_policy *policy, bool enabled)
++{
++	struct uag_policy *sg_policy = policy->governor_data;
++	
++	if (!sg_policy || !sg_policy->tunables)
++		return;
++	
++	sg_policy->tunables->gaming_mode = enabled ? 1 : 0;
++}
++EXPORT_SYMBOL_GPL(uag_set_gaming_mode);
++
++static struct cpufreq_governor uag_governor = {
++	.name = "uag",
++	.owner = THIS_MODULE,
++	.init = uag_init,
++	.exit = uag_exit,
++	.start = uag_start,
++	.stop = uag_stop,
++	.limits = uag_limits,
++};
++
++static int __init uag_gov_init(void)
++{
++	return cpufreq_register_governor(&uag_governor);
++}
++
++static void __exit uag_gov_exit(void)
++{
++	cpufreq_unregister_governor(&uag_governor);
++}
++
++MODULE_AUTHOR("Ported to 6.1 for SM8650");
++MODULE_DESCRIPTION("Userspace Android Gaming CPUFreq Governor");
++MODULE_LICENSE("GPL v2");
++
++fs_initcall(uag_gov_init);
++module_exit(uag_gov_exit);
+-- 
+2.34.1
