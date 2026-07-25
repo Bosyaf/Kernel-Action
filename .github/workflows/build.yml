@@ -48,30 +48,6 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_kernel.git common
 
-      - name: 2.5 Özel Yamalar
-        run: |
-          cd common
-          PATCH_DIR="../aches"
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "📦 İşleniyor: $filename"
-              if patch -p1 < "$patch_file"; then
-                echo "✅ $filename"
-              else
-                echo "❌ $filename"
-                exit 1
-              fi
-            done
-          fi
-          
-      - name: 3.7 Asya Yaması
-        run: |
-          cd common
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -91,7 +67,11 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
           # Localversion
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CPU_FREQ_GOV_UAG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UA_KERNEL_CPU_IOCTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_FRAME_BOOST
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_EAS_OPT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_SCHED_ASSIST
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
