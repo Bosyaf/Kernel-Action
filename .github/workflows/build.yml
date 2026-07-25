@@ -78,11 +78,7 @@ jobs:
         run: |
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \       
-            Image
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" Image
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 5. AnyKernel3 Paketleme
         run: |
