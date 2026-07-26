@@ -1,23 +1,88 @@
-name: Cache Temizleyici
+name: Bosyaf (Neutron Clang + UAG)
+
+permissions:
+  contents: write
+  actions: write
 
 on:
   workflow_dispatch:
 
-permissions:
-  actions: write
-
 jobs:
-  clear-cache:
+  build-kernel:
     runs-on: ubuntu-latest
+    timeout-minutes: 420
+    env:
+      KBUILD_BUILD_USER: "bos"
+      KBUILD_BUILD_HOST: "yaf"
+
     steps:
-      - name: GitHub CLI ile Tüm Cache'leri Sil
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Maximize Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          swap-size-gb: 16
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 1. Paketler ve Neutron Clang Çekimi
         run: |
-          echo "🧹 Depodaki tüm cache kayıtları aranıyor ve siliniyor..."
+          sudo apt update -qq
+          sudo apt install -y --no-install-recommends \
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            pkg-config zstd
+          echo "🔥 Neutron Clang indiriliyor..."
+          mkdir -p "$HOME/toolchains/neutron-clang"
+          cd "$HOME/toolchains/neutron-clang"
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S
+          echo "$HOME/toolchains/neutron-clang/bin" >> "$GITHUB_PATH"
+          echo "✅ Neutron Clang İndirildi ve PATH'e eklendi!"
           
-          # GitHub CLI kullanarak tüm cache'leri zorla siler
-          gh cache delete --all
+      - name: 2. Kaynakları Çek
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone --depth=1 https://github.com/Bosyaf/my_kernel.git common
+      - name: 4. Defconfig Oluştur
+        run: |
+          cd common
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 gki_defconfig
+          CONFIG_FILE="out/.config"
+          ./scripts/config --file out/.config --module CONFIG_SCHED_WALT
+          ./scripts/config --file out/.config --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
+          ./scripts/config --file out/.config --enable CONFIG_UA_KERNEL_CPU_IOCTL
+          ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_FRAME_BOOST
+          ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+          ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_OCH
+          ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING
+          ./scripts/config --file out/.config --enable CONFIG_OPLUS_OMRG
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
           
-          echo "✅ Hafıza tamamen temizlendi!"
+      - name: 5. Kernel Derleme (Full Image)
+        run: |
+          cd common
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- Image modules
+      - name: 6. AnyKernel3 ile Flaşlanabilir Zip Oluştur
+        run: |
+          if [ -f common/out/arch/arm64/boot/Image ]; then
+            echo "✅ Image başarıyla derlendi. AnyKernel3 içine kopyalanıyor..."
+            cp common/out/arch/arm64/boot/Image AnyKernel3/
+            cd AnyKernel3
+            rm -rf .git* README.md
+            zip -r9 ../Bosyaf-Kernel.zip *
+          else
+            echo "❌ HATA: Image dosyası bulunamadı, derleme başarısız olmuş olabilir!"
+            exit 1
+          fi
+      - name: 7. Kernel Zip Dosyasını Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bosyaf-Kernel-Zip
+          path: Bosyaf-Kernel.zip
           
