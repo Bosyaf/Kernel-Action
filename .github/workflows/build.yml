@@ -55,6 +55,8 @@ jobs:
           CONFIG_FILE="out/.config"
           ./scripts/config --file out/.config --module CONFIG_SCHED_WALT
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_UAG_USE_TL
           ./scripts/config --file out/.config --enable CONFIG_UA_KERNEL_CPU_IOCTL
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_FRAME_BOOST
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_SCHED_ASSIST
