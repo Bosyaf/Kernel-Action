@@ -61,53 +61,37 @@ jobs:
           chmod +x scripts/check-local-export
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-          CONFIG_FILE="out/.config"
-          # Localversion
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UA_KERNEL_CPU_IOCTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_FRAME_BOOST
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_EAS_OPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_SCHED_ASSIST
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Laerwen"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          sed -i 's/check_defconfig//' build.config.gki || true
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-      - name: 4. Kernel Derleme
+
+      - name: 4. Defconfig Oluştur
         run: |
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          make V=1 -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            Image 2>&1 | cat || { echo "❌ Derleme HATASI!"; exit 1; }
-          echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 5. AnyKernel3 Paketleme
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 gki_defconfig
+          
+      - name: 5. Kernel Derleme
         run: |
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Galadriel.zip" ./*
-          echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-      - name: 6. Release Yükle
-        uses: softprops/action-gh-release@v2
+          cd common
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- Image
+
+      - name: 6. AnyKernel3 ile Flaşlanabilir Zip Oluştur
+        run: |
+          if [ -f common/out/arch/arm64/boot/Image ]; then
+            echo "✅ Image başarıyla derlendi. AnyKernel3 içine kopyalanıyor..."
+            cp common/out/arch/arm64/boot/Image AnyKernel3/
+            cd AnyKernel3
+            # Gereksiz git dosyalarını temizle
+            rm -rf .git* README.md
+            # Tüm klasörü zip yap
+            zip -r9 ../Bosyaf-Kernel.zip *
+          else
+            echo "❌ HATA: Image dosyası bulunamadı, derleme başarısız olmuş olabilir!"
+            exit 1
+          fi
+
+      - name: 7. Kernel Zip Dosyasını Yükle
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (Neutron Clang)"
-          files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-
+          name: Bosyaf-Kernel-Zip
+          path: Bosyaf-Kernel.zip
           
