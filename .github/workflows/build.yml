@@ -67,8 +67,16 @@ jobs:
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 gki_defconfig
+
+      - name: 4.5. Özel Klasör Test Derlemesi (Hata Kontrolü)
+        run: |
+          cd common
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          echo "🔍 Sadece oplus/cpu klasörü test ediliyor..."
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- drivers/soc/oplus/cpu/
+          echo "✅ Test başarılı! Kodlarda hata yok, tam derlemeye geçiliyor."
           
-      - name: 5. Kernel Derleme
+      - name: 5. Kernel Derleme (Full Image)
         run: |
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
@@ -80,9 +88,7 @@ jobs:
             echo "✅ Image başarıyla derlendi. AnyKernel3 içine kopyalanıyor..."
             cp common/out/arch/arm64/boot/Image AnyKernel3/
             cd AnyKernel3
-            # Gereksiz git dosyalarını temizle
             rm -rf .git* README.md
-            # Tüm klasörü zip yap
             zip -r9 ../Bosyaf-Kernel.zip *
           else
             echo "❌ HATA: Image dosyası bulunamadı, derleme başarısız olmuş olabilir!"
