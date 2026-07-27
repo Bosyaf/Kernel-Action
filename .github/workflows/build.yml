@@ -53,6 +53,7 @@ jobs:
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 gki_defconfig
           CONFIG_FILE="out/.config"
+          # drivers/Kconfig içinde KSU satırını bul ve yorum yap
           ./scripts/config --file out/.config --module CONFIG_SCHED_WALT
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
@@ -64,7 +65,13 @@ jobs:
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_OMRG
           make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
-          
+          # Step 3'e ekle
+      - name: Fix Kconfig
+        run: |
+          cd common
+          # KSU'yu tamamen kaldır
+          sed -i '/drivers\/ksu/d' drivers/Kconfig
+          echo "✅ KSU kaldırıldı"
       - name: 5. Kernel Derleme (Full Image)
         run: |
           cd common
