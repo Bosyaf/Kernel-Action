@@ -47,6 +47,16 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone -b sched_ext https://github.com/Kyuofox-Studio/android_kernel_xiaomi_sm8650.git --depth=1 common
+
+      - name: 3. Kconfig Düzeltme (KSU + Oplus)
+        run: |
+          cd common
+          echo "=== Kconfig düzeltmeleri ==="
+          
+          # KSU'yu tamamen kaldır
+          sed -i '/drivers\/ksu/d' drivers/Kconfig
+          sed -i '/KernelSU/d' drivers/Kconfig
+          echo "✅ KSU kaldırıldı"
       - name: 4. Defconfig Oluştur
         run: |
           cd common
@@ -65,13 +75,7 @@ jobs:
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING
           ./scripts/config --file out/.config --enable CONFIG_OPLUS_OMRG
           make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
-          # Step 3'e ekle
-      - name: Fix Kconfig
-        run: |
-          cd common
-          # KSU'yu tamamen kaldır
-          sed -i '/drivers\/ksu/d' drivers/Kconfig
-          echo "✅ KSU kaldırıldı"
+      
       - name: 5. Kernel Derleme (Full Image)
         run: |
           cd common
