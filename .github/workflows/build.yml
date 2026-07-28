@@ -158,6 +158,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          # WALT'ı modül olarak etkinleştirir (CONFIG_SCHED_WALT=m)
+          ./scripts/config --file $CONFIG_FILE -m CONFIG_SCHED_WALT
+          # WALT'ın varsayılan boot güncellemelerini etkinleştirir (CONFIG_WALT_DEFAULT_BOOT_UPDATE=y)
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_WALT_DEFAULT_BOOT_UPDATE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
