@@ -162,6 +162,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE -m CONFIG_SCHED_WALT
           # WALT'ın varsayılan boot güncellemelerini etkinleştirir (CONFIG_WALT_DEFAULT_BOOT_UPDATE=y)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_WALT_DEFAULT_BOOT_UPDATE
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ANDROID_VENDOR_HOOKS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_TRACEPOINTS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_TRACING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
