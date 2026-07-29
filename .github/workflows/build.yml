@@ -160,24 +160,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           # WALT'ı modül olarak etkinleştirir (CONFIG_SCHED_WALT=m)
           ./scripts/config --file $CONFIG_FILE -m CONFIG_SCHED_WALT
-          # WALT'ın varsayılan boot güncellemelerini etkinleştirir (CONFIG_WALT_DEFAULT_BOOT_UPDATE=y)
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_WALT_DEFAULT_BOOT_UPDATE
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ANDROID_VENDOR_HOOKS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_TRACEPOINTS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_TRACING
-          # UAG ve Alt Özelliklerini Aktif Et
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_CPU_FREQ_GOV_UAG
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_UAG_NONLINEAR_FREQ_CTL
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_UAG_USE_TL
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_UA_KERNEL_CPU_IOCTL
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_UAG_AMU_AWARE
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_FEATURE_TOUCH_BOOST
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_MULTI_LV_TL
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_UAG_SOFT_LIMIT
-          # UAG'ın Qualcomm SM8650 (QCOM) özelliklerini görmesi için bu şart
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
-          # Frame Boost özelliğini aktif ediyoruz
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_OPLUS_FEATURE_FRAME_BOOST
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
