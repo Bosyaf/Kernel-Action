@@ -48,7 +48,8 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my_msm.git common
+          git clone --depth=1 -b sched_ext \
+          https://github.com/Kyuofox-Studio/android_kernel_xiaomi_sm8650.git kernel
       
       - name: 2.5 Özel Yamalar
         run: |
