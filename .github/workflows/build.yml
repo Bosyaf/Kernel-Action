@@ -48,8 +48,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 -b sched_ext \
-          https://github.com/Kyuofox-Studio/android_kernel_xiaomi_sm8650.git kernel
+          git clone --depth=1 https://github.com/Bosyaf/my_msm.git common
       
       - name: 2.5 Özel Yamalar
         run: |
@@ -161,9 +160,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           # WALT'ı modül olarak etkinleştirir (CONFIG_SCHED_WALT=m)
           ./scripts/config --file $CONFIG_FILE -m CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ANDROID_VENDOR_HOOKS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_TRACEPOINTS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_TRACING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -180,12 +176,20 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SCH_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PSTORE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PSTORE_RAM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CONNECTOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NINTENDO_FF
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -250,7 +254,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-
 
