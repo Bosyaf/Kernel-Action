@@ -1,4 +1,4 @@
-name: Bosyaf (Neutron Rekernelsis)
+name: Bosyaf (Neutron lz4suz)
 
 permissions:
   contents: write
@@ -241,11 +241,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE -e CONFIG_RCU_LAZY
 
           # ========== 6. ZRAM VE SIKISTIRMA (LZ4KD & ZSTD) ==========
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
+          #./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
 
           # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
