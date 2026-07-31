@@ -178,29 +178,30 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
 
-          # ========== 4. PERFORMANS YAMALARI (BORE & ADIOS & UFS) ==========
+          # --- [ 07_bore-android14-6.1-v5.3.0.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
+
+          # --- [ 08_adios-android14-6.1-v3.2.0.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_UFS_WRITEBOOSTER
 
-          # ========== 5. BELLEK YONETIMI (LE9UO & DAMON & RCU) ==========
+          # --- [ 09_le9uo-android14-6.1-v1.15.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 15
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_MIN_RATIO 15
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_DAMON_PADDR
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_DAMON_RECLAIM
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_DAMON_LRU_SORT
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_RCU_LAZY
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
 
-          # ========== 6. ZRAM VE SIKISTIRMA (LZ4KD & ZSTD) ==========
-          #./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
-          #./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
-          #./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
-          #./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
-          #./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
+          # --- [ 10_kcompressd-android14-6.1-v0.5.patch ] ---
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_KCOMPRESSD
 
+          # --- [ 11_zram-ir-android14-6.1-v1.patch ] ---
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
+
+          # --- [ 04_lote4_ufs_writebooster.patch ] ---
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_UFS_WRITEBOOSTER
+         
           # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
@@ -217,9 +218,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYSVIPC
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PSTORE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PSTORE_RAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CONNECTOR
