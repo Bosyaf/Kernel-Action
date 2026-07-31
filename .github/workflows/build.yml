@@ -169,22 +169,21 @@ jobs:
           rm -f fs_namespace.patch
           
           echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
-          # 1. FAILED veren dosyaların en başına include ekliyoruz
+          # 1. Başarısız olan include (dosya başı) kısımlarını zorla ekle
           sed -i '1i #include <linux/susfs.h>' fs/namei.c
           sed -i '1i #include <linux/susfs.h>' fs/stat.c
           sed -i '1i #include <linux/susfs.h>' fs/namespace.c
           
-          # 2. readdir.c içindeki en kritik SuSFS kancasını manuel atıyoruz
-          # Not: 'error =' veya 'res =' her iki durumda da altına kancayı ekler
-          sed -i '/iterate_dir(f.file, &buf.ctx);/a \        susfs_sus_readdir(f.file, &buf.ctx, error);' fs/readdir.c || \
+          # 2. readdir.c içindeki gizleme kancasını (hook) akıllıca yerleştir
+          # 'res =' veya 'error =' olsa bile altına kancayı çakar:
           sed -i '/iterate_dir(f.file, &buf.ctx);/a \        susfs_sus_readdir(f.file, &buf.ctx, res);' fs/readdir.c
+          sed -i 's/susfs_sus_readdir(f.file, \&buf.ctx, res);/susfs_sus_readdir(f.file, \&buf.ctx, (error >= 0) ? error : res);/g' fs/readdir.c
 
-          # 3. Senin mevcut dentry check düzeltmelerin (Aynen kalsın)
+          # 3. Senin orijinal Dentry Check Fix kodların
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           
-          echo "  ✅ Canlı Yama Başarılı!"
-          find . -name "*.rej" -delete 2>/dev/null || true
+          echo "  ✅ SuSFS tamamen (readdir dahil) hazır!"
       
      
       - name: 3.7 Asya Yaması
