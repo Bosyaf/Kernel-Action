@@ -173,21 +173,26 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
 
+          # 1. BORE (CPU Akıcılığı)
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
+
+          # 2. ADIOS (Depolama Hızı)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
-          # LE9UO Bellek Korumasını Aktif Et
+
+          # 3. LE9UO (RAM Koruması)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 15
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
-          # ZRAM Çoklu Sıkıştırma Desteğini Aç
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_MIN_RATIO 15
+
+          # 4. ZRAM-IR (ZRAM Performansı)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
-
-          # İkinci Algoritma Olarak ZSTD Belirle
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
-
-          # ZSTD'nin Crypto Kütüphanesini Aktif Et (Zorunlu)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
+
+          # NOT: KCOMPRESSD, LOTE3 ve diğer temizlik patch'leri (Logspam/Unicode)
+          # yama basıldığı an kod seviyesinde aktif olur, extra config istemezler.
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
