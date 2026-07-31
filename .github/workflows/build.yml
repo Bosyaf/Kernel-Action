@@ -75,52 +75,6 @@ jobs:
             rm -f patch_log.txt
           done
           
-      - name: 2.7 hjshpy Cerrahi Scriptler
-        run: |
-          cd common
-          KERNEL_SRC_ABS=$(pwd)
-          SCRIPT_ROOT="../hjshpy"
-          echo "🚀 Cerrahi scriptler alt klasör sırasıyla (01-07) başlatılıyor..."
-
-          # Alt klasörleri (01_..., 02_...) sırayla geziyoruz
-          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
-            dir_name=$(basename "$sub_dir")
-            echo "--------------------------------------------------"
-            echo "💉 Klasör Grubu: $dir_name"
-            
-            # Klasörün içindeki .sh dosyasını buluyoruz
-            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
-            
-            if [ -n "$sh_file" ]; then
-              script_name=$(basename "$sh_file")
-              echo "⚙️ Script Çalıştırılıyor: $script_name"
-              
-              # Scriptin kendi klasörüne giriyoruz (yanındaki .py dosyalarını bulabilsin diye)
-              cd "$sub_dir"
-              chmod +x "$script_name"
-              
-              # KERNEL_SRC yolunu script'e mutlak yol olarak veriyoruz
-              export KERNEL_SRC="$KERNEL_SRC_ABS"
-              
-              # Scripti çalıştır ve ilk 20 satır logu göster
-              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
-              
-              # PIPESTATUS[0] ile scriptin gerçek çıkış kodunu kontrol ediyoruz
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✅ $script_name başarıyla bitti."
-              else
-                # BURAYI DEĞİŞTİRDİK: 'exit 1' yerine uyarı verip devam ediyoruz
-                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
-              fi
-              
-              # Ana dizine (common) geri dönüyoruz ki bir sonraki script için yol bozulmasın
-              cd "$KERNEL_SRC_ABS"
-            else
-              echo "⚠️ $dir_name içinde çalıştırılabilir .sh bulunamadı, atlanıyor."
-            fi
-          done
-          echo "✅ Tüm cerrahi script denemeleri bitti."
-          
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -241,11 +195,11 @@ jobs:
           ./scripts/config --file $CONFIG_FILE -e CONFIG_RCU_LAZY
 
           # ========== 6. ZRAM VE SIKISTIRMA (LZ4KD & ZSTD) ==========
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
+          #./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
+          #./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
 
           # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
