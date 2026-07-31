@@ -173,9 +173,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
 
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_CLASS_EXT
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_SLIM_SCHED
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_BPF_SYSCALL
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4HC
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4K
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
+          
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
