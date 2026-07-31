@@ -50,24 +50,76 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_msm.git common
       
-      - name: 2.5 Özel Yamalar
+      - name: 2.5 hjpatches Uygulama
         run: |
           cd common
-          PATCH_DIR="../aches"
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "📦 İşleniyor: $filename"
-              if patch -p1 < "$patch_file"; then
-                echo "✅ $filename"
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart yamalar (01-14) sırasıyla basılıyor..."
+          
+          # Yamaları alfabetik (01, 02...) sırayla döngüye alıyoruz
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            echo "--------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            # Yamayı uygula ve çıktıyı hem dosyaya yaz hem ekranda ilk 20 satırı göster
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
+            head -n 20 patch_log.txt
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ $filename başarıyla uygulandı."
+            else
+              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
+              exit 1
+            fi
+            rm -f patch_log.txt
+          done
+          
+      - name: 2.7 hjshpy Cerrahi Scriptler
+        run: |
+          cd common
+          KERNEL_SRC_ABS=$(pwd)
+          SCRIPT_ROOT="../hjshpy"
+          echo "🚀 Cerrahi scriptler alt klasör sırasıyla (01-07) başlatılıyor..."
+
+          # Alt klasörleri (01_..., 02_...) sırayla geziyoruz
+          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
+            dir_name=$(basename "$sub_dir")
+            echo "--------------------------------------------------"
+            echo "💉 Klasör Grubu: $dir_name"
+            
+            # Klasörün içindeki .sh dosyasını buluyoruz
+            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
+            
+            if [ -n "$sh_file" ]; then
+              script_name=$(basename "$sh_file")
+              echo "⚙️ Script Çalıştırılıyor: $script_name"
+              
+              # Scriptin kendi klasörüne giriyoruz (yanındaki .py dosyalarını bulabilsin diye)
+              cd "$sub_dir"
+              chmod +x "$script_name"
+              
+              # KERNEL_SRC yolunu script'e mutlak yol olarak veriyoruz (../../common karmaşası olmasın)
+              export KERNEL_SRC="$KERNEL_SRC_ABS"
+              
+              # Scripti çalıştır ve ilk 20 satır logu göster
+              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
+              
+              # PIPESTATUS[0] ile scriptin gerçek çıkış kodunu kontrol ediyoruz
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✅ $script_name başarıyla bitti."
               else
-                echo "❌ $filename"
+                echo "❌ $script_name HATA VERDİ! Üstteki logları kontrol et."
                 exit 1
               fi
-            done
-          fi
+              
+              # Ana dizine (common) geri dönüyoruz
+              cd "$KERNEL_SRC_ABS"
+            else
+              echo "⚠️ $dir_name içinde çalıştırılabilir .sh bulunamadı, atlanıyor."
+            fi
+          done
+          
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
@@ -145,27 +197,27 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
-          # ========== CMDLINE ==========
+          # ========== 1. CMDLINE VE BASLANGIC ==========
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          # ========== Scheduler & Timer ==========
+          # ========== 2. SCHEDULER VE TIMER (HZ 300 & SMT OFF) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          # WALT'ı modül olarak etkinleştirir (CONFIG_SCHED_WALT=m)
-          #./scripts/config --file $CONFIG_FILE -m CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_500
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
+
+          # ========== 3. PREEMPTION VE LTO ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
@@ -173,27 +225,30 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
 
-          # 1. BORE (CPU Akıcılığı)
+          # ========== 4. PERFORMANS YAMALARI (BORE & ADIOS & UFS) ==========
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
-
-          # 2. ADIOS (Depolama Hızı)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_UFS_WRITEBOOSTER
 
-          # 3. LE9UO (RAM Koruması)
+          # ========== 5. BELLEK YONETIMI (LE9UO & DAMON & RCU) ==========
           ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 15
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_MIN_RATIO 15
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_DAMON_PADDR
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_DAMON_RECLAIM
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_DAMON_LRU_SORT
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_RCU_LAZY
 
-          # 4. ZRAM-IR (ZRAM Performansı)
+          # ========== 6. ZRAM VE SIKISTIRMA (LZ4KD & ZSTD) ==========
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
 
-          # NOT: KCOMPRESSD, LOTE3 ve diğer temizlik patch'leri (Logspam/Unicode)
-          # yama basıldığı an kod seviyesinde aktif olur, extra config istemezler.
-          
+          # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
@@ -203,8 +258,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+
+          # ========== 8. SISTEM, GIZLILIK VE DOSYA SISTEMI (BURADAYIM!) ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYSVIPC
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PSTORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PSTORE_RAM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
@@ -212,6 +272,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CONNECTOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NINTENDO_FF
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_TMPFS_POSIX_ACL
+
+          # ========== 9. KERNELSU VE SUSFS ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -222,6 +284,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          # ==========================================================
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
