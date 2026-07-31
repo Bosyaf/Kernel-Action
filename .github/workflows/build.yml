@@ -332,7 +332,7 @@ jobs:
             -Wl,--as-needed \
             -Wl,--strip-debug \
             -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 5. AnyKernel3 Paketleme
         run: |
