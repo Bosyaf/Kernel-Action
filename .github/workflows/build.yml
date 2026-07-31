@@ -177,22 +177,24 @@ jobs:
           
           echo "  ✅ SuSFS hiyerarşik tamir bitti!"
           
-          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
-          # 1. Başarısız olan include (dosya başı) kısımlarını zorla ekle
-          sed -i '1i #include <linux/susfs.h>' fs/namei.c
-          sed -i '1i #include <linux/susfs.h>' fs/stat.c
-          sed -i '1i #include <linux/susfs.h>' fs/namespace.c
+          echo "🛡️ SuSFS Son Cerrahi Müdahale..."
+          # 1. SuSFS kütüphanesini dosyaların içine, en güvenli include satırından sonraya ekliyoruz
+          sed -i '/#include <linux\/fs.h>/a #include <linux/susfs.h>' fs/namei.c
+          sed -i '/#include <linux\/fs.h>/a #include <linux/susfs.h>' fs/stat.c
+          sed -i '/#include <linux\/fs.h>/a #include <linux/susfs.h>' fs/namespace.c
           
-          # 2. readdir.c içindeki gizleme kancasını (hook) akıllıca yerleştir
-          # 'res =' veya 'error =' olsa bile altına kancayı çakar:
-          sed -i '/iterate_dir(f.file, &buf.ctx);/a \        susfs_sus_readdir(f.file, &buf.ctx, res);' fs/readdir.c
-          sed -i 's/susfs_sus_readdir(f.file, \&buf.ctx, res);/susfs_sus_readdir(f.file, \&buf.ctx, (error >= 0) ? error : res);/g' fs/readdir.c
+          # 2. readdir.c içindeki gizleme kancasını ekliyoruz
+          # (Logda 'error = iterate_dir' yazdığını gördük, bu satır onu yakalar)
+          sed -i '/iterate_dir(f.file, &buf.ctx);/a \        susfs_sus_readdir(f.file, &buf.ctx, (error >= 0) ? error : res);' fs/readdir.c
 
-          # 3. Senin orijinal Dentry Check Fix kodların
+          # 3. current_uid() hatasını önlemek için susfs.h'nin en tepesine kütüphaneyi ekliyoruz
+          sed -i '1i #include <linux/cred.h>' include/linux/susfs.h
+
+          # 4. Senin orijinal Dentry Check Fix kodların
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           
-          echo "  ✅ SuSFS tamamen (readdir dahil) hazır!"
+          echo "  ✅ SuSFS tamir edildi, derleme devam ediyor..."
       
      
       - name: 3.7 Asya Yaması
