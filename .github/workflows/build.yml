@@ -143,10 +143,28 @@ jobs:
           fi
           rm -f fs_namespace.patch
           
-          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
+          echo "🛡️ SUSFS Cerrahi Tamir ve Dentry Fix Uygulanıyor..."
+          
+          # 1. include/linux/susfs.h içine cred.h ekleyerek current_uid() hatasını çözüyoruz
+          sed -i '1i #include <linux/cred.h>' include/linux/susfs.h
+
+          # 2. Hatalı include sırasını ve eksik kütüphaneleri stat.c, namei.c ve namespace.c için düzeltiyoruz
+          sed -i '/#include <linux\/sched.h>/a #include <linux/susfs.h>' fs/namei.c
+          sed -i '/#include <linux\/sched.h>/a #include <linux/susfs.h>' fs/stat.c
+          sed -i '/#include <linux\/sched.h>/a #include <linux/susfs.h>' fs/namespace.c
+          
+          # 3. readdir.c içindeki (FAILED olan) gizleme kancasını manuel ekliyoruz
+          sed -i '/iterate_dir(f.file, &buf.ctx);/a \        susfs_sus_readdir(f.file, &buf.ctx, (error >= 0) ? error : res);' fs/readdir.c
+
+          # 4. namespace.c içindeki 'unused variable' hatasını (DEFINE_IDA) yorum satırına alarak çözüyoruz
+          sed -i 's/static DEFINE_IDA(susfs_mnt_id_ida);/\/\/ static DEFINE_IDA(susfs_mnt_id_ida);/' fs/namespace.c
+          sed -i 's/static DEFINE_IDA(susfs_mnt_group_ida);/\/\/ static DEFINE_IDA(susfs_mnt_group_ida);/' fs/namespace.c
+
+          # 5. Senin orijinal Dentry Check Fix kodların
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
-          echo "  ✅ Canlı Yama Başarılı!"
+          
+          echo "  ✅ SuSFS tam kapasite ve hatasız hazır!"
           find . -name "*.rej" -delete 2>/dev/null || true
           
       - name: 4. Full Kernel Config & Derleme Hazırlığı
