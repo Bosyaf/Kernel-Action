@@ -50,24 +50,76 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/nimrodel.git common
 
-      - name: 2.5 Özel Yamalar
+      - name: 2.5 hjpatches Uygulama
         run: |
           cd common
-          PATCH_DIR="../patchess"
-          if [ ! -d "$PATCH_DIR" ]; then
-            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
-          else
-            for patch_file in "$PATCH_DIR"/*.patch; do
-              filename=$(basename "$patch_file")
-              echo "📦 İşleniyor: $filename"
-              if patch -p1 < "$patch_file"; then
-                echo "✅ $filename"
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart yamalar (hjpatches) basılıyor..."
+          
+          # Yamaları alfabetik sırayla döngüye alıyoruz
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            echo "--------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            # Yamayı uygula ve ilk 20 satır logu göster
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
+            head -n 20 patch_log.txt
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ $filename başarıyla uygulandı."
+            else
+              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
+              exit 1
+            fi
+            rm -f patch_log.txt
+          done
+
+      - name: 2.7 hjshpy Cerrahi Scriptler
+        run: |
+          cd common
+          # Scriptlerin kernel dosyalarını bulabilmesi için mutlak yolu hafızaya alıyoruz
+          KERNEL_SRC_ABS=$(pwd)
+          SCRIPT_ROOT="../hjshpy"
+          echo "🚀 Cerrahi scriptler (01, 06, 07) başlatılıyor..."
+
+          # Klasörleri (01_..., 06_..., 07_...) sırayla geziyoruz
+          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
+            dir_name=$(basename "$sub_dir")
+            echo "--------------------------------------------------"
+            echo "💉 Klasör Grubu: $dir_name"
+            
+            # Klasörün içindeki ana .sh dosyasını buluyoruz
+            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
+            
+            if [ -n "$sh_file" ]; then
+              script_name=$(basename "$sh_file")
+              echo "⚙️ Çalıştırılıyor: $script_name"
+              
+              # Scriptin kendi klasörüne giriyoruz (yanındaki .py dosyalarını bulabilsin diye)
+              cd "$sub_dir"
+              chmod +x "$script_name"
+              
+              # KERNEL_SRC yolunu scriptlere "buraya bak" diye gönderiyoruz
+              export KERNEL_SRC="$KERNEL_SRC_ABS"
+              
+              # Scripti çalıştır ve logların ilk 20 satırını ekrana bas
+              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
+              
+              # Script hata verirse Runner durmasın, bir sonrakine geçsin (Test aşaması için)
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✅ $script_name başarıyla bitti."
               else
-                echo "❌ $filename"
-                exit 1
+                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
               fi
-            done
-          fi
+              
+              # Ana dizine (common) geri dönüyoruz
+              cd "$KERNEL_SRC_ABS"
+            else
+              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
+            fi
+          done
+          echo "✅ Cerrahi script döngüsü tamamlandı."
           
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
@@ -179,24 +231,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-           -falign-functions=32 \
-           -fomit-frame-pointer \
-           -ffunction-sections \
-           -fdata-sections \
-           -fno-unwind-tables \
-           -fno-asynchronous-unwind-tables \
-           -Wno-unused-command-line-argument \
-           -Wno-format \
-           -Wno-format-extra-args \
-           -Wno-constant-logical-operand \
-           -Wno-unused-variable \
-           -Wno-address-of-packed-member" \
-           KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe" \
+            KCFLAGS="-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 6. AnyKernel3 Paketleme
