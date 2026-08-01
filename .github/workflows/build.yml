@@ -195,6 +195,14 @@ jobs:
           # --- [ 10_kcompressd-android14-6.1-v0.5.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_KCOMPRESSD
 
+          # ZRAM ve ZSMALLOC Birleşik Gücü (Built-in)
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZSMALLOC
+
+          # LZ4 Desteğini Garantiye Alalım
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
+
           # --- [ 11_zram-ir-android14-6.1-v1.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
