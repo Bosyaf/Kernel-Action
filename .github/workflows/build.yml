@@ -211,11 +211,13 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           # ========== 8. SISTEM, GIZLILIK VE DOSYA SISTEMI (BURADAYIM!) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CONNECTOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NINTENDO_FF
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TMPFS_POSIX_ACL
+          
           # ========== 9. KERNELSU VE SUSFS ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
