@@ -49,7 +49,26 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/nimrodel.git common
-      
+
+      - name: 2.5 Özel Yamalar
+        run: |
+          cd common
+          PATCH_DIR="../aches"
+          if [ ! -d "$PATCH_DIR" ]; then
+            echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
+          else
+            for patch_file in "$PATCH_DIR"/*.patch; do
+              filename=$(basename "$patch_file")
+              echo "📦 İşleniyor: $filename"
+              if patch -p1 < "$patch_file"; then
+                echo "✅ $filename"
+              else
+                echo "❌ $filename"
+                exit 1
+              fi
+            done
+          fi
+          
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
