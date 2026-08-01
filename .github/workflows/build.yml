@@ -202,6 +202,9 @@ jobs:
           # LZ4 Desteğini Garantiye Alalım
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
+          # LZ4 kütüphanelerini built-in olarak sisteme ekle (ZRAM'in muhtaç olduğu kısımlar)
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_LZ4_COMPRESS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_LZ4_DECOMPRESS
 
           # --- [ 11_zram-ir-android14-6.1-v1.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
