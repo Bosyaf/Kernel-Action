@@ -200,28 +200,32 @@ jobs:
           chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          # ========== BURADAN BAŞLIYOR: BBR3 + FQ KABA KUVVET EKLEMESİ ==========
+          # ========== 🛡️ AĞ AYARLARI KESİN ÇÖZÜM (BBR3 + FQ) ==========
           DEFCONFIG="arch/arm64/configs/gki_defconfig"
-          echo "🔧 gki_defconfig ağ ayarları mühürleniyor..."
+          echo "🔧 gki_defconfig ağ ayarları zorla mühürleniyor..."
           
-          # Eski varsayılanları dosyadan tamamen siliyoruz
+          # 1. Eski tüm ağ varsayılanlarını ve seçimlerini dosyadan temizle
           sed -i '/CONFIG_DEFAULT_TCP_CONG/d' $DEFCONFIG
-          sed -i '/CONFIG_TCP_CONG_DEFAULT/d' $DEFCONFIG
           sed -i '/CONFIG_DEFAULT_NET_SCH/d' $DEFCONFIG
           sed -i '/CONFIG_NET_SCH_DEFAULT/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
+          sed -i '/CONFIG_DEFAULT_FQ/d' $DEFCONFIG
           sed -i '/CONFIG_DEFAULT_PFIFO_FAST/d' $DEFCONFIG
+          sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
+          sed -i '/CONFIG_DEFAULT_BBR/d' $DEFCONFIG
 
-          # BBR3 ve FQ (BBR3'ün en iyi dostu) ayarlarını zorla enjekte ediyoruz
-          cat >> $DEFCONFIG << 'EOF'
+          # 2. BBR3 ve FQ ayarlarını enjeksiyonla ekle
+          # NOT: Bu yapı sayesinde YAML indentasyonu bozulmaz ama dosya tertemiz olur.
+          cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
           CONFIG_TCP_CONG_ADVANCED=y
           CONFIG_TCP_CONG_BBR3=y
           CONFIG_DEFAULT_BBR3=y
           CONFIG_DEFAULT_TCP_CONG="bbr3"
           CONFIG_NET_SCH_FQ=y
+          CONFIG_NET_SCH_DEFAULT=y
           CONFIG_DEFAULT_FQ=y
           CONFIG_DEFAULT_NET_SCH="fq"
           EOF
+          # ============================================================
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
