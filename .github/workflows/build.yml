@@ -49,52 +49,35 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/nimrodel.git common
-
-      - name: 2.7 hjshpy Cerrahi Scriptler
+          
+      - name: 2.5 hjpatches Uygulama (Akıllı Sistem)
         run: |
           cd common
-          # Scriptlerin kernel dosyalarını bulabilmesi için mutlak yolu hafızaya alıyoruz
-          KERNEL_SRC_ABS=$(pwd)
-          SCRIPT_ROOT="../hjshpy"
-          echo "🚀 Cerrahi scriptler (01, 06, 07) başlatılıyor..."
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Akıllı yama sistemi başlatılıyor..."
 
-          # Klasörleri (01_..., 06_..., 07_...) sırayla geziyoruz
-          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
-            dir_name=$(basename "$sub_dir")
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
             echo "--------------------------------------------------"
-            echo "💉 Klasör Grubu: $dir_name"
-            
-            # Klasörün içindeki ana .sh dosyasını buluyoruz
-            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
-            
-            if [ -n "$sh_file" ]; then
-              script_name=$(basename "$sh_file")
-              echo "⚙️ Çalıştırılıyor: $script_name"
-              
-              # Scriptin kendi klasörüne giriyoruz (yanındaki .py dosyalarını bulabilsin diye)
-              cd "$sub_dir"
-              chmod +x "$script_name"
-              
-              # KERNEL_SRC yolunu scriptlere "buraya bak" diye gönderiyoruz
-              export KERNEL_SRC="$KERNEL_SRC_ABS"
-              
-              # Scripti çalıştır ve logların ilk 20 satırını ekrana bas
-              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
-              
-              # Script hata verirse Runner durmasın, bir sonrakine geçsin (Test aşaması için)
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✅ $script_name başarıyla bitti."
-              else
-                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
-              fi
-              
-              # Ana dizine (common) geri dönüyoruz
-              cd "$KERNEL_SRC_ABS"
+            echo "📦 Kontrol ediliyor: $filename"
+
+            # 1. Kontrol: Yama zaten uygulanmış mı? (Reverse dry-run)
+            if patch -p1 --dry-run --reverse < "$patch_file" > /dev/null 2>&1; then
+              echo "✅ $filename zaten uygulanmış, atlanıyor."
             else
-              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
+              # 2. İşlem: Yama uygulanmamış, şimdi basıyoruz
+              echo "🛠️ Uygulanıyor..."
+              patch -p1 --fuzz=3 --forward < "$patch_file" > patch_log.txt 2>&1
+              head -n 20 patch_log.txt
+              
+              if [ $? -eq 0 ]; then
+                echo "✅ $filename başarıyla uygulandı."
+              else
+                echo "⚠️ $filename tam oturmadı (FAILED), ama devam ediliyor..."
+              fi
+              rm -f patch_log.txt
             fi
           done
-          echo "✅ Cerrahi script döngüsü tamamlandı."
           
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
@@ -144,20 +127,6 @@ jobs:
           rm -f fs_namespace.patch
           
           echo "🛡️ SUSFS Cerrahi Tamir ve Dentry Fix Uygulanıyor..."
-          
-          # 1. include/linux/susfs.h içine cred.h ekleyerek current_uid() hatasını çözüyoruz
-          sed -i '1i #include <linux/cred.h>' include/linux/susfs.h
-
-          # 2. Gerekli kütüphaneyi tüm ilgili dosyalara (readdir.c dahil) ekliyoruz
-          sed -i '/#include <linux\/fs.h>/a #include <linux/susfs.h>' fs/namei.c
-          sed -i '/#include <linux\/fs.h>/a #include <linux/stat.c>' fs/stat.c
-          sed -i '/#include <linux\/fs.h>/a #include <linux/namespace.c>' fs/namespace.c
-          sed -i '/#include <linux\/fs.h>/a #include <linux/susfs.h>' fs/readdir.c
-          
-          # 3. readdir.c içindeki (FAILED olan) gizleme kancasını tamir ediyoruz
-          # 'res' yerine 'error' değişkenini kullanarak hatayı bitiriyoruz
-          sed -i '/iterate_dir(f.file, &buf.ctx);/a \        susfs_sus_readdir(f.file, &buf.ctx, error);' fs/readdir.c
-
           # 4. namespace.c içindeki 'unused variable' hatasını (DEFINE_IDA) devre dışı bırakıyoruz
           sed -i 's/static DEFINE_IDA(susfs_mnt_id_ida);/\/\/ static DEFINE_IDA(susfs_mnt_id_ida);/' fs/namespace.c
           sed -i 's/static DEFINE_IDA(susfs_mnt_group_ida);/\/\/ static DEFINE_IDA(susfs_mnt_group_ida);/' fs/namespace.c
