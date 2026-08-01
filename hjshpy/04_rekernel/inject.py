@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-# Missing functions fix
-log() { echo -e "\e[36m[LOG]\e[0m $*"; }
-warn() { echo -e "\e[33m[WARN]\e[0m $*"; }
-error() { echo -e "\e[31m[ERROR]\e[0m $*"; exit 1; }
 """
 Re:Kernel source injector for android14-6.1-lts.
 
