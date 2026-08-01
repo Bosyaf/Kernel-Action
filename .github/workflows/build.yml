@@ -179,6 +179,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
 
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_UFS_WRITEBOOSTER
+
           # --- [ 07_bore-android14-6.1-v5.3.0.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
 
