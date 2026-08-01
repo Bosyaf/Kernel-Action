@@ -82,7 +82,7 @@ jobs:
           KERNEL_SRC_ABS=$(pwd)
           SCRIPT_ROOT="../hjshpy"
           echo "🚀 Cerrahi scriptler (01, 06, 07) başlatılıyor..."
-
+          
           # Klasörleri (01_..., 06_..., 07_...) sırayla geziyoruz
           for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
             dir_name=$(basename "$sub_dir")
@@ -120,6 +120,14 @@ jobs:
             fi
           done
           echo "✅ Cerrahi script döngüsü tamamlandı."
+
+          echo "=================================================="
+          echo "🔧 LZ4 MIN/MAX Makro Çakışması (redefined) Çözülüyor..."
+          # LZ4 dosyalarında define işleminden önce eski tanımı temizliyoruz (#undef)
+          find lib/lz4 -type f -name "*.c" -exec sed -i '/#define MIN(/i #undef MIN' {} + 2>/dev/null || true
+          find lib/lz4 -type f -name "*.c" -exec sed -i '/#define MAX(/i #undef MAX' {} + 2>/dev/null || true
+          echo "✅ LZ4 makro onarımı başarıyla uygulandı!"
+
           
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
