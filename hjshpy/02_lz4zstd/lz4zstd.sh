@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-
+# Missing functions fix
+log() { echo -e "\e[36m[LOG]\e[0m $*"; }
+warn() { echo -e "\e[33m[WARN]\e[0m $*"; }
+error() { echo -e "\e[31m[ERROR]\e[0m $*"; exit 1; }
 # ======================================================
 # 🗜️ ADDON — LZ4 1.10.0 + ZSTD 1.5.7 (ZRAM compression bump)
 # ======================================================
