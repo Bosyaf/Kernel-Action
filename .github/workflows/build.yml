@@ -1,4 +1,4 @@
-name: Bosyaf (lote5_workqueue.patch)
+name: Bosyaf (nimrodel)
 
 permissions:
   contents: write
@@ -48,39 +48,14 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my_msm.git common
+          git clone --depth=1 https://github.com/Bosyaf/nimrodel.git common
       
-      - name: 2.5 hjpatches Uygulama
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart yamalar (01-14) sırasıyla basılıyor..."
-          
-          # Yamaları alfabetik (01, 02...) sırayla döngüye alıyoruz
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
-            # Yamayı uygula ve çıktıyı hem dosyaya yaz hem ekranda ilk 20 satırı göster
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            head -n 20 patch_log.txt
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ $filename başarıyla uygulandı."
-            else
-              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
-              exit 1
-            fi
-            rm -f patch_log.txt
-          done
-
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
           echo "📦 KernelSU-Next kuruluyor..."
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-      - name: 3.5. Multi-Manager Desteği
+      - name: 3.2 Multi-Manager Desteği
         run: |
           cd common/KernelSU-Next
           PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
@@ -128,12 +103,7 @@ jobs:
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
           
-      - name: 3.7 Asya Yaması
-        run: |
-          cd common
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-      - name: 3. Full Kernel Config & Derleme Hazırlığı
+      - name: 4. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -154,13 +124,7 @@ jobs:
           # ========== 1. CMDLINE VE BASLANGIC ==========
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          # ========== 2. SCHEDULER VE TIMER (HZ 300 & SMT OFF) ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_HZ_300
@@ -168,70 +132,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
 
-          # ========== 3. PREEMPTION VE LTO ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-
-          # --- [ 07_bore-android14-6.1-v5.3.0.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
-
-          # --- [ 08_adios-android14-6.1-v3.2.0.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-          
-          # --- [ 09_le9uo-android14-6.1-v1.15.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 15
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_MIN_RATIO 15
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
-
-          # --- [ 10_kcompressd-android14-6.1-v0.5.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_KCOMPRESSD
-
-          # ZRAM ve ZSMALLOC Birleşik Gücü (Built-in)
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZSMALLOC
-
-          # LZ4 Desteğini Garantiye Alalım
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
-          # LZ4 kütüphanelerini built-in olarak sisteme ekle (ZRAM'in muhtaç olduğu kısımlar)
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_LZ4_COMPRESS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_LZ4_DECOMPRESS
-
-          # --- [ 11_zram-ir-android14-6.1-v1.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
-
-          # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-
-          # ========== 8. SISTEM, GIZLILIK VE DOSYA SISTEMI (BURADAYIM!) ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CONNECTOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NINTENDO_FF
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TMPFS_POSIX_ACL
-
-          # ========== 9. KERNELSU VE SUSFS ==========
+          # ========== 2. KERNELSU VE SUSFS ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
@@ -251,7 +152,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-      - name: 4. Kernel Derleme
+      - name: 5. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -279,7 +180,7 @@ jobs:
             -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 5. AnyKernel3 Paketleme
+      - name: 6. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -289,7 +190,7 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Galadriel.zip" ./*
           echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-      - name: 6. Release Yükle
+      - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
