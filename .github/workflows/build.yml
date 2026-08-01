@@ -184,8 +184,7 @@ jobs:
 
           # --- [ 08_adios-android14-6.1-v3.2.0.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-
+          
           # --- [ 09_le9uo-android14-6.1-v1.15.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 15
@@ -200,9 +199,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
 
-          # --- [ 04_lote4_ufs_writebooster.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_UFS_WRITEBOOSTER
-         
           # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
