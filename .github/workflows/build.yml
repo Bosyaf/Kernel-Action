@@ -50,34 +50,52 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/nimrodel.git common
           
-      - name: 2.5 hjpatches Uygulama (Akıllı Sistem)
+      - name: 2.5 hjpatches Uygulama (Akıllı ve Kesintisiz)
         run: |
           cd common
           PATCH_DIR="../hjpatches"
-          echo "🚀 Akıllı yama sistemi başlatılıyor..."
+          echo "🚀 Yama işlemi başlatılıyor, hatalar Runner'ı durdurmayacak..."
 
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             echo "--------------------------------------------------"
-            echo "📦 Kontrol ediliyor: $filename"
+            echo "📦 İşleniyor: $filename"
 
-            # 1. Kontrol: Yama zaten uygulanmış mı? (Reverse dry-run)
-            if patch -p1 --dry-run --reverse < "$patch_file" > /dev/null 2>&1; then
-              echo "✅ $filename zaten uygulanmış, atlanıyor."
+            # Yamayı basmayı dene. Hata alsa bile '|| true' sayesinde Runner devam eder.
+            patch -p1 --fuzz=3 --forward < "$patch_file" > patch_log.txt 2>&1
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ $filename başarıyla uygulandı."
             else
-              # 2. İşlem: Yama uygulanmamış, şimdi basıyoruz
-              echo "🛠️ Uygulanıyor..."
-              patch -p1 --fuzz=3 --forward < "$patch_file" > patch_log.txt 2>&1
-              head -n 20 patch_log.txt
-              
-              if [ $? -eq 0 ]; then
-                echo "✅ $filename başarıyla uygulandı."
+              # Yama uygulanmadıysa, zaten uygulanmış mı diye kontrol et
+              if patch -p1 --dry-run --reverse < "$patch_file" > /dev/null 2>&1; then
+                echo "🆗 $filename zaten uygulanmış, geçiliyor."
               else
-                echo "⚠️ $filename tam oturmadı (FAILED), ama devam ediliyor..."
+                echo "⚠️ $filename UYGULANAMADI! (Dosya uyumsuz veya çakışma var)"
+                echo "📝 Hata Özeti (İlk 15 satır):"
+                head -n 15 patch_log.txt
               fi
-              rm -f patch_log.txt
             fi
+            rm -f patch_log.txt
           done
+
+          # ========== 🔧 OTOMATİK TAMİR (ZORUNLU FİX) ==========
+          echo "🔧 Kritik dosyalar Runner içinde tamir ediliyor..."
+
+          # A) Stat.c içindeki harf hatasını düzeltiyoruz (linux/susfs.h yapıyoruz)
+          if [ -f "fs/stat.c" ]; then
+            sed -i 's/include <linux\/stat.c>/include <linux\/susfs.h>/g' fs/stat.c
+            echo "✅ fs/stat.c tamir edildi."
+          fi
+
+          # B) LZ4 Macro çakışmasını (MIN/MAX) önlemek için koruma ekliyoruz
+          if [ -f "lib/lz4/lz4hc.c" ]; then
+            sed -i '/#define MIN(a, b)/i #ifndef MIN' lib/lz4/lz4hc.c
+            sed -i '/#define MIN(a, b)/a #endif' lib/lz4/lz4hc.c
+            sed -i '/#define MAX(a, b)/i #ifndef MAX' lib/lz4/lz4hc.c
+            sed -i '/#define MAX(a, b)/a #endif' lib/lz4/lz4hc.c
+            echo "✅ lib/lz4/lz4hc.c makro koruması eklendi."
+          fi
           
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
