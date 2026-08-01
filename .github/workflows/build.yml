@@ -200,6 +200,28 @@ jobs:
           chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
+          # ========== BURADAN BAŞLIYOR: BBR3 + FQ KABA KUVVET EKLEMESİ ==========
+          DEFCONFIG="arch/arm64/configs/gki_defconfig"
+          echo "🔧 gki_defconfig ağ ayarları mühürleniyor..."
+          
+          # Eski varsayılanları dosyadan tamamen siliyoruz
+          sed -i '/CONFIG_DEFAULT_TCP_CONG/d' $DEFCONFIG
+          sed -i '/CONFIG_TCP_CONG_DEFAULT/d' $DEFCONFIG
+          sed -i '/CONFIG_DEFAULT_NET_SCH/d' $DEFCONFIG
+          sed -i '/CONFIG_NET_SCH_DEFAULT/d' $DEFCONFIG
+          sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
+          sed -i '/CONFIG_DEFAULT_PFIFO_FAST/d' $DEFCONFIG
+
+          # BBR3 ve FQ (BBR3'ün en iyi dostu) ayarlarını zorla enjekte ediyoruz
+          cat >> $DEFCONFIG << 'EOF'
+          CONFIG_TCP_CONG_ADVANCED=y
+          CONFIG_TCP_CONG_BBR3=y
+          CONFIG_DEFAULT_BBR3=y
+          CONFIG_DEFAULT_TCP_CONG="bbr3"
+          CONFIG_NET_SCH_FQ=y
+          CONFIG_DEFAULT_FQ=y
+          CONFIG_DEFAULT_NET_SCH="fq"
+          EOF
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -253,19 +275,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4HC
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
-          # ========== 7. AG VE INTERNET (BBR3 & FQ) ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ_CODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_WESTWOOD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq_codel"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          
           # ========== 8. SISTEM, GIZLILIK VE DOSYA SISTEMI (BURADAYIM!) ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
