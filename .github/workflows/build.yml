@@ -53,7 +53,7 @@ jobs:
       - name: 2.5 Özel Yamalar
         run: |
           cd common
-          PATCH_DIR="../aches"
+          PATCH_DIR="../patchess"
           if [ ! -d "$PATCH_DIR" ]; then
             echo "⚠️ $PATCH_DIR dizini bulunamadı, atlanıyor..."
           else
