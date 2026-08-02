@@ -254,6 +254,15 @@ jobs:
           # --- [ 08_adios-android14-6.1-v3.2.0.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
+
+          # ========== DAMON BELLEK YÖNETİMİ & LRU SORT ==========
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_VADDR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_PADDR
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_SYSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_RECLAIM
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_LRU_SORT
+
           
           # --- [ 09_le9uo-android14-6.1-v1.15.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
