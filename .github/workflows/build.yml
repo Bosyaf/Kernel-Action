@@ -270,10 +270,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
           # --- [ 10_kcompressd-android14-6.1-v0.5.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_KCOMPRESSD
-          # --- [ 11_zram-ir-android14-6.1-v1.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_MULTI_COMP
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
+          
           # --- [  (LZ4KD) ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4HC
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4K
