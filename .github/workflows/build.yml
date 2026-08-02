@@ -275,9 +275,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_RECOMP_ZSTD
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_ZSTD
           # --- [  (LZ4KD) ] ---
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4HC
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4K
           ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4KD
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_CRYPTO_LZ4HC
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_LZ4K_COMPRESS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_LZ4KD_COMPRESS
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_ZRAM_DEF_COMP_LZ4KD
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4kd"
           
           # ========== 8. SISTEM, GIZLILIK VE DOSYA SISTEMI (BURADAYIM!) ==========
