@@ -120,15 +120,7 @@ jobs:
             fi
           done
           echo "✅ Cerrahi script döngüsü tamamlandı."
-
-          echo "=================================================="
-          echo "🔧 LZ4 MIN/MAX Makro Çakışması (redefined) Çözülüyor..."
-          # LZ4 dosyalarında define işleminden önce eski tanımı temizliyoruz (#undef)
-          find lib/lz4 -type f -name "*.c" -exec sed -i '/#define MIN(/i #undef MIN' {} + 2>/dev/null || true
-          find lib/lz4 -type f -name "*.c" -exec sed -i '/#define MAX(/i #undef MAX' {} + 2>/dev/null || true
-          echo "✅ LZ4 makro onarımı başarıyla uygulandı!"
-
-          
+   
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
