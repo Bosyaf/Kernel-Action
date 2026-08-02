@@ -263,12 +263,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_RECLAIM
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DAMON_LRU_SORT
 
-          
-          # --- [ 09_le9uo-android14-6.1-v1.15.patch ] ---
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_WORKINGSET_PROTECTION_ENABLED
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 15
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_MIN_RATIO 15
-          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
           # --- [ 10_kcompressd-android14-6.1-v0.5.patch ] ---
           ./scripts/config --file $CONFIG_FILE -e CONFIG_KCOMPRESSD
           
