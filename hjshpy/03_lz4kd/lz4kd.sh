@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+log() {
+  echo -e "\033[0;36m[LOG]\033[0m $*" >&2
+}
+
+warn() {
+  echo -e "\033[0;33m[WARN]\033[0m $*" >&2
+}
+
+error() {
+  echo -e "\033[0;31m[ERROR]\033[0m $*" >&2
+  exit 1
+}
+
 
 # ======================================================
 # 📦 ADDON — LZ4KD (ZRAM compression optimization)
