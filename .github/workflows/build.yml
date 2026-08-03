@@ -101,11 +101,6 @@ jobs:
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
       
-      - name: 3.7 Asya Yaması
-        run: |
-          cd common
-          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
