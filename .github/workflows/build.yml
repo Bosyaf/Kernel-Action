@@ -47,32 +47,6 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my.git common
-
-      - name: 2.5 hjpatches Uygulama
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart yamalar sırasıyla basılıyor (Test Modu: Hatalar atlanacak)..."
-          
-          # Yamaları alfabetik (01, 02...) sırayla döngüye alıyoruz
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
-            # Yamayı doğrudan if koşulu içinde çalıştırıyoruz (Actions yarıda kesmesin diye)
-            if patch -p1 --fuzz=3 --no-backup-if-mismatch < "$patch_file" > patch_log.txt 2>&1; then
-              head -n 20 patch_log.txt
-              echo "✅ $filename başarıyla uygulandı."
-            else
-              head -n 20 patch_log.txt
-              echo "⚠️ $filename UYGULANAMADI! Ama derleme durdurulmuyor, sıradaki yamaya geçiliyor."
-              # Başarısız yamanın arkada bıraktığı .rej (reddedilen) çöp dosyaları temizleyelim
-              find . -name "*.rej" -delete 2>/dev/null || true
-            fi
-            rm -f patch_log.txt
-          done
-          echo "✅ Tüm yama döngüsü tamamlandı, derlemeye devam ediliyor!"
           
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
@@ -145,10 +119,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-          CONFIG_FILE="out/.config"
-         
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-      
+          CONFIG_FILE="out/.config"  
           # ========== 9. KERNELSU VE SUSFS ==========
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -160,10 +131,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          # ==========================================================
-          # Localversion
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
+          # =======================================================
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
