@@ -47,7 +47,33 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my.git common
-      
+
+      - name: 2.5 hjpatches Uygulama
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart yamalar sırasıyla basılıyor (Test Modu: Hatalar atlanacak)..."
+          
+          # Yamaları alfabetik (01, 02...) sırayla döngüye alıyoruz
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            echo "--------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            # Yamayı doğrudan if koşulu içinde çalıştırıyoruz (Actions yarıda kesmesin diye)
+            if patch -p1 --fuzz=3 --no-backup-if-mismatch < "$patch_file" > patch_log.txt 2>&1; then
+              head -n 20 patch_log.txt
+              echo "✅ $filename başarıyla uygulandı."
+            else
+              head -n 20 patch_log.txt
+              echo "⚠️ $filename UYGULANAMADI! Ama derleme durdurulmuyor, sıradaki yamaya geçiliyor."
+              # Başarısız yamanın arkada bıraktığı .rej (reddedilen) çöp dosyaları temizleyelim
+              find . -name "*.rej" -delete 2>/dev/null || true
+            fi
+            rm -f patch_log.txt
+          done
+          echo "✅ Tüm yama döngüsü tamamlandı, derlemeye devam ediliyor!"
+          
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
