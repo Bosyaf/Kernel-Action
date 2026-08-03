@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
-log() {
-  echo -e "\033[0;36m[LOG]\033[0m $*" >&2
-}
-
-warn() {
-  echo -e "\033[0;33m[WARN]\033[0m $*" >&2
-}
-
-error() {
-  echo -e "\033[0;31m[ERROR]\033[0m $*" >&2
-  exit 1
-}
+# Missing functions fix
+log() { echo -e "\e[36m[LOG]\e[0m $*"; }
+warn() { echo -e "\e[33m[WARN]\e[0m $*"; }
+error() { echo -e "\e[31m[ERROR]\e[0m $*"; exit 1; }
 
 
 # ======================================================
