@@ -50,31 +50,6 @@ jobs:
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_msm.git common
       
-      - name: 2.5 hjpatches Uygulama
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart yamalar (01-14) sırasıyla basılıyor..."
-          
-          # Yamaları alfabetik (01, 02...) sırayla döngüye alıyoruz
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
-            # Yamayı uygula ve çıktıyı hem dosyaya yaz hem ekranda ilk 20 satırı göster
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            head -n 20 patch_log.txt
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ $filename başarıyla uygulandı."
-            else
-              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
-              exit 1
-            fi
-            rm -f patch_log.txt
-          done
-
       - name: 2.7 hjshpy Cerrahi Scriptler
         run: |
           cd common
