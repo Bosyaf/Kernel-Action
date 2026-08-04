@@ -47,7 +47,53 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/myy.git common
-      
+
+      - name: 2.7 hjshpy Cerrahi Scriptler
+        run: |
+          cd common
+          # Scriptlerin kernel dosyalarını bulabilmesi için mutlak yolu hafızaya alıyoruz
+          KERNEL_SRC_ABS=$(pwd)
+          SCRIPT_ROOT="../hjshpy"
+          echo "🚀 Cerrahi scriptler (01, 06, 07) başlatılıyor..."
+          
+          # Klasörleri (01_..., 06_..., 07_...) sırayla geziyoruz
+          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
+            dir_name=$(basename "$sub_dir")
+            echo "--------------------------------------------------"
+            echo "💉 Klasör Grubu: $dir_name"
+            
+            # Klasörün içindeki ana .sh dosyasını buluyoruz
+            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
+            
+            if [ -n "$sh_file" ]; then
+              script_name=$(basename "$sh_file")
+              echo "⚙️ Çalıştırılıyor: $script_name"
+              
+              # Scriptin kendi klasörüne giriyoruz (yanındaki .py dosyalarını bulabilsin diye)
+              cd "$sub_dir"
+              chmod +x "$script_name"
+              
+              # KERNEL_SRC yolunu scriptlere "buraya bak" diye gönderiyoruz
+              export KERNEL_SRC="$KERNEL_SRC_ABS"
+              
+              # Scripti çalıştır ve logların ilk 20 satırını ekrana bas
+              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
+              
+              # Script hata verirse Runner durmasın, bir sonrakine geçsin (Test aşaması için)
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✅ $script_name başarıyla bitti."
+              else
+                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
+              fi
+              
+              # Ana dizine (common) geri dönüyoruz
+              cd "$KERNEL_SRC_ABS"
+            else
+              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
+            fi
+          done
+          echo "✅ Cerrahi script döngüsü tamamlandı."
+          
       - name: 3. KernelSU-Next Kurulumu (pershoot/dev-susfs)
         run: |
           cd common
