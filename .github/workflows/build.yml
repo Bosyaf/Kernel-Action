@@ -253,8 +253,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
-          # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER)
-          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
           
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
