@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
+log() {
+    echo "[*] $*"
+}
 
+error() {
+    echo "[ERROR] $*" >&2
+    exit 1
+}
 # ======================================================
 # 📦 ADDON — LZ4KD (ZRAM compression optimization)
 # ======================================================
