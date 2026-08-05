@@ -261,8 +261,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          
-      
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+         
           # 6. KERNELSU VE SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
