@@ -255,6 +255,8 @@ jobs:
           
           # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_CLASS_EXT
+          
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_ADIOS
           ./scripts/config --file $CONFIG_FILE -e CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
           
