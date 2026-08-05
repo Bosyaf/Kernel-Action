@@ -51,7 +51,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b oneplus/sm8650_v_15.0.0_oneplus_ace5 --depth=1 https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8650.git common
+          git clone --depth=1 https://github.com/Bosyaf/my_msm.git common
 
       # =================================================================
       # 2. YAMALAR VE CERRAHİ SCRİPTLER (hjpatches & hjshpy)
@@ -207,11 +207,6 @@ jobs:
           sed -i '/CONFIG_DEFAULT_BBR/d' $DEFCONFIG
 
           cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
-          CONFIG_LZ4K_COMPRESS=y
-          CONFIG_LZ4KD_COMPRESS=y
-          CONFIG_CRYPTO_LZ4K=y
-          CONFIG_CRYPTO_LZ4KD=y
-          CONFIG_ZRAM_DEF_COMP="lz4kd"
           CONFIG_TCP_CONG_ADVANCED=y
           CONFIG_TCP_CONG_BBR3=y
           CONFIG_DEFAULT_BBR3=y
@@ -222,10 +217,6 @@ jobs:
           CONFIG_DEFAULT_NET_SCH="fq"
           EOF
 
-          # 🔥 LZ4 MIN/MAX MAKRO ÇAKIŞMASI KESİN ÇÖZÜMÜ (SED İLE #undef ENJEKSİYONU)
-          echo "🛡️ LZ4 kütüphanesindeki MIN/MAX makro çakışmaları düzeltiliyor..."
-          find lib/lz4 -type f -name "*.c" -exec sed -i '/^#define[[:space:]]*MIN(/i #undef MIN' {} + || true
-          find lib/lz4 -type f -name "*.c" -exec sed -i '/^#define[[:space:]]*MAX(/i #undef MAX' {} + || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -262,17 +253,16 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
+          # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER)
+          ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
           
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CONNECTOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NINTENDO_FF
           
+      
           # 6. KERNELSU VE SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
@@ -307,7 +297,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+flagm+rdma+ssbs+sb \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+flagm+rdma+ssbs+sb+rng \
            -falign-functions=32 \
            -fomit-frame-pointer \
            -ffunction-sections \
@@ -319,8 +309,7 @@ jobs:
            -Wno-format-extra-args \
            -Wno-constant-logical-operand \
            -Wno-unused-variable \
-           -Wno-address-of-packed-member \
-           -Wno-macro-redefined" \
+           -Wno-address-of-packed-member" \
            KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
@@ -347,4 +336,5 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           
