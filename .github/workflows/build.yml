@@ -222,6 +222,10 @@ jobs:
           CONFIG_DEFAULT_NET_SCH="fq"
           EOF
 
+          # 🔥 LZ4 MIN/MAX MAKRO ÇAKIŞMASI KESİN ÇÖZÜMÜ (SED İLE #undef ENJEKSİYONU)
+          echo "🛡️ LZ4 kütüphanesindeki MIN/MAX makro çakışmaları düzeltiliyor..."
+          find lib/lz4 -type f -name "*.c" -exec sed -i '/^#define[[:space:]]*MIN(/i #undef MIN' {} + || true
+          find lib/lz4 -type f -name "*.c" -exec sed -i '/^#define[[:space:]]*MAX(/i #undef MAX' {} + || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -315,7 +319,8 @@ jobs:
            -Wno-format-extra-args \
            -Wno-constant-logical-operand \
            -Wno-unused-variable \
-           -Wno-address-of-packed-member" \
+           -Wno-address-of-packed-member \
+           -Wno-macro-redefined" \
            KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
             -Wl,--strip-debug \
