@@ -209,6 +209,8 @@ jobs:
           cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
           CONFIG_LZ4K_COMPRESS=y
           CONFIG_LZ4KD_COMPRESS=y
+          CONFIG_CRYPTO_LZ4K=y
+          CONFIG_CRYPTO_LZ4KD=y
           CONFIG_TCP_CONG_ADVANCED=y
           CONFIG_TCP_CONG_BBR3=y
           CONFIG_DEFAULT_BBR3=y
