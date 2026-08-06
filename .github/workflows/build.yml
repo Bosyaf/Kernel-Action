@@ -303,6 +303,11 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+flagm+rdma+ssbs+sb+rng \
+           -fvectorize \
+           -fslp-vectorize \
+           -funroll-loops \
+           -finline-functions \
+           -fstrict-aliasing \
            -falign-functions=32 \
            -falign-loops=32 \
            -fomit-frame-pointer \
@@ -317,9 +322,10 @@ jobs:
            -Wno-unused-variable \
            -Wno-address-of-packed-member" \
            KLDFLAGS="-Wl,--gc-sections \
-            -Wl,--as-needed \
-            -Wl,--strip-debug \
-            -Wl,--icf=safe" \
+           -Wl,--as-needed \
+           -Wl,--strip-debug \
+           -Wl,--icf=safe \
+           -Wl,-O2" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
 
