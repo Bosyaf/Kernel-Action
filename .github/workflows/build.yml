@@ -46,7 +46,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b sched_ext https://github.com/Kyuofox-Studio/android_kernel_xiaomi_sm8650.git
+          git clone -b sched_ext https://github.com/Kyuofox-Studio/android_kernel_xiaomi_sm8650.git common
 
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
