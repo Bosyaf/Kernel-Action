@@ -27,9 +27,9 @@ jobs:
         uses: actions/checkout@v4
 
       # =================================================================
-      # 1. ORTAM HAZIRLIĞI VE DERLEYİCİ (WEEBX CLANG)
+      # 1. ORTAM HAZIRLIĞI VE DERLEYİCİ (ANTMAN İLE NEUTRON CLANG)
       # =================================================================
-      - name: 1. Paketler ve WeebX Clang Çekimi
+      - name: 1. Paketler ve Neutron Clang (AntMan) Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -37,17 +37,14 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-          echo "🔥 WeebX Clang (XSans0) çekiliyor..."
-          mkdir -p "$GITHUB_WORKSPACE/weebx-clang"
-          WEEBX_URL=$(curl -fsSL https://raw.githubusercontent.com/XSans0/WeebX-Clang/main/main/link.txt | tr -d '[:space:]')
-          [ -n "$WEEBX_URL" ] || { echo "HATA: WeebX indirme linki alınamadı!"; exit 1; }
-          echo "WeebX Clang indiriliyor: $WEEBX_URL"
-          curl -fLSs "$WEEBX_URL" -o clang.tar.gz || { echo "HATA: Clang indirilemedi!"; exit 1; }
-          echo "Arşiv Çıkarılıyor..."
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/weebx-clang" --strip-components=1
-          rm -f clang.tar.gz
-          echo "$GITHUB_WORKSPACE/weebx-clang/bin" >> "$GITHUB_PATH"
-          echo "✅ WeebX Clang İndirildi ve PATH'e eklendi!"
+          echo "🔥 AntMan kullanılarak en son Neutron Clang çekiliyor..."
+          mkdir -p "$HOME/toolchains/neutron-clang"
+          cd "$HOME/toolchains/neutron-clang"
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S
+          echo "$HOME/toolchains/neutron-clang/bin" >> "$GITHUB_PATH"
+          echo "✅ Neutron Clang İndirildi ve PATH'e eklendi!"
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
@@ -177,7 +174,7 @@ jobs:
       - name: 8. Kernel Config & Ağ/Zamanlayıcı Mühürlemesi
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/weebx-clang/bin:$PATH"
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           cat << 'EOF' > scripts/check-local-export
@@ -285,7 +282,7 @@ jobs:
       - name: 9. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/weebx-clang/bin:$PATH"
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -333,7 +330,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (WeebX Clang + Full LTO)"
+          name: "CG+ Galadriel (Neutron Clang + Full LTO)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
