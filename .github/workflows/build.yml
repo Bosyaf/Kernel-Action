@@ -75,20 +75,39 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
 
-                    CONFIG_FILE="out/.config"
-
           # ==========================================================
-          # 1. ZAMANLAYICI (SCHEDULER) VE SCX ZORLA AÇMA
+          # 1. SCX (SCHED_EXT / SLIM_SCHED) - AÇILMASI GEREKENLER (=y)
           # ==========================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BPF
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BPF_SYSCALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLASS_EXT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_SCHED_EXT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_OPLUS_FEATURE_GEAS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BPF_JIT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLIM_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLASS_EXT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_EXT_GROUP_SCHED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CASS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_AUTOGROUP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RT_SOFTIRQ_AWARE_SCHED
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SMP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_SMT
+
+          # ==========================================================
+          # 2. SCX İLE ÇAKIŞMASIN DİYE KAPATILMASI GEREKENLER (is not set)
+          # ==========================================================
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CORE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CFS_BANDWIDTH
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RT_GROUP_SCHED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_DYNAMIC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_WALT_DEBUG
+
+          # ==========================================================
+          # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
+          # ==========================================================
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_OPLUS_FEATURE_GEAS
+
 
           # ==========================================================
           # 2. CPU VALİLERİNİ (GOVERNORS) GARANTİYE ALMA
