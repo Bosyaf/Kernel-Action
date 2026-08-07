@@ -83,7 +83,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BPF_SYSCALL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLASS_EXT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_SCHED_EXT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_GEAS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_OPLUS_FEATURE_GEAS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLIM_SCHED
           ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
