@@ -68,11 +68,11 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
 
-          ./scripts/config --file out/.config --module CONFIG_SCHED_WALT
-          ./scripts/config --file out/.config --enable CONFIG_SCHED_MC
-          ./scripts/config --file out/.config --enable CONFIG_SMP
+          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_MC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SMP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file out/.config --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
           
           # ==========================================================
           # Localversion
