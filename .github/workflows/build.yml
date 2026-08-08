@@ -49,7 +49,7 @@ jobs:
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
       - name: 2. Kaynakları Çek
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/my_aosp.git common
       # =================================================================
       
