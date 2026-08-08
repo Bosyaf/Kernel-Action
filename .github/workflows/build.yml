@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my_lts.git common
+          git clone --depth=1 https://github.com/Bosyaf/my_aosp.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -304,9 +304,11 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 \
+           KCFLAGS="-O2 \
            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
+           -mllvm -polly \
            -falign-functions=32 \
+           -fmerge-all-constants \
            -fstrict-aliasing \
            -fomit-frame-pointer \
            -ffunction-sections \
@@ -322,8 +324,8 @@ jobs:
            KLDFLAGS="-Wl,--gc-sections \
            -Wl,--as-needed \
            -Wl,--strip-debug \
-           -Wl,--icf=safe \
-           -Wl,-O2" \
+           -Wl,--icf=all \
+           -Wl,-O3" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 10. AnyKernel3 Paketleme
