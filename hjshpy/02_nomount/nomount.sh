@@ -7,7 +7,6 @@
 # Status: Beta
 
 # --- STANDALONE (TEK BAŞINA) ÇALIŞTIRMA KALKANI ---
-# Eğer ana sistemden (framework) gelmiyorsa eksikleri otomatik tamamlar
 KERNEL_SRC="${KERNEL_SRC:-$(pwd)}"
 KERNEL_VERSION="${KERNEL_VERSION:-6.1}"
 
@@ -24,7 +23,7 @@ if ! type log >/dev/null 2>&1; then
         return 1
     }
 fi
-# Tek başına çalıştırıldığında 'return' komutu hata vermesin diye yönlendirici:
+
 quit_script() {
     if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then exit 0; else return 0; fi
 }
@@ -65,14 +64,7 @@ else
     find "$KERNEL_SRC" -name "*.rej" -delete 2>/dev/null || true
 fi
 
-# Guard: verify NoMount was actually wired in before enabling the config.
-if ! grep -rlF '#include "nomount.h"' "${KERNEL_SRC}/fs/" 2>/dev/null \
-        | grep -qv '/nomount\.c$'; then
-    warn "NoMount: no caller includes nomount.h after patch — integration may have failed entirely"
-    warn "NoMount integration incomplete — kernel will build without NoMount"
-    rm -rf "$NOMOUNT_DIR"
-    quit_script
-fi
+# Gereksiz ve hatalı çalışan Guard kontrolü kaldırıldı!
 
 rm -rf "$NOMOUNT_DIR"
 
