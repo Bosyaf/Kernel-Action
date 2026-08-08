@@ -6,6 +6,30 @@
 # Repo: https://github.com/maxsteeel/nomount
 # Status: Beta
 
+# --- STANDALONE (TEK BAŞINA) ÇALIŞTIRMA KALKANI ---
+# Eğer ana sistemden (framework) gelmiyorsa eksikleri otomatik tamamlar
+KERNEL_SRC="${KERNEL_SRC:-$(pwd)}"
+KERNEL_VERSION="${KERNEL_VERSION:-6.1}"
+
+if ! type log >/dev/null 2>&1; then
+    log() { echo -e "[\033[1;32mINFO\033[0m] $*"; }
+    warn() { echo -e "[\033[1;33mWARN\033[0m] $*"; }
+    error() { echo -e "[\033[1;31mERROR\033[0m] $*"; exit 1; }
+    run_quiet() { "$@" >/dev/null 2>&1; }
+    retry() {
+        local tries=$1; shift
+        for ((i=1; i<=tries; i++)); do
+            "$@" && return 0
+        done
+        return 1
+    }
+fi
+# Tek başına çalıştırıldığında 'return' komutu hata vermesin diye yönlendirici:
+quit_script() {
+    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then exit 0; else return 0; fi
+}
+# ----------------------------------------------------
+
 NOMOUNT_REPO="https://github.com/maxsteeel/nomount"
 NOMOUNT_DIR="/tmp/nomount_src"
 NOMOUNT_PATCH_NAME="nomount_${KERNEL_VERSION}_kernel_integration.patch"
@@ -17,13 +41,13 @@ git config --global http.connectTimeout 30
 git config --global http.lowSpeedLimit 1000
 git config --global http.lowSpeedTime 30
 retry 3 run_quiet git clone -q --depth=1 "$NOMOUNT_REPO" "$NOMOUNT_DIR" \
-    || { warn "NoMount clone failed — skipping"; return 0; }
+    || { warn "NoMount clone failed — skipping"; quit_script; }
 
 NOMOUNT_PATCH="${NOMOUNT_DIR}/kernel/patches/${NOMOUNT_PATCH_NAME}"
 if [ ! -f "$NOMOUNT_PATCH" ]; then
     warn "NoMount patch not found for kernel ${KERNEL_VERSION} — skipping"
     rm -rf "$NOMOUNT_DIR"
-    return 0
+    quit_script
 fi
 
 log "Copying NoMount source files..."
@@ -42,17 +66,12 @@ else
 fi
 
 # Guard: verify NoMount was actually wired in before enabling the config.
-# Without this, hunk failures above only warn — the build would otherwise
-# report success with CONFIG_NOMOUNT=y while the feature is dead code.
-# We check that some caller in fs/ (other than the copied source itself)
-# now #includes nomount.h — that's the minimum signal the patch actually
-# hooked NoMount into the VFS rather than just dropping unused files.
 if ! grep -rlF '#include "nomount.h"' "${KERNEL_SRC}/fs/" 2>/dev/null \
         | grep -qv '/nomount\.c$'; then
     warn "NoMount: no caller includes nomount.h after patch — integration may have failed entirely"
     warn "NoMount integration incomplete — kernel will build without NoMount"
     rm -rf "$NOMOUNT_DIR"
-    return 0
+    quit_script
 fi
 
 rm -rf "$NOMOUNT_DIR"
