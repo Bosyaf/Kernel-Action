@@ -253,7 +253,7 @@ index 31fabf8aa..8664cf96f 100644
 +	return p && p->sched_class == &fair_sched_class && !p->exit_state;
 +}
 +
-+static u32 count_child_tasks(struct task_struct *p)
++static u32 __maybe_unused count_child_tasks(struct task_struct *p)
 +{
 +	struct task_struct *child;
 +	u32 cnt = 0;
