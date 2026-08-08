@@ -1,40 +1,47 @@
 #!/usr/bin/env bash
 
 # ======================================================
-# 📦 ADDON — ZeroMount (VFS path redirection engine)
+# 📦 STANDALONE ADDON — ZeroMount (VFS path redirection engine)
 # ======================================================
-# Repo: https://github.com/Enginex0/zeromount
-# Patch source: https://github.com/Enginex0/Super-Builders
-# Note: self-contained patch (creates fs/zeromount.c,
-#       include/linux/zeromount.h, Kconfig + Makefile wiring).
-#       readdir.c and namei.c hunks are stripped before apply — both are
-#       diffed against a SuSFS-patched baseline and are handled exclusively
-#       by inject_readdir.py / inject_namei.py instead.
-#
-# Requires SuSFS — build.sh's addon conflict matrix (run_addons()) rejects
-# this addon outright when SUSFS_ENABLED isn't true, on any variant
-# including VANILLA (which can never have SuSFS). Design decision, not a
-# hard limitation of every script here: inject_namei.py/inject_readdir.py
-# are baseline-agnostic and would work on a non-SuSFS tree too, but
-# fix_taskmmu.py's scope fix only handles the SuSFS-patched pattern (its
-# non-SuSFS case was removed once this addon stopped supporting non-SuSFS
-# trees), so this is a hard requirement in practice regardless.
+
+# --- STANDALONE (TEK BAŞINA) ÇALIŞTIRMA KALKANI ---
+KERNEL_SRC="${KERNEL_SRC:-$(pwd)}"
+# Python dosyalarının bu script ile aynı klasörde olduğunu otomatik bulur:
+PATCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+
+if ! type log >/dev/null 2>&1; then
+    log() { echo -e "[\033[1;32mINFO\033[0m] $*"; }
+    warn() { echo -e "[\033[1;33mWARN\033[0m] $*"; }
+    error() { echo -e "[\033[1;31mERROR\033[0m] $*"; exit 1; }
+    run_quiet() { "$@" >/dev/null 2>&1; }
+    retry() {
+        local tries=$1; shift
+        for ((i=1; i<=tries; i++)); do
+            "$@" && return 0
+        done
+        return 1
+    }
+fi
+
+quit_script() {
+    if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then exit 0; else return 0; fi
+}
+# ----------------------------------------------------
 
 ZEROMOUNT_PATCH_URL="https://raw.githubusercontent.com/Enginex0/Super-Builders/main/android14-6.1/ReSukiSU/patches/60_zeromount-android14-6.1.patch"
 ZEROMOUNT_PATCH="/tmp/60_zeromount-android14-6.1.patch"
-PATCHER_DIR="${LUMINAIRE_PATCH_DIR}/kernel/addons/zeromount"
 
 log "Downloading ZeroMount kernel patch..."
 retry 3 run_quiet curl -fSL "$ZEROMOUNT_PATCH_URL" -o "$ZEROMOUNT_PATCH" \
-    || { warn "ZeroMount patch download failed — skipping"; return 0; }
+    || { warn "ZeroMount patch download failed — skipping"; quit_script; }
 
 log "Stripping readdir.c hunk from patch..."
 python3 "${PATCHER_DIR}/strip_readdir_hunk.py" "$ZEROMOUNT_PATCH" \
-    || { warn "ZeroMount: strip_readdir_hunk failed — skipping"; rm -f "$ZEROMOUNT_PATCH"; return 0; }
+    || { warn "ZeroMount: strip_readdir_hunk failed — skipping"; rm -f "$ZEROMOUNT_PATCH"; quit_script; }
 
 log "Stripping namei.c hunks from patch..."
 python3 "${PATCHER_DIR}/strip_namei_hunk.py" "$ZEROMOUNT_PATCH" \
-    || { warn "ZeroMount: strip_namei_hunk failed — skipping"; rm -f "$ZEROMOUNT_PATCH"; return 0; }
+    || { warn "ZeroMount: strip_namei_hunk failed — skipping"; rm -f "$ZEROMOUNT_PATCH"; quit_script; }
 
 log "Applying ZeroMount kernel patch..."
 if patch -p1 --fuzz=3 --dry-run --reverse -d "$KERNEL_SRC" < "$ZEROMOUNT_PATCH" > /dev/null 2>&1; then
@@ -62,5 +69,15 @@ log "Injecting ZeroMount hooks into readdir.c (directory listing support)..."
 python3 "${PATCHER_DIR}/inject_readdir.py" "${KERNEL_SRC}/fs/readdir.c" \
     || error "ZeroMount: readdir.c injection failed!"
 log "readdir.c injected ✅"
+
+# Kernel Konfigürasyonunu Aktif Et (Orijinal dosyada eksikti, eklendi)
+log "Enabling ZeroMount config..."
+GKI_DEFCONFIG="${KERNEL_SRC}/arch/arm64/configs/gki_defconfig"
+if [ -f "$GKI_DEFCONFIG" ]; then
+    if ! grep -q "^CONFIG_ZEROMOUNT=y" "$GKI_DEFCONFIG"; then
+        echo "CONFIG_ZEROMOUNT=y" >> "$GKI_DEFCONFIG"
+        log "CONFIG_ZEROMOUNT=y defconfig'e eklendi ✅"
+    fi
+fi
 
 log "ZeroMount integrated ✅"
