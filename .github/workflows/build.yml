@@ -306,6 +306,8 @@ jobs:
            -fdata-sections \
            -fno-unwind-tables \
            -fno-asynchronous-unwind-tables \
+           -fno-plt \
+           -fshrink-wrap \
            -Wno-unused-command-line-argument \
            -Wno-format \
            -Wno-format-extra-args \
