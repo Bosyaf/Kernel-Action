@@ -299,7 +299,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
            KCFLAGS="-O2 \
            -march=armv9.2-a+crypto+crc+rcpc+lse+sb+ssbs+predres+fp16+bf16 \
-           -falign-functions=16 \
+           -falign-functions=32 \
            -fstrict-aliasing \
            -fomit-frame-pointer \
            -ffunction-sections \
