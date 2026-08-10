@@ -108,31 +108,34 @@ jobs:
           
             # 3. YAMALAR VE CERRAHİ SCRİPTLER (Dedektif Modu)
       # =================================================================
-      - name: 5. Standart Yamalar (Dedektif Modu)
+      # =================================================================
+      - name: 5. Standart Yamalar (Dedektif Modu - FIXED)
         run: |
           cd common
           PATCH_DIR="../staging"
           echo "🚀 Standart yamalar sırasıyla basılıyor... (DETAYLI ANALİZ MODU)"
+          
+          # BÜYÜK DÜZELTME: Actions'ın hata anında fişi çekmesini engelliyoruz!
+          set +e 
           
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             echo "=================================================="
             echo "📦 İşleniyor: $filename"
             
-            # --verbose parametresi eklendi, bütün adımlar tek tek rapora yazılacak
+            # Yamayı basıyoruz
             patch -p1 --fuzz=3 --verbose < "$patch_file" > patch_log.txt 2>&1
+            PATCH_STATUS=$? # Hatayı hafızaya al
             
-            if [ $? -eq 0 ]; then
+            if [ $PATCH_STATUS -eq 0 ]; then
               echo "✅ $filename KUSURSUZ UYGULANDI."
               rm -f patch_log.txt
             else
               echo "❌ $filename UYGULANAMADI! İşte Sebebi:"
-              # Tüm logu ekrana bas (ilk 20 satır kısıtlaması kalktı)
               cat patch_log.txt 
               
               echo "--------------------------------------------------"
               echo "🔍 REDDEDİLEN (REJECTED) SATIRLARIN ANALİZİ:"
-              # Patlayan dosyaları bul ve içini ekrana bas
               find . -type f -name "*.rej" | while read -r rej_file; do
                 echo "⚠️ PATLAYAN DOSYA: $rej_file"
                 echo "Aşağıdaki kodlar bu dosyaya eklenemedi:"
@@ -141,9 +144,11 @@ jobs:
               done
               
               echo "🚨 HATA TESPİT EDİLDİ, SİSTEM DURDURULUYOR!"
-              exit 1
+              exit 1 # Fişi şimdi kendi isteğimizle çekiyoruz
             fi
           done
+          
+          set -e # Her şey biterse güvenliği geri aç
 
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
