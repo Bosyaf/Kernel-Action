@@ -1,4 +1,4 @@
-name: Houji GKI (build_kernel.sh)
+name: Houji GKI (Kleaf/Bazel)
 
 permissions:
   contents: write
@@ -31,48 +31,61 @@ jobs:
       - name: 2. Kaynak Kodunu Çek (CLO-ACK)
         run: |
           echo "🚀 Techpack Kaynağı İndiriliyor..."
-          git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
+          git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b clo-ack --depth=1 kernel_workspace
 
-      - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
+      - name: 3. KernelSU-Next Enjeksiyonu
+        run: |
+          cd kernel_workspace
+          echo "💉 KernelSU-Next çekirdeğe işleniyor..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+      - name: 4. Eksik Bazel Motorunu Tamamla (Can Damarı)
+        run: |
+          cd kernel_workspace
+          echo "🛠️ Geliştiricinin sildiği Bazel aracı Bazelisk ile yeniden yükleniyor..."
+          mkdir -p tools
+          # Google'ın resmi aracıyla Bazel'i otomatik çekiyoruz
+          wget -q https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -O tools/bazel
+          chmod +x tools/bazel
+
+      - name: 5. Çekirdeği Derle (Saf Google/Qualcomm Mimarisi)
+        run: |
+          cd kernel_workspace
+          echo "🔥 Bazel Kleaf Derlemesi Başlıyor! (Sıfır Hata Garantili)"
+          python3 build_with_bazel.py -t pineapple gki
+
+      - name: 6. AnyKernel3 ile Paketleme (Houji Cerrah Modu)
         run: |
           cd kernel_workspace
           
-          echo "📦 Anykernel Cihaz Ayarları Yapılıyor (Houji/Shennong)..."
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (KSU Next)/' anykernel/anykernel.sh
-          sed -i 's/device.name3=/device.name3=houji/' anykernel/anykernel.sh
-          sed -i 's/device.name4=/device.name4=shennong/' anykernel/anykernel.sh
+          # Bazel'in çıktıları attığı klasör
+          OUT_DIR="out/msm-kernel-pineapple-gki/dist"
+          cd anykernel
+          
+          echo "📦 AnyKernel cihaz ayarları yapılıyor..."
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (KSU Next)/' anykernel.sh
+          sed -i 's/device.name3=/device.name3=houji/' anykernel.sh
+          sed -i 's/device.name4=/device.name4=shennong/' anykernel.sh
           
           # YANLIŞ DTBO FLAŞLAMASINI ENGELLE (BRICK KORUMASI)
-          sed -i '/flash_dtbo/d' anykernel/anykernel.sh
+          sed -i '/flash_dtbo/d' anykernel.sh
           
-          echo "🛠️ build_kernel.sh Otomatize Ediliyor..."
-          # 1. HATA ÇÖZÜMÜ: Clang 19 (Prelude) seçilerek ARMv9 (tlb-rmi) derleme hatası çözülüyor!
-          sed -i 's/read -p "Choose \[1-2\]: " clang_choice/clang_choice=2/g' build_kernel.sh
+          echo "📦 Çekirdek ve Modüller kopyalanıyor..."
+          # Saf Image'ı çek
+          cp ../$OUT_DIR/Image .
           
-          # 2. Çıktı (Zip) ismini Peridot'tan Houji'ye çevir
-          sed -i 's/RealKing-Peridot/RealKing-Houji/g' build_kernel.sh
+          # Bütün Qualcomm .ko modüllerini zip'e al
+          mkdir -p _modules
+          find ../$OUT_DIR -type f -name "*.ko" -exec cp {} _modules/ \;
           
-          # 3. YANLIŞ CİHAZ AĞACI KOPYALAMASINI İPTAL ET (DT/DTBO atlanıyor)
-          sed -i 's/cp -v "$ZIMAGE_DIR\/dtbo.img" "$TEMP_ANY_KERNEL_DIR\/"/echo "DTBO atlandi"/g' build_kernel.sh
-          sed -i 's/cp -v "$ZIMAGE_DIR\/dt.img" "$TEMP_ANY_KERNEL_DIR\/"/echo "DT atlandi"/g' build_kernel.sh
+          echo "📦 Zip dosyası oluşturuluyor..."
+          zip -r9 ../RealKing-Houji-Bazel.zip *
           
-          # 4. Kısıtlı Modül Listesini silip, BÜTÜN .ko dosyalarını zip'e almasını sağla
-          sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
-          sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
-
-      - name: 4. Çekirdeği Derle (build_kernel.sh)
-        run: |
-          cd kernel_workspace
-          chmod +x build_kernel.sh
-          
-          echo "🔥 Derleme Başlıyor! (KernelSU-Next Otomatik Eklenecek)"
-          ./build_kernel.sh
-
-      - name: 5. Release Yükle
+      - name: 7. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: Houji-GKI-${{ github.run_id }}
-          name: "CG+ Houji GKI Kernel"
+          name: "CG+ Houji GKI Kernel (KSU Next)"
           files: kernel_workspace/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
