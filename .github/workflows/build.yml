@@ -111,7 +111,7 @@ jobs:
       - name: 5. Standart Yamalar (hjpatches)
         run: |
           cd common
-          PATCH_DIR="../hjpatches"
+          PATCH_DIR="../staging"
           echo "🚀 Standart yamalar sırasıyla basılıyor..."
           
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
