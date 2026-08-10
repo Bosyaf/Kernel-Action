@@ -29,10 +29,10 @@ jobs:
         run: |
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
 
-      - name: 3. Sağlam Clang İndir (ZyC Clang 19)
+      - name: 3. Sağlam Clang İndir (Prelude Clang)
         run: |
-          echo "🚀 ZyC Clang 19 indiriliyor..."
-          git clone --depth=1 https://github.com/ZyC-X/zyc-clang.git -b 19 clang-19
+          echo "🚀 Prelude Clang indiriliyor (Halka Açık, Sorunsuz)..."
+          git clone --depth=1 https://gitlab.com/jjpprrrr/prelude-clang.git clang-19
 
       - name: 4. Çekirdeği Derle (Saf Make & LTO Kapalı)
         run: |
