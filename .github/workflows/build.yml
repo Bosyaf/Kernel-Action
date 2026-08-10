@@ -43,16 +43,19 @@ jobs:
           sed -i 's/device.name4=/device.name4=shennong/' anykernel/anykernel.sh
           
           echo "🛠️ build_kernel.sh Otomatize Ediliyor..."
-          # BÜYÜK DÜZELTME: Hatalı 1. Clang yerine, Git Clone kullanan sorunsuz 2. (Prelude) Clang'i seçiyoruz!
-          sed -i 's/read -p "Choose \[1-2\]: " clang_choice/clang_choice=2/g' build_kernel.sh
+          # 1. Terminalde soru sormaması için resmi Google AOSP Clang'i seçiyoruz
+          sed -i 's/read -p "Choose \[1-2\]: " clang_choice/clang_choice=1/g' build_kernel.sh
           
-          # Çıktı (Zip) ismini Peridot'tan Houji'ye çevir
+          # BÜYÜK DÜZELTME: Geliştiricinin hatalı "tar" komutundaki bozuk parametreyi siliyoruz!
+          sed -i 's/--strip-components=1//g' build_kernel.sh
+          
+          # 2. Çıktı (Zip) ismini Peridot'tan Houji'ye çevir
           sed -i 's/RealKing-Peridot/RealKing-Houji/g' build_kernel.sh
           
-          # Kısıtlı Modül Listesini (IMPORTANT_MODULES) silip, bütün .ko dosyalarını zip'e almasını sağla
+          # 3. Kısıtlı Modül Listesini (IMPORTANT_MODULES) silip, bütün .ko dosyalarını zip'e almasını sağla
           sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
           sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
-          
+
       - name: 4. Çekirdeği Derle (build_kernel.sh)
         run: |
           cd kernel_workspace
