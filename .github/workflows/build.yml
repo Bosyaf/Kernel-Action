@@ -33,7 +33,7 @@ jobs:
           echo "🚀 Techpack Kaynağı İndiriliyor..."
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b clo-ack --depth=1 kernel_workspace
 
-            - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
+      - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
         run: |
           cd kernel_workspace
           
