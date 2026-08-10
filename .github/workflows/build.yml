@@ -106,30 +106,45 @@ jobs:
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
           
-      # 3. YAMALAR VE CERRAHİ SCRİPTLER (hjpatches & hjshpy)
+            # 3. YAMALAR VE CERRAHİ SCRİPTLER (Dedektif Modu)
       # =================================================================
-      - name: 5. Standart Yamalar (hjpatches)
+      - name: 5. Standart Yamalar (Dedektif Modu)
         run: |
           cd common
           PATCH_DIR="../staging"
-          echo "🚀 Standart yamalar sırasıyla basılıyor..."
+          echo "🚀 Standart yamalar sırasıyla basılıyor... (DETAYLI ANALİZ MODU)"
           
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
+            echo "=================================================="
             echo "📦 İşleniyor: $filename"
             
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            head -n 20 patch_log.txt
+            # --verbose parametresi eklendi, bütün adımlar tek tek rapora yazılacak
+            patch -p1 --fuzz=3 --verbose < "$patch_file" > patch_log.txt 2>&1
             
             if [ $? -eq 0 ]; then
-              echo "✅ $filename başarıyla uygulandı."
+              echo "✅ $filename KUSURSUZ UYGULANDI."
+              rm -f patch_log.txt
             else
-              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
+              echo "❌ $filename UYGULANAMADI! İşte Sebebi:"
+              # Tüm logu ekrana bas (ilk 20 satır kısıtlaması kalktı)
+              cat patch_log.txt 
+              
+              echo "--------------------------------------------------"
+              echo "🔍 REDDEDİLEN (REJECTED) SATIRLARIN ANALİZİ:"
+              # Patlayan dosyaları bul ve içini ekrana bas
+              find . -type f -name "*.rej" | while read -r rej_file; do
+                echo "⚠️ PATLAYAN DOSYA: $rej_file"
+                echo "Aşağıdaki kodlar bu dosyaya eklenemedi:"
+                cat "$rej_file"
+                echo "--------------------------------------------------"
+              done
+              
+              echo "🚨 HATA TESPİT EDİLDİ, SİSTEM DURDURULUYOR!"
               exit 1
             fi
-            rm -f patch_log.txt
           done
+
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
