@@ -25,16 +25,16 @@ jobs:
           sudo apt update -qq
           sudo apt install -y python3 git curl build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev rsync unzip bc cpio wget xz-utils pkg-config zip
 
-      - name: 2. Kaynak Kodunu Çek
+      - name: 2. Kaynak Kodunu Çek (bb branch)
         run: |
-          git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b clo-ack --depth=1 kernel_workspace
+          git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
 
       - name: 3. Sağlam Clang İndir (ZyC Clang 19)
         run: |
           echo "🚀 ZyC Clang 19 indiriliyor..."
           git clone --depth=1 https://github.com/ZyC-X/zyc-clang.git -b 19 clang-19
 
-      - name: 4. Çekirdeği Derle (Saf Make)
+      - name: 4. Çekirdeği Derle (Saf Make & LTO Kapalı)
         run: |
           cd kernel_workspace
           
@@ -43,7 +43,7 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Qualcomm Techpack Yolları (Ses, Kamera, Ekran sürücüleri için şart)
+          # Qualcomm Techpack Yolları (Ses, Kamera, Ekran sürücüleri)
           export AUDIO_ROOT="$PWD/techpack/audio-kernel"
           export CAMERA_ROOT="$PWD/techpack/camera-kernel"
           export DISPLAY_ROOT="$PWD/techpack/display-drivers"
@@ -57,15 +57,21 @@ jobs:
           
           export BOARD_PLATFORM=pineapple
           
-          # YYLLOC Workaround (Clang hatalarını önlemek için)
+          # YYLLOC Workaround
           sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.l || true
 
-          # BÜYÜK DÜZELTME: LLVM_IAS=0 yaparak o lanet tlb-rmi kısıtlamasını kaldırıyoruz!
+          # LLVM_IAS=0 ile derleyici kurallarını esnetiyoruz
           MAKE_OPTS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=0 -I$AUDIO_ROOT/include -I$CAMERA_ROOT/include -I$DISPLAY_ROOT/include"
           
           echo "🔥 Temiz Derleme Başlıyor..."
           make O=out gki_defconfig vendor/pineapple_GKI.config $MAKE_OPTS
+          
+          echo "🛠️ LTO Kapatılıyor (Linker Hatalarını Engellemek İçin)..."
+          ./scripts/config --file out/.config -d LTO_CLANG_THIN -d LTO_CLANG_FULL -e LTO_NONE
+          make O=out olddefconfig $MAKE_OPTS
+          
+          echo "🔥 Ana Çekirdek Derleniyor..."
           make -j$(nproc --all) O=out $MAKE_OPTS
           
           echo "🔥 Modüller (.ko) Derleniyor..."
@@ -83,7 +89,7 @@ jobs:
           sed -i 's/device.name3=/device.name3=houji/' anykernel.sh
           sed -i 's/device.name4=/device.name4=shennong/' anykernel.sh
           
-          # Sadece Boot ve vendor_dlkm flashlanacak (DTBO güvenliğe alındı)
+          # Yanlış dtbo flashlamasını engelle
           sed -i '/flash_dtbo/d' anykernel.sh
           
           # Derlenen saf Image'ı kopyala
