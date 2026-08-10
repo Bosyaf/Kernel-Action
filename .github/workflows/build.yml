@@ -29,17 +29,23 @@ jobs:
         run: |
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
 
-      - name: 3. Sağlam Clang İndir (Prelude Clang)
+      - name: 3. Orijinal Clang İndir (r487747c)
         run: |
-          echo "🚀 Prelude Clang indiriliyor (Halka Açık, Sorunsuz)..."
-          git clone --depth=1 https://gitlab.com/jjpprrrr/prelude-clang.git clang-19
+          echo "🚀 Senin bulduğun Orijinal Android Clang 17 (r487747c) indiriliyor..."
+          mkdir -p clang-17
+          
+          # Doğrudan Google sunucularından orijinal arşivi çekiyoruz
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz -O clang.tar.gz
+          
+          # Hatalı tar parametresi KULLANMADAN tertemiz klasöre açıyoruz!
+          tar -xzf clang.tar.gz -C clang-17
 
-      - name: 4. Çekirdeği Derle (Saf Make & LTO Kapalı)
+      - name: 4. Çekirdeği Derle (Saf Make)
         run: |
           cd kernel_workspace
           
-          # Clang yolunu sisteme tanıtıyoruz
-          export PATH="$GITHUB_WORKSPACE/clang-19/bin:$PATH"
+          # Orijinal Clang yolunu sisteme tanıtıyoruz
+          export PATH="$GITHUB_WORKSPACE/clang-17/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           
@@ -61,7 +67,7 @@ jobs:
           sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.l || true
 
-          # LLVM_IAS=0 ile derleyici kurallarını esnetiyoruz
+          # Olası Linker hatalarına karşı Zırh (LLVM_IAS=0 ve LTO kapalı)
           MAKE_OPTS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=0 -I$AUDIO_ROOT/include -I$CAMERA_ROOT/include -I$DISPLAY_ROOT/include"
           
           echo "🔥 Temiz Derleme Başlıyor..."
