@@ -1,4 +1,4 @@
-name: Houji GKI (Kleaf/Bazel)
+name: Houji GKI (Pure Make)
 
 permissions:
   contents: write
@@ -20,72 +20,87 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: 1. Gerekli Paketleri Kur
+      - name: 1. Paketleri Kur
         run: |
           sudo apt update -qq
-          sudo apt install -y --no-install-recommends \
-            python3 git curl build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev \
-            rsync unzip bc cpio wget xz-utils pkg-config zip
-            
-      - name: 2. Kaynak Kodunu Çek (CLO-ACK)
+          sudo apt install -y python3 git curl build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev rsync unzip bc cpio wget xz-utils pkg-config zip
+
+      - name: 2. Kaynak Kodunu Çek
         run: |
-          echo "🚀 Techpack Kaynağı İndiriliyor..."
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b clo-ack --depth=1 kernel_workspace
 
-      - name: 3. KernelSU-Next Enjeksiyonu
+      - name: 3. Sağlam Clang İndir (ZyC Clang 19)
         run: |
-          cd kernel_workspace
-          echo "💉 KernelSU-Next çekirdeğe işleniyor..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+          echo "🚀 ZyC Clang 19 indiriliyor..."
+          git clone --depth=1 https://github.com/ZyC-X/zyc-clang.git -b 19 clang-19
 
-      - name: 4. Eksik Bazel Motorunu Tamamla (Can Damarı)
-        run: |
-          cd kernel_workspace
-          echo "🛠️ Geliştiricinin sildiği Bazel aracı Bazelisk ile yeniden yükleniyor..."
-          mkdir -p tools
-          # Google'ın resmi aracıyla Bazel'i otomatik çekiyoruz
-          wget -q https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -O tools/bazel
-          chmod +x tools/bazel
-
-      - name: 5. Çekirdeği Derle (Saf Google/Qualcomm Mimarisi)
-        run: |
-          cd kernel_workspace
-          echo "🔥 Bazel Kleaf Derlemesi Başlıyor! (Sıfır Hata Garantili)"
-          python3 build_with_bazel.py -t pineapple gki
-
-      - name: 6. AnyKernel3 ile Paketleme (Houji Cerrah Modu)
+      - name: 4. Çekirdeği Derle (Saf Make)
         run: |
           cd kernel_workspace
           
-          # Bazel'in çıktıları attığı klasör
-          OUT_DIR="out/msm-kernel-pineapple-gki/dist"
-          cd anykernel
+          # Clang yolunu sisteme tanıtıyoruz
+          export PATH="$GITHUB_WORKSPACE/clang-19/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
           
-          echo "📦 AnyKernel cihaz ayarları yapılıyor..."
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (KSU Next)/' anykernel.sh
+          # Qualcomm Techpack Yolları (Ses, Kamera, Ekran sürücüleri için şart)
+          export AUDIO_ROOT="$PWD/techpack/audio-kernel"
+          export CAMERA_ROOT="$PWD/techpack/camera-kernel"
+          export DISPLAY_ROOT="$PWD/techpack/display-drivers"
+          export GRAPHICS_ROOT="$PWD/techpack/graphics-kernel"
+          export MM_ROOT="$PWD/techpack/mm-drivers"
+          export MMRM_ROOT="$PWD/techpack/mmrm-driver"
+          export SECUREMSM_ROOT="$PWD/techpack/securemsm-kernel"
+          export SYNX_ROOT="$PWD/techpack/synx-kernel"
+          export TOUCH_ROOT="$PWD/techpack/touch-drivers"
+          export WLAN_ROOT="$PWD/techpack/wlan"
+          
+          export BOARD_PLATFORM=pineapple
+          
+          # YYLLOC Workaround (Clang hatalarını önlemek için)
+          sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.l || true
+
+          # BÜYÜK DÜZELTME: LLVM_IAS=0 yaparak o lanet tlb-rmi kısıtlamasını kaldırıyoruz!
+          MAKE_OPTS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=0 -I$AUDIO_ROOT/include -I$CAMERA_ROOT/include -I$DISPLAY_ROOT/include"
+          
+          echo "🔥 Temiz Derleme Başlıyor..."
+          make O=out gki_defconfig vendor/pineapple_GKI.config $MAKE_OPTS
+          make -j$(nproc --all) O=out $MAKE_OPTS
+          
+          echo "🔥 Modüller (.ko) Derleniyor..."
+          make -j$(nproc --all) O=out $MAKE_OPTS modules
+          make O=out INSTALL_MOD_PATH=modules_temp INSTALL_MOD_STRIP=1 modules_install
+
+      - name: 5. AnyKernel3 ile Paketleme (Sadece Boot & Vendor_dlkm)
+        run: |
+          cd kernel_workspace
+          
+          cp -r anykernel AnyKernel3
+          cd AnyKernel3
+          
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (Pure)/' anykernel.sh
           sed -i 's/device.name3=/device.name3=houji/' anykernel.sh
           sed -i 's/device.name4=/device.name4=shennong/' anykernel.sh
           
-          # YANLIŞ DTBO FLAŞLAMASINI ENGELLE (BRICK KORUMASI)
+          # Sadece Boot ve vendor_dlkm flashlanacak (DTBO güvenliğe alındı)
           sed -i '/flash_dtbo/d' anykernel.sh
           
-          echo "📦 Çekirdek ve Modüller kopyalanıyor..."
-          # Saf Image'ı çek
-          cp ../$OUT_DIR/Image .
+          # Derlenen saf Image'ı kopyala
+          cp ../out/arch/arm64/boot/Image .
           
-          # Bütün Qualcomm .ko modüllerini zip'e al
+          # Derlenen BÜTÜN .ko dosyalarını _modules içine yığ
           mkdir -p _modules
-          find ../$OUT_DIR -type f -name "*.ko" -exec cp {} _modules/ \;
+          find ../out/modules_temp/lib/modules -type f -name "*.ko" -exec cp {} _modules/ \;
           
           echo "📦 Zip dosyası oluşturuluyor..."
-          zip -r9 ../RealKing-Houji-Bazel.zip *
+          zip -r9 ../Houji-Pure-Kernel.zip *
           
-      - name: 7. Release Yükle
+      - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-GKI-${{ github.run_id }}
-          name: "CG+ Houji GKI Kernel (KSU Next)"
+          tag_name: Houji-Pure-${{ github.run_id }}
+          name: "CG+ Houji GKI Kernel (Pure)"
           files: kernel_workspace/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
