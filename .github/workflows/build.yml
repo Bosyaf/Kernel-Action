@@ -29,13 +29,13 @@ jobs:
         run: |
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
 
-      - name: 3. Orijinal Clang İndir (r487747c)
+      - name: 3. Orijinal Clang İndir (r487747c - Android 14)
         run: |
           echo "🚀 Senin bulduğun Orijinal Android Clang 17 (r487747c) indiriliyor..."
           mkdir -p clang-17
           
-          # Doğrudan Google sunucularından orijinal arşivi çekiyoruz
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz -O clang.tar.gz
+          # Kullanıcının bulduğu doğru (android14-release) linkten çekiyoruz!
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz -O clang.tar.gz
           
           # Hatalı tar parametresi KULLANMADAN tertemiz klasöre açıyoruz!
           tar -xzf clang.tar.gz -C clang-17
