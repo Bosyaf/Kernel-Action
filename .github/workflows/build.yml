@@ -33,7 +33,7 @@ jobs:
           echo "🚀 Techpack Kaynağı İndiriliyor..."
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
           
-      - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
+      - name: 3. Scripti Houji'ye Uyarla ve LTO'yu Ez (Cerrah Modu)
         run: |
           cd kernel_workspace
           
@@ -63,18 +63,20 @@ jobs:
           sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
           sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
           
-          # 5. LINKER HATASI ÇÖZÜMÜ (tlb-rmi hatasını bitiren hamle)
-          # Ubuntu'nun eski ld.lld'si yerine Clang 17'nin güncel ld.lld'sini zorluyoruz.
-          sed -i 's/LD=ld.lld/LD=${CLANG_DIR}\/bin\/ld.lld/g' build_kernel.sh
-          sed -i '/^make/i export LD="${CLANG_DIR}/bin/ld.lld"' build_kernel.sh
-          sed -i 's/make -j/make LD="${CLANG_DIR}\/bin\/ld.lld" -j/g' build_kernel.sh
+          echo "🧠 LINKER (LD) VE LTO HATALARINA KESİN ÇÖZÜM..."
+          # 5. LTO'yu Kaynak Koddan Zorla Kapat! (Linker Hatasının Ana Kaynağı)
+          find arch/arm64/configs -type f \( -name "*.config" -o -name "*defconfig" \) -exec sh -c 'echo "CONFIG_LTO_NONE=y" >> {}; echo "# CONFIG_LTO_CLANG_THIN is not set" >> {}; echo "# CONFIG_LTO_CLANG_FULL is not set" >> {}' \;
+          
+          # 6. Katı Çevirici Kurallarını (LLVM_IAS) Kökünden Esnet
+          sed -i 's/LLVM_IAS=1/LLVM_IAS=0/g' build_kernel.sh || true
+          sed -i 's/LLVM_IAS ?= 1/LLVM_IAS ?= 0/g' Makefile
           
       - name: 4. Çekirdeği Derle (build_kernel.sh)
         run: |
           cd kernel_workspace
           chmod +x build_kernel.sh
           
-          echo "🔥 Derleme Başlıyor! (KernelSU-Next Otomatik Eklenecek)"
+          echo "🔥 Derleme Başlıyor! (LTO Kapalı, Clang 17 Devrede)"
           ./build_kernel.sh
           
       - name: 5. Release Yükle
