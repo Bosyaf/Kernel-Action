@@ -120,9 +120,11 @@ jobs:
             echo "📦 İşleniyor: $filename"
             
             patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
+            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
             head -n 20 patch_log.txt
-            
-            if [ $? -eq 0 ]; then
+
+            if [ $PATCH_STATUS -eq 0 ]; then
+
               echo "✅ $filename başarıyla uygulandı."
             else
               echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
