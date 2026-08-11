@@ -244,7 +244,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           
           # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER/Adios i/o)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
@@ -299,8 +298,9 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+rcpc+lse+sb+ssbs+predres+fp16+bf16 \
-           -falign-functions=16 \
+           -march=armv9.2-a+crypto+crc+rcpc+flagm+rng+dotprod+lse+fp16 \
+           -falign-functions=32 \
+           -fno-unroll-loops \
            -fstrict-aliasing \
            -fomit-frame-pointer \
            -ffunction-sections \
@@ -316,8 +316,9 @@ jobs:
            KLDFLAGS="-Wl,--gc-sections \
            -Wl,--as-needed \
            -Wl,--strip-debug \
-           -Wl,--icf=safe" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+           -Wl,--icf=safe \
+           -Wl,-O2" \
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 10. AnyKernel3 Paketleme
         run: |
