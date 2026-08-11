@@ -27,7 +27,8 @@ jobs:
           
           # Sisteme resmi Bazel çalıştırıcısını (Bazelisk) kuruyoruz!
           sudo npm install -g @bazel/bazelisk
-          sudo ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
+          # HATA BURADA ÇÖZÜLDÜ: -f eklendi, var olan dosyayı ezip geçecek!
+          sudo ln -sf /usr/local/bin/bazelisk /usr/local/bin/bazel
             
       - name: 2. Kendi Repondan Kaynak Kodunu Çek
         run: |
@@ -39,13 +40,11 @@ jobs:
           cd kernel_workspace
           
           echo "🔥 Bazel Derlemesi Başlıyor..."
-          # Hedef (target) ve varyant (variant) belirtiyoruz. Houji GKI genelde pineapple/gki olur.
           python3 build_with_bazel.py -t pineapple gki
           
       - name: 4. AnyKernel3 Paketi Hazırla
         run: |
           cd kernel_workspace
-          # Bazel derlemesi bittikten sonra çıktı klasörüne gidip dosyaları alıyoruz
           OUT_DIR=$(find out -type d -name "msm-kernel-pineapple-gki-dist" | head -n 1)
           
           if [ -d "$OUT_DIR" ]; then
@@ -53,10 +52,8 @@ jobs:
             cp -r anykernel AnyKernel3
             cd AnyKernel3
             
-            # Image kopyala
             cp ../$OUT_DIR/Image .
             
-            # Bütün .ko modüllerini kopyala
             mkdir -p _modules
             find ../$OUT_DIR -type f -name "*.ko" -exec cp {} _modules/ \;
             
