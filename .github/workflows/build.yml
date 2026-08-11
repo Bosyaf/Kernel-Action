@@ -27,7 +27,6 @@ jobs:
           
           # Sisteme resmi Bazel çalıştırıcısını (Bazelisk) kuruyoruz!
           sudo npm install -g @bazel/bazelisk
-          # HATA BURADA ÇÖZÜLDÜ: -f eklendi, var olan dosyayı ezip geçecek!
           sudo ln -sf /usr/local/bin/bazelisk /usr/local/bin/bazel
             
       - name: 2. Kendi Repondan Kaynak Kodunu Çek
@@ -35,11 +34,16 @@ jobs:
           echo "🚀 Bosyaf/my reposundan kaynak kod indiriliyor..."
           git clone https://github.com/Bosyaf/my.git --depth=1 kernel_workspace
           
-      - name: 3. Çekirdeği Derle (Bazel Kleaf)
+      - name: 3. Çekirdeği Derle (Bazel Kleaf - Sürüm Sabitlendi)
         run: |
           cd kernel_workspace
           
-          echo "🔥 Bazel Derlemesi Başlıyor..."
+          # CANLI YAYIN FIX: Qualcomm GKI kaynakları Bazel 9 ile çalışmaz.
+          # Sistemi zorla Android 14'ün resmi sürümü olan Bazel 6.4.0'a çekiyoruz!
+          export USE_BAZEL_VERSION=6.4.0
+          echo "6.4.0" > .bazelversion
+          
+          echo "🔥 Bazel Derlemesi Başlıyor (Sürüm 6.4.0)..."
           python3 build_with_bazel.py -t pineapple gki
           
       - name: 4. AnyKernel3 Paketi Hazırla
