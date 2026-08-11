@@ -63,6 +63,12 @@ jobs:
           sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
           sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
           
+          # 5. LINKER HATASI ÇÖZÜMÜ (tlb-rmi hatasını bitiren hamle)
+          # Ubuntu'nun eski ld.lld'si yerine Clang 17'nin güncel ld.lld'sini zorluyoruz.
+          sed -i 's/LD=ld.lld/LD=${CLANG_DIR}\/bin\/ld.lld/g' build_kernel.sh
+          sed -i '/^make/i export LD="${CLANG_DIR}/bin/ld.lld"' build_kernel.sh
+          sed -i 's/make -j/make LD="${CLANG_DIR}\/bin\/ld.lld" -j/g' build_kernel.sh
+          
       - name: 4. Çekirdeği Derle (build_kernel.sh)
         run: |
           cd kernel_workspace
