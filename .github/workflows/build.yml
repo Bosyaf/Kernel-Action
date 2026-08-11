@@ -1,4 +1,4 @@
-name: Nimrodel Houji GKI (Bazel Build)
+name: Nimrodel Houji GKI (Make Final)
 
 permissions:
   contents: write
@@ -20,58 +20,38 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: 1. Gerekli Paketleri Kur ve Bazel Yükle
+      - name: 1. Paketleri Kur (Eksik Çeviriciler Eklendi)
         run: |
           sudo apt update -qq
-          sudo apt install -y python3 git curl build-essential zip
-          
-          # Sisteme resmi Bazel çalıştırıcısını (Bazelisk) kuruyoruz!
-          sudo npm install -g @bazel/bazelisk
-          sudo ln -sf /usr/local/bin/bazelisk /usr/local/bin/bazel
-            
+          sudo apt install -y python3 git curl build-essential zip bc flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev xz-utils pkg-config binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+
       - name: 2. Kendi Repondan Kaynak Kodunu Çek
         run: |
           echo "🚀 Bosyaf/my reposundan kaynak kod indiriliyor..."
           git clone https://github.com/Bosyaf/my.git --depth=1 kernel_workspace
-          
-      - name: 3. Çekirdeği Derle (Bazel Kleaf - Sürüm Sabitlendi)
+
+      - name: 3. Kritik Hata Düzeltmesi (Canlı Yayın Özel)
         run: |
           cd kernel_workspace
           
-          # CANLI YAYIN FIX: Qualcomm GKI kaynakları Bazel 9 ile çalışmaz.
-          # Sistemi zorla Android 14'ün resmi sürümü olan Bazel 6.4.0'a çekiyoruz!
-          export USE_BAZEL_VERSION=6.4.0
-          echo "6.4.0" > .bazelversion
+          # Yayında patlamamıza sebep olan LLVM_IAS=0 (GNU Assembler) hatasını düzeltiyoruz.
+          # LLVM_IAS=1 yaparak Clang 17'nin kendi orijinal motorunu kullanmasını sağlıyoruz.
+          sed -i 's/LLVM_IAS=0/LLVM_IAS=1/g' build_kernel.sh
           
-          echo "🔥 Bazel Derlemesi Başlıyor (Sürüm 6.4.0)..."
-          python3 build_with_bazel.py -t pineapple gki
-          
-      - name: 4. AnyKernel3 Paketi Hazırla
+          chmod +x build_kernel.sh
+
+      - name: 4. Çekirdeği Derle (Saf Make)
         run: |
           cd kernel_workspace
-          OUT_DIR=$(find out -type d -name "msm-kernel-pineapple-gki-dist" | head -n 1)
           
-          if [ -d "$OUT_DIR" ]; then
-            echo "📦 Anykernel3 hazırlanıyor..."
-            cp -r anykernel AnyKernel3
-            cd AnyKernel3
-            
-            cp ../$OUT_DIR/Image .
-            
-            mkdir -p _modules
-            find ../$OUT_DIR -type f -name "*.ko" -exec cp {} _modules/ \;
-            
-            zip -r9 ../Nimrodel-Houji-Bazel.zip *
-          else
-            echo "Bazel çıktı klasörü bulunamadı!"
-            exit 1
-          fi
+          echo "🔥 Derleme Başlıyor! (LTO Kapalı, Clang 17 Devrede)"
+          ./build_kernel.sh
 
       - name: 5. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Nimrodel-Bazel-${{ github.run_id }}
-          name: "CG+ Nimrodel Houji Bazel Kernel"
+          tag_name: Nimrodel-Houji-${{ github.run_id }}
+          name: "CG+ Nimrodel Houji GKI Kernel"
           files: kernel_workspace/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
