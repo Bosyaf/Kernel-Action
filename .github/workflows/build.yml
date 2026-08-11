@@ -1,4 +1,4 @@
-name: Houji GKI (Pure Make)
+name: Houji GKI (build_kernel.sh)
 
 permissions:
   contents: write
@@ -20,99 +20,62 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: 1. Paketleri Kur
+      - name: 1. Gerekli Paketleri Kur
         run: |
           sudo apt update -qq
-          sudo apt install -y python3 git curl build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev rsync unzip bc cpio wget xz-utils pkg-config zip
-
-      - name: 2. Kaynak Kodunu Çek (bb branch)
+          sudo apt install -y --no-install-recommends \
+            python3 git curl build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev \
+            rsync unzip bc cpio wget xz-utils pkg-config zip
+            
+      - name: 2. Kaynak Kodunu Çek (CLO-ACK)
         run: |
+          echo "🚀 Techpack Kaynağı İndiriliyor..."
           git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b bb --depth=1 kernel_workspace
-
-      - name: 3. Orijinal Clang İndir (r487747c - Android 14)
-        run: |
-          echo "🚀 Senin bulduğun Orijinal Android Clang 17 (r487747c) indiriliyor..."
-          mkdir -p clang-17
           
-          # Kullanıcının bulduğu doğru (android14-release) linkten çekiyoruz!
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz -O clang.tar.gz
-          
-          # Hatalı tar parametresi KULLANMADAN tertemiz klasöre açıyoruz!
-          tar -xzf clang.tar.gz -C clang-17
-
-      - name: 4. Çekirdeği Derle (Saf Make)
+      - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
         run: |
           cd kernel_workspace
           
-          # Orijinal Clang yolunu sisteme tanıtıyoruz
-          export PATH="$GITHUB_WORKSPACE/clang-17/bin:$PATH"
-          export ARCH=arm64
-          export SUBARCH=arm64
+          echo "📦 Anykernel Cihaz Ayarları Yapılıyor (Houji/Shennong)..."
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (KSU Next)/' anykernel/anykernel.sh
+          sed -i 's/device.name3=/device.name3=houji/' anykernel/anykernel.sh
+          sed -i 's/device.name4=/device.name4=shennong/' anykernel/anykernel.sh
           
-          # Qualcomm Techpack Yolları (Ses, Kamera, Ekran sürücüleri)
-          export AUDIO_ROOT="$PWD/techpack/audio-kernel"
-          export CAMERA_ROOT="$PWD/techpack/camera-kernel"
-          export DISPLAY_ROOT="$PWD/techpack/display-drivers"
-          export GRAPHICS_ROOT="$PWD/techpack/graphics-kernel"
-          export MM_ROOT="$PWD/techpack/mm-drivers"
-          export MMRM_ROOT="$PWD/techpack/mmrm-driver"
-          export SECUREMSM_ROOT="$PWD/techpack/securemsm-kernel"
-          export SYNX_ROOT="$PWD/techpack/synx-kernel"
-          export TOUCH_ROOT="$PWD/techpack/touch-drivers"
-          export WLAN_ROOT="$PWD/techpack/wlan"
+          # YANLIŞ DTBO FLAŞLAMASINI ENGELLE (BRICK KORUMASI)
+          sed -i '/flash_dtbo/d' anykernel/anykernel.sh
           
-          export BOARD_PLATFORM=pineapple
+          echo "🛠️ build_kernel.sh Otomatize Ediliyor..."
           
-          # YYLLOC Workaround
-          sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.lex.c_shipped || true
-          sed -i "s/extern YYLTYPE yylloc/YYLTYPE yylloc/g;s/YYLTYPE yylloc/extern YYLTYPE yylloc/g" scripts/dtc/dtc-lexer.l || true
-
-          # Olası Linker hatalarına karşı Zırh (LLVM_IAS=0 ve LTO kapalı)
-          MAKE_OPTS="CC=clang HOSTCC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 LLVM_IAS=0 -I$AUDIO_ROOT/include -I$CAMERA_ROOT/include -I$DISPLAY_ROOT/include"
+          # 1. HATA ÇÖZÜMÜ: Senin bulduğun Orijinal Clang 17 (r487747c) entegre ediliyor!
+          sed -i 's/read -p "Choose \[1-2\]: " clang_choice/clang_choice=1/g' build_kernel.sh
+          sed -i 's|https://[^ ]*clang[^ ]*\.tar\.gz|https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz|g' build_kernel.sh
+          sed -i 's/--strip-components=1//g' build_kernel.sh
           
-          echo "🔥 Temiz Derleme Başlıyor..."
-          make O=out gki_defconfig vendor/pineapple_GKI.config $MAKE_OPTS
+          # 2. Çıktı (Zip) ismini Peridot'tan Houji'ye çevir
+          sed -i 's/RealKing-Peridot/RealKing-Houji/g' build_kernel.sh
           
-          echo "🛠️ LTO Kapatılıyor (Linker Hatalarını Engellemek İçin)..."
-          ./scripts/config --file out/.config -d LTO_CLANG_THIN -d LTO_CLANG_FULL -e LTO_NONE
-          make O=out olddefconfig $MAKE_OPTS
+          # 3. YANLIŞ CİHAZ AĞACI KOPYALAMASINI İPTAL ET (DT/DTBO atlanıyor)
+          sed -i 's/cp -v "$ZIMAGE_DIR\/dtbo.img" "$TEMP_ANY_KERNEL_DIR\/"/echo "DTBO atlandi"/g' build_kernel.sh
+          sed -i 's/cp -v "$ZIMAGE_DIR\/dt.img" "$TEMP_ANY_KERNEL_DIR\/"/echo "DT atlandi"/g' build_kernel.sh
           
-          echo "🔥 Ana Çekirdek Derleniyor..."
-          make -j$(nproc --all) O=out $MAKE_OPTS
+          # 4. Kısıtlı Modül Listesini silip, BÜTÜN .ko dosyalarını zip'e almasını sağla
+          sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
+          sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
           
-          echo "🔥 Modüller (.ko) Derleniyor..."
-          make -j$(nproc --all) O=out $MAKE_OPTS modules
-          make O=out INSTALL_MOD_PATH=modules_temp INSTALL_MOD_STRIP=1 modules_install
-
-      - name: 5. AnyKernel3 ile Paketleme (Sadece Boot & Vendor_dlkm)
+      - name: 4. Çekirdeği Derle (build_kernel.sh)
         run: |
           cd kernel_workspace
+          chmod +x build_kernel.sh
           
-          cp -r anykernel AnyKernel3
-          cd AnyKernel3
+          echo "🔥 Derleme Başlıyor! (KernelSU-Next Otomatik Eklenecek)"
+          ./build_kernel.sh
           
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (Pure)/' anykernel.sh
-          sed -i 's/device.name3=/device.name3=houji/' anykernel.sh
-          sed -i 's/device.name4=/device.name4=shennong/' anykernel.sh
-          
-          # Yanlış dtbo flashlamasını engelle
-          sed -i '/flash_dtbo/d' anykernel.sh
-          
-          # Derlenen saf Image'ı kopyala
-          cp ../out/arch/arm64/boot/Image .
-          
-          # Derlenen BÜTÜN .ko dosyalarını _modules içine yığ
-          mkdir -p _modules
-          find ../out/modules_temp/lib/modules -type f -name "*.ko" -exec cp {} _modules/ \;
-          
-          echo "📦 Zip dosyası oluşturuluyor..."
-          zip -r9 ../Houji-Pure-Kernel.zip *
-          
-      - name: 6. Release Yükle
+      - name: 5. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-Pure-${{ github.run_id }}
-          name: "CG+ Houji GKI Kernel (Pure)"
+          tag_name: Houji-GKI-${{ github.run_id }}
+          name: "CG+ Houji GKI Kernel"
           files: kernel_workspace/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
