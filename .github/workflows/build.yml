@@ -219,7 +219,7 @@ jobs:
           CONFIG_FILE="out/.config"
           
           # 1. CMDLINE VE BAŞLANGIÇ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "page_owner=off debug_guardpage_minorder=0 noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off debug_guardpage_minorder=0 nosoftlockup nmi_watchdog=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # 2. SCHEDULER VE TIMER (HZ 300 & SMT OFF)
@@ -247,7 +247,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
-          # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER/Adios i/o)
+          # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
           
           # ==========================================================
@@ -299,9 +299,8 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+rcpc+flagm+rng+dotprod+lse+fp16 \
+           -march=armv9.2-a+crypto+crc+rcpc+dotprod+lse \
            -falign-functions=32 \
-           -fno-unroll-loops \
            -fstrict-aliasing \
            -fomit-frame-pointer \
            -ffunction-sections \
