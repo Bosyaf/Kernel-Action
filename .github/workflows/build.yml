@@ -249,7 +249,6 @@ jobs:
           
           # 4. KULLANILAN ÖZEL YAMALAR (BORE CPU SCHEDULER/Adios i/o)
           ./scripts/config --file $CONFIG_FILE -e CONFIG_SCHED_BORE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_ADIOS
           
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
