@@ -32,45 +32,40 @@ jobs:
         run: |
           echo "🚀 Techpack Kaynağı İndiriliyor..."
           git clone https://github.com/Bosyaf/myy.git -b main --depth=1 kernel_workspace
-      - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
+      - name: 3. Scripti Houji'ye Uyarla
         run: |
           cd kernel_workspace
           
-          echo "📦 Anykernel Cihaz Ayarlari Yapiliyor..."
+          echo "📦 Anykernel Ayarlari..."
           sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (KSU Next)/' anykernel/anykernel.sh
           sed -i 's/device.name3=/device.name3=houji/' anykernel/anykernel.sh
           sed -i 's/device.name4=/device.name4=shennong/' anykernel/anykernel.sh
           sed -i '/flash_dtbo/d' anykernel/anykernel.sh
           
-          echo "🛠️ build_kernel.sh Otomatize Ediliyor..."
+          echo "🛠️ build_kernel.sh Duzeltmeleri..."
           
-          # 1. PRELUDE CLANG ZORLA (satiri tamamen degistir)
+          # 1. Prelude Clang zorla
           sed -i 's/clang_choice=.*/clang_choice=2/g' build_kernel.sh
           sed -i '/read -p.*clang_choice/d' build_kernel.sh
           
           # 2. CLANG_DIR duzelt
-          sed -i 's|CLANG_DIR="\$MAIN/toolchains/clang-1"|CLANG_DIR="\$MAIN/toolchains/clang-17"|g' build_kernel.sh
+          sed -i 's|toolchains/clang-1|toolchains/clang-17|g' build_kernel.sh
           
           # 3. Zip ismi
           sed -i 's/RealKing-Peridot/CG-Houji-GKI/g' build_kernel.sh
           
           # 4. DTBO/DT atla
-          sed -i 's/cp -v "\$ZIMAGE_DIR\/dtbo.img" "\$TEMP_ANY_KERNEL_DIR\/"/echo "DTBO atlandi"/g' build_kernel.sh
-          sed -i 's/cp -v "\$ZIMAGE_DIR\/dt.img" "\$TEMP_ANY_KERNEL_DIR\/"/echo "DT atlandi"/g' build_kernel.sh
+          sed -i '/cp -v.*dtbo.img/d' build_kernel.sh
+          sed -i '/cp -v.*dt.img/d' build_kernel.sh
           
-          # 5. Butun .ko dosyalarini al
-          sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
-          sed -i 's/echo "Modules in _modules:"/find "\$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "\$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
+          # 5. Onemli modul listesini sil, tum modulleri al
+          sed -i '/IMPORTANT_MODULES=/,/^    done/d' build_kernel.sh
+          sed -i 's/echo "Modules in _modules:"/find $MODULES_DIR\/lib\/modules -type f -name "*.ko" -exec cp {} $TEMP_ANY_KERNEL_DIR\/_modules\/ \\;\n          echo "All modules:"/' build_kernel.sh
           
-          # 6. Dogrulama
           echo "=== DOGRULAMA ==="
           grep "clang_choice" build_kernel.sh | head -3
           grep "CLANG_DIR" build_kernel.sh | head -1
-          grep "KERNEL_DEFCONFIG" build_kernel.sh | head -1
-          
-          # 4. BUTUN .ko dosyalarini zip'e al
-          sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
-          sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
+          grep "KERNEL_DEFCONFIG" build_kernel.sh | head -1-type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
       - name: 4. Çekirdeği Derle (build_kernel.sh)
         run: |
           cd kernel_workspace
