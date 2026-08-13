@@ -1,4 +1,4 @@
-name: CG+ Nimrodel Kernel Build (AOSP Clang)
+name: CG+ Nimrodel Kernel Build (LLVM Clang)
 
 permissions:
   contents: write
@@ -29,7 +29,7 @@ jobs:
       # =================================================================
       # 1. ORTAM HAZIRLIĞI VE DERLEYİCİ
       # =================================================================
-      - name: 1. Paketler ve AOSP Clang Çekimi
+      - name: 1. Paketler ve LLVM Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -38,16 +38,18 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
             
-          echo "🔥 AOSP Clang 17 (r487747c) İndiriliyor..."
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-r487747c.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang indirilemedi!"; exit 1; }
+          echo "🔥 Resmi LLVM Clang 17.0.2 İndiriliyor..."
+          CLANG_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.2/clang+llvm-17.0.2-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.xz || { echo "HATA: Clang indirilemedi!"; exit 1; }
           
-          mkdir -p "$GITHUB_WORKSPACE/clang-aosp"
-          # Google archive linkleri direkt klasörsüz iner, strip-components gerekmez!
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-aosp"
-          rm -f clang.tar.gz
-          echo "$GITHUB_WORKSPACE/clang-aosp/bin" >> "$GITHUB_PATH"
-          echo "✅ AOSP Clang İndirildi ve PATH'e eklendi!"
+          mkdir -p "$GITHUB_WORKSPACE/clang-llvm"
+          
+          # Resmi LLVM sürümleri iç içe klasörle geldiği için --strip-components=1 kullanıyoruz
+          tar -xf clang.tar.xz -C "$GITHUB_WORKSPACE/clang-llvm" --strip-components=1
+          rm -f clang.tar.xz
+          
+          echo "$GITHUB_WORKSPACE/clang-llvm/bin" >> "$GITHUB_PATH"
+          echo "✅ LLVM Clang İndirildi ve PATH'e eklendi!"
           
       - name: 2. Kaynakları Çek
         run: |
@@ -60,7 +62,7 @@ jobs:
       - name: 3. Kernel Config
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-llvm/bin:$PATH"
           
           # Gerekli boş dosyaları oluştur (Hata vermemesi için)
           sed -i 's/^PHONY += all/  /g' Makefile || true
@@ -89,7 +91,7 @@ jobs:
       - name: 4. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-aosp/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/clang-llvm/bin:$PATH"
           
           echo "🔥 Derleme Başlıyor..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -127,7 +129,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Nimrodel (AOSP Clang 17)"
+          name: "CG+ Nimrodel (Resmi LLVM Clang 17.0.2)"
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
