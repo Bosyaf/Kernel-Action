@@ -1,4 +1,4 @@
-name: CG+ Nimrodel Kernel Build (Nimrodel)
+name: Bosyaf (lote5_workqueue.patch)
 
 permissions:
   contents: write
@@ -16,20 +16,17 @@ jobs:
       KBUILD_BUILD_HOST: "yaf"
 
     steps:
-      - name: Maximize Build Space
+      - name: Maximize Space
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # =================================================================
-      # 1. ORTAM HAZIRLIĞI VE DERLEYİCİ
-      # =================================================================
-      - name: 1. Paketler ve ZyC Clang Çekimi
+      - name: 1. Paketler ve Neutron Clang (AntMan) Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -37,29 +34,27 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-            
-          echo "🔥 Clang İndiriliyor..."
-          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
-          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang indirilemedi!"; exit 1; }
-          
-          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
-          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
-          rm -f clang.tar.gz
-          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
-          echo "✅ Clang İndirildi ve PATH'e eklendi!"
+          echo "🔥 AntMan kullanılarak en son Neutron Clang çekiliyor..."
+          mkdir -p "$HOME/toolchains/neutron-clang"
+          cd "$HOME/toolchains/neutron-clang"
+          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
+          chmod +x antman
+          ./antman -S
+          echo "$HOME/toolchains/neutron-clang/bin" >> "$GITHUB_PATH"
+          echo "✅ Neutron Clang İndirildi ve PATH'e eklendi!"
           
       - name: 2. Kaynakları Çek
         run: |
-          git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone https://github.com/Bosyaf/myy.git common
-          
-      # =================================================================
+          git clone https://github.com/osm0sis/AnyKernel3.git --depth 1 AnyKernel3
+          git clone --depth=1 https://github.com/Bosyaf/myy.git common
+      
+     # =================================================================
       # 2. KERNEL YAPILANDIRMASI (SAF DEFCONFIG)
       # =================================================================
       - name: 3. Kernel Config
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           
           # Gerekli boş dosyaları oluştur (Hata vermemesi için)
           sed -i 's/^PHONY += all/  /g' Makefile || true
@@ -91,7 +86,7 @@ jobs:
       - name: 4. Kernel Derleme
         run: |
           cd common
-          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
+          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
           
           echo "🔥 Derleme Başlıyor..."
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -123,4 +118,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
