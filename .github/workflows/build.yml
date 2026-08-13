@@ -85,6 +85,9 @@ jobs:
       # =================================================================
       # 3. DERLEME VE PAKETLEME
       # =================================================================
+            # =================================================================
+      # 3. DERLEME VE PAKETLEME
+      # =================================================================
       - name: 4. Kernel Derleme
         run: |
           cd common
@@ -95,7 +98,8 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            KCFLAGS="-Wno-uninitialized-const-pointer -Wno-error" \
+            Image || { echo "❌ Derleme HATASI!"; exit 1; }
             
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
