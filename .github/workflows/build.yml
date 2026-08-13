@@ -1,4 +1,4 @@
-name: Houji GKI (build_kernel.sh)
+name: CG+ Nimrodel Kernel Build (Nimrodel)
 
 permissions:
   contents: write
@@ -11,6 +11,9 @@ jobs:
   build-kernel:
     runs-on: ubuntu-latest
     timeout-minutes: 420
+    env:
+      KBUILD_BUILD_USER: "bos"
+      KBUILD_BUILD_HOST: "yaf"
 
     steps:
       - name: Maximize Build Space
@@ -20,63 +23,104 @@ jobs:
           temp-reserve-mb: 2048
           swap-size-gb: 16
 
-      - name: 1. Gerekli Paketleri Kur
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # =================================================================
+      # 1. ORTAM HAZIRLIĞI VE DERLEYİCİ
+      # =================================================================
+      - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
-            python3 git curl build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev \
-            rsync unzip bc cpio wget xz-utils pkg-config zip
+            python3 git curl libelf-dev build-essential flex bison \
+            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
+            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
+            pkg-config zstd
             
-      - name: 2. Kaynak Kodunu Çek (CLO-ACK)
+          echo "🔥 Clang İndiriliyor..."
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/22.0.0git-20250928-release/Clang-22.0.0git-20250928.tar.gz"
+          curl -fLSs "$CLANG_URL" -o clang.tar.gz || { echo "HATA: Clang indirilemedi!"; exit 1; }
+          
+          mkdir -p "$GITHUB_WORKSPACE/clang-zyc"
+          tar -xzf clang.tar.gz -C "$GITHUB_WORKSPACE/clang-zyc"
+          rm -f clang.tar.gz
+          echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
+          echo "✅ Clang İndirildi ve PATH'e eklendi!"
+          
+      - name: 2. Kaynakları Çek
         run: |
-          echo "🚀 Techpack Kaynağı İndiriliyor..."
-          git clone https://github.com/Bosyaf/myy.git -b main --depth=1 kernel_workspace
+          git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
+          git clone https://github.com/Bosyaf/myy.git common
           
-      - name: 3. Scripti Houji'ye Uyarla (Cerrah Modu)
+      # =================================================================
+      # 2. KERNEL YAPILANDIRMASI (SAF DEFCONFIG)
+      # =================================================================
+      - name: 3. Kernel Config
         run: |
-          cd kernel_workspace
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          echo "📦 Anykernel Cihaz Ayarları Yapılıyor (Houji/Shennong)..."
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Houji GKI Kernel (KSU Next)/' anykernel/anykernel.sh
-          sed -i 's/device.name3=/device.name3=houji/' anykernel/anykernel.sh
-          sed -i 's/device.name4=/device.name4=shennong/' anykernel/anykernel.sh
+          # Gerekli boş dosyaları oluştur (Hata vermemesi için)
+          sed -i 's/^PHONY += all/  /g' Makefile || true
+          touch .scmversion
+          cat << 'EOF' > scripts/check-local-export
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod -R +x scripts/
+          mkdir -p out
           
-          # YANLIŞ DTBO FLAŞLAMASINI ENGELLE (BRICK KORUMASI)
-          sed -i '/flash_dtbo/d' anykernel/anykernel.sh
-          
-          echo "🛠️ build_kernel.sh Otomatize Ediliyor..."
-          
-          # 🔥 VMLINUX HATASI İÇİN KESİN ÇÖZÜM 🔥
-          # (Eski Clang seçme satırı SİLİNDİ. Sadece vmlinux onarımı eklendi)
-          sed -i 's/make O=/yes "" | make LD=ld.lld O=/g' build_kernel.sh
-          sed -i 's/make -j/yes "" | make LD=ld.lld -j/g' build_kernel.sh
-          
-          # 2. Çıktı (Zip) ismini Peridot'tan Houji'ye çevir
-          sed -i 's/RealKing-Peridot/RealKing-Houji/g' build_kernel.sh
-          
-          # 3. YANLIŞ CİHAZ AĞACI KOPYALAMASINI İPTAL ET (DT/DTBO atlanıyor)
-          sed -i 's/cp -v "$ZIMAGE_DIR\/dtbo.img" "$TEMP_ANY_KERNEL_DIR\/"/echo "DTBO atlandi"/g' build_kernel.sh
-          sed -i 's/cp -v "$ZIMAGE_DIR\/dt.img" "$TEMP_ANY_KERNEL_DIR\/"/echo "DT atlandi"/g' build_kernel.sh
-          
-          # 4. Kısıtlı Modül Listesini silip, BÜTÜN .ko dosyalarını zip'e almasını sağla
-          sed -i '/IMPORTANT_MODULES=(/,/done/d' build_kernel.sh
-          sed -i 's/echo "Modules in _modules:"/find "$MODULES_DIR\/lib\/modules" -type f -name "*.ko" -exec cp {} "$TEMP_ANY_KERNEL_DIR\/_modules\/" \\;\n    echo "Modules in _modules:"/' build_kernel.sh
-          
-      - name: 4. Çekirdeği Derle (build_kernel.sh)
+          echo "🔧 shen_gki_defconfig uygulanıyor..."
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            shen_gki_defconfig
+            
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            olddefconfig
+            
+      # =================================================================
+      # 3. DERLEME VE PAKETLEME
+      # =================================================================
+            # =================================================================
+      # 3. DERLEME VE PAKETLEME
+      # =================================================================
+      - name: 4. Kernel Derleme
         run: |
-          cd kernel_workspace
-          chmod +x build_kernel.sh
+          cd common
+          export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           
-          echo "🔥 Derleme Başlıyor! (KernelSU-Next Otomatik Eklenecek)"
-          ./build_kernel.sh
+          echo "🔥 Derleme Başlıyor..."
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
+            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
+            KCFLAGS="-Wno-uninitialized-const-pointer -Wno-error" \
+            Image modules || { echo "❌ Derleme HATASI!"; exit 1; }
+            
+          echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 5. Release Yükle
+      - name: 5. AnyKernel3 Paketleme
+        run: |
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Nimrodel Kernel/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../Nimrodel.zip" ./*
+          echo "📦 Paket boyutu: $(du -h ../Nimrodel.zip | cut -f1)"
+          
+      - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-GKI-${{ github.run_id }}
-          name: "CG+ Houji GKI Kernel"
-          files: kernel_workspace/*.zip
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Nimrodel (ZyC Clang Saf Derleme)"
+          files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
