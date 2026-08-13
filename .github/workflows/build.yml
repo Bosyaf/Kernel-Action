@@ -101,14 +101,33 @@ jobs:
       - name: 5. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Nimrodel Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
+          echo "📦 Repondaki özel anykernel.sh kullanılıyor..."
+          
+          # 1. "DTBO istemiyorum" talebin: Scriptin sonundaki flash_dtbo satırını otomatik siliyoruz.
+          sed -i '/flash_dtbo/d' anykernel.sh
+          
+          # 2. Ana kernel imajını kopyala
           cp ../common/out/arch/arm64/boot/Image .
+          
+          # 3. KRİTİK: Senin anykernel.sh dosyan "_modules" içindeki .ko dosyalarını arıyor.
+          # Hata vermemesi ve vendor_dlkm'nin yamalanması için modülleri bulup içine atıyoruz.
+          mkdir -p _modules
+          find ../common/out/ -type f -name "*.ko" -exec cp {} _modules/ \;
+          
+          # 4. Paketi Zip'le
           zip -r "../Nimrodel.zip" ./*
           echo "📦 Paket boyutu: $(du -h ../Nimrodel.zip | cut -f1)"
+          
+      - name: 6. Release Yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "WildAngel Kernel (ZyC Clang)"
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           
       - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
