@@ -46,7 +46,7 @@ jobs:
           
           echo "🛠️ build_kernel.sh Otomatize Ediliyor..."
           # 1. HATA ÇÖZÜMÜ: Clang 19 (Prelude) seçilerek ARMv9 (tlb-rmi) derleme hatası çözülüyor!
-          sed -i 's/read -p "Choose \[1-2\]: " clang_choice/clang_choice=1/g' build_kernel.sh
+          sed -i 's/read -p "Choose \[1-2\]: " clang_choice/clang_choice=2/g' build_kernel.sh
           
           # 2. Çıktı (Zip) ismini Peridot'tan Houji'ye çevir
           sed -i 's/RealKing-Peridot/RealKing-Houji/g' build_kernel.sh
