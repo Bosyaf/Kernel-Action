@@ -1,4 +1,4 @@
-name: Houji GKI (CLO-Stable)
+name: Nimrodel Houji GKI
 
 permissions:
   contents: write
@@ -28,29 +28,24 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev \
             rsync unzip bc cpio wget xz-utils pkg-config zip
             
-      - name: 2. Kaynak Kodunu Çek (CLO-Stable)
+      - name: 2. Kendi Repondan Kaynak Kodunu Çek
         run: |
-          echo "🚀 Houji (SM8650) clo-stable kaynağı indiriliyor..."
-          git clone https://gitlab.com/DevUknown/kernel_xiaomi_houji_sm8650.git -b clo-stable --depth=1 kernel_workspace
+          echo "🚀 Bosyaf/my reposundan kaynak kod indiriliyor..."
+          git clone https://github.com/Bosyaf/my.git --depth=1 kernel_workspace
           
-      - name: 3. Derlemeyi Başlat (build_kernel.sh)
+      - name: 3. Çekirdeği Derle (Senin Kusursuz Scriptin)
         run: |
           cd kernel_workspace
           chmod +x build_kernel.sh
           
-          echo "🛠️ Scriptin GitHub Actions'da takılmaması için (varsa) promptlar atlanıyor..."
-          # Eğer script "Hangi Clang'i indireyim?" diye sorarsa (read komutu), 
-          # GitHub Actions donup kalmasın diye otomatik 1 (varsayılan) seçeneğini atıyoruz.
-          sed -i 's/read -p.*/clang_choice=1/g' build_kernel.sh || true
-          
-          echo "🔥 build_kernel.sh Çalıştırılıyor!"
+          echo "🔥 Derleme Başlıyor! (LTO Kapalı, Clang 17 Devrede)"
           ./build_kernel.sh
           
       - name: 4. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: Houji-CLO-${{ github.run_id }}
-          name: "CG+ Houji Kernel (CLO-Stable)"
+          tag_name: Nimrodel-Houji-${{ github.run_id }}
+          name: "CG+ Nimrodel Houji GKI Kernel"
           files: kernel_workspace/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
