@@ -249,7 +249,10 @@ jobs:
 
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
-
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSHRINK_SLABD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSHRINK_LRUVECD
+          
                    
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
