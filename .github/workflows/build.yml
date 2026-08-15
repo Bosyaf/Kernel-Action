@@ -219,7 +219,7 @@ jobs:
           CONFIG_FILE="out/.config"
           
           # 1. CMDLINE VE BAŞLANGIÇ
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on cgroup_disable=pressure kvm-arm.mode=protected bootconfig ioremap_guard noirqdebug quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off debug_guardpage_minorder=0 nosoftlockup nmi_watchdog=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # 2. SCHEDULER VE TIMER (HZ 300 & SMT OFF)
@@ -248,20 +248,24 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
-                        
+                             
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
           # ==========================================================
           # 3. NoMount & ZeroMount (SuSFS Destekli Agresif Root/Modül Gizleme)
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NOMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZEROMOUNT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
@@ -301,9 +305,9 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+rcpc+dotprod+lse \
-           -falign-functions=32 \
-           -fstrict-aliasing \
+           -march=armv9.2-a+crypto+crc+rcpc+dotprod+lse+fp16 \
+           -falign-functions=16 \
+           -falign-loops=32 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
@@ -318,8 +322,7 @@ jobs:
            KLDFLAGS="-Wl,--gc-sections \
            -Wl,--as-needed \
            -Wl,--strip-debug \
-           -Wl,--icf=safe \
-           -Wl,-O2" \
+           -Wl,--icf=safe" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
       - name: 10. AnyKernel3 Paketleme
