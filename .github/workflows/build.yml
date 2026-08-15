@@ -50,13 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-      - name: Luminaire Kaynak Kodunu İndir
-        run: |
-          echo "📥 Luminaire 6.1 (android14-6.1-luminaire) indiriliyor..."
-          git clone --depth=1 -b android14-6.1-luminaire https://github.com/Bosyaf/LuminaireKernel-6.1.git workspace
-          cd workspace
-          echo "✅ Kaynak kodu hazır!"
-
+          git clone --depth=1 https://github.com/Bosyaf/my_lts.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -252,7 +246,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-
+          
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
@@ -345,6 +340,3 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-          
