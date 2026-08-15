@@ -51,14 +51,20 @@ jobs:
           ccache --set-config=compression=true
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
 
-      - name: 6. Build Xiaomi 14 Preset (Python Otomasyonu)
+      - name: 6. Python Betiğini İndir
+        run: |
+          echo "📥 Xiaomi14 Builder betiği havada indiriliyor..."
+          wget -q https://raw.githubusercontent.com/BigTiger12688/xiaomi14-gki-6138/main/.github/workflows/scripts/xiaomi14_builder.py -O xiaomi14_builder.py
+          chmod +x xiaomi14_builder.py
+
+      - name: 7. Build Xiaomi 14 Preset (Python Otomasyonu)
         run: |
           echo "🔥 Python Builder Başlatılıyor..."
-          python3 ./.github/workflows/scripts/xiaomi14_builder.py \
+          python3 xiaomi14_builder.py \
             --workspace "${{ env.GKI_WORKSPACE }}" \
             --kernelsu-ref "${{ github.event.inputs.kernelsu_ref }}"
 
-      - name: 7. Prepare artifacts
+      - name: 8. Prepare artifacts
         run: |
           echo "📦 Çıktılar Toplanıyor..."
           mkdir -p artifacts
@@ -66,7 +72,7 @@ jobs:
           cp -r "${{ env.GKI_WORKSPACE }}/android14-6.1-138/out/." artifacts/
           ls -la artifacts
 
-      - name: 8. Upload artifacts
+      - name: 9. Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: xiaomi14-saf-kernel-6.1.138
