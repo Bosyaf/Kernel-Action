@@ -50,7 +50,13 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my_kernel.git common
+      - name: Luminaire Kaynak Kodunu İndir
+        run: |
+          echo "📥 Luminaire 6.1 (android14-6.1-luminaire) indiriliyor..."
+          git clone --depth=1 -b android14-6.1-luminaire https://github.com/Bosyaf/LuminaireKernel-6.1.git workspace
+          cd workspace
+          echo "✅ Kaynak kodu hazır!"
+
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
