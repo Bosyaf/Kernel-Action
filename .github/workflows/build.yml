@@ -56,12 +56,12 @@ jobs:
           echo "📥 Xiaomi14 Builder betiği havada indiriliyor..."
           wget -q https://raw.githubusercontent.com/BigTiger12688/xiaomi14-gki-6138/main/.github/workflows/scripts/xiaomi14_builder.py -O xiaomi14_builder.py
           
-          echo "🛠️ 'Unused Label' derleme hatasını çözmek için Pragma enjekte ediliyor..."
+          echo "🛠️ Derleme hatalarını çözmek için Pragmlar (Susturucular) enjekte ediliyor..."
           cat << 'EOF' > patcher.py
           with open("xiaomi14_builder.py", "r", encoding="utf-8") as f:
               c = f.read()
           old_str = 'content = task_mmu.read_text(encoding="utf-8")'
-          new_str = 'content = "#pragma GCC diagnostic ignored \\"-Wunused-label\\"\\n" + task_mmu.read_text(encoding="utf-8")'
+          new_str = 'content = "#pragma GCC diagnostic ignored \\"-Wunused-label\\"\\n#pragma GCC diagnostic ignored \\"-Wunused-function\\"\\n" + task_mmu.read_text(encoding="utf-8")'
           c = c.replace(old_str, new_str)
           with open("xiaomi14_builder.py", "w", encoding="utf-8") as f:
               f.write(c)
