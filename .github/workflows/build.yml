@@ -1,4 +1,4 @@
-name: Xiaomi 14 Saf Test Derlemesi (6.1.138)
+name: Xiaomi 14 Saf Kernel (6.1.138)
 
 permissions:
   contents: read
@@ -7,10 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       kernelsu_ref:
-        description: "KernelSU/SukiSU tag (Varsayılan: v4.1.3)"
+        description: "KernelSU/SukiSU tag (Varsayılan v4.1.3)"
         required: false
         type: string
         default: "v4.1.3"
+      susfs_ref:
+        description: "SUSFS commit/tag"
+        required: false
+        type: string
+        default: ""
 
 env:
   PYTHON_VERSION: "3.10"
@@ -51,55 +56,25 @@ jobs:
           ccache --set-config=compression=true
           echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
 
-      - name: 6. Python Betiğini İndir ve Kökten Yamala
+      - name: 6. Build Xiaomi 14 preset
         run: |
-          echo "📥 Xiaomi14 Builder betiği havada indiriliyor..."
-          wget -q https://raw.githubusercontent.com/BigTiger12688/xiaomi14-gki-6138/main/.github/workflows/scripts/xiaomi14_builder.py -O xiaomi14_builder.py
-          
-          echo "☢️ NÜKLEER ÇÖZÜM: Tüm 'kullanılmayan' uyarılarını ve -Werror kısıtlamasını KÖKTEN kapatıyoruz..."
-          cat << 'EOF' > patcher.py
-          with open("xiaomi14_builder.py", "r", encoding="utf-8") as f:
-              c = f.read()
-          
-          nuke = '#pragma GCC diagnostic ignored "-Werror"\n#pragma GCC diagnostic ignored "-Wunused"\n'
-          
-          # task_mmu.c dosyasını kökten sustur
-          c = c.replace(
-              'content = task_mmu.read_text(encoding="utf-8")',
-              'content = task_mmu.read_text(encoding="utf-8")\n        content = """' + nuke + '""" + content'
-          )
-          
-          # base.c dosyasını kökten sustur (gelecekteki hataları da engellemek için)
-          c = c.replace(
-              'content = base_c.read_text(encoding="utf-8")',
-              'content = base_c.read_text(encoding="utf-8")\n        content = """' + nuke + '""" + content'
-          )
-          
-          with open("xiaomi14_builder.py", "w", encoding="utf-8") as f:
-              f.write(c)
-          EOF
-          python3 patcher.py
-          chmod +x xiaomi14_builder.py
-
-
-      - name: 7. Build Xiaomi 14 Preset (Python Otomasyonu)
-        run: |
-          echo "🔥 Python Builder Başlatılıyor..."
-          python3 xiaomi14_builder.py \
+          echo "🔥 Forklanmış Özel Python Builder Başlatılıyor..."
+          python3 ./.github/workflows/scripts/xiaomi14_builder.py \
             --workspace "${{ env.GKI_WORKSPACE }}" \
-            --kernelsu-ref "${{ github.event.inputs.kernelsu_ref }}"
+            --kernelsu-ref "${{ github.event.inputs.kernelsu_ref }}" \
+            --susfs-ref "${{ github.event.inputs.susfs_ref }}"
 
-      - name: 8. Prepare artifacts
+      - name: 7. Prepare artifacts
         run: |
           echo "📦 Çıktılar Toplanıyor..."
           mkdir -p artifacts
           cp -r "${{ env.GKI_WORKSPACE }}/android14-6.1-138/out/." artifacts/
           ls -la artifacts
 
-      - name: 9. Upload artifacts
+      - name: 8. Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xiaomi14-saf-kernel-6.1.138
+          name: xiaomi14-android14-6.1.138
           path: artifacts/*
           if-no-files-found: error
           
