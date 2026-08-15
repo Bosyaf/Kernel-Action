@@ -119,41 +119,19 @@ jobs:
             echo "--------------------------------------------------"
             echo "📦 İşleniyor: $filename"
             
-            # Yamayı uygula ve tüm çıktıyı log dosyasına al
             patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
-            
+            head -n 20 patch_log.txt
+
             if [ $PATCH_STATUS -eq 0 ]; then
-              # Başarılıysa kalabalık yapmaması için sadece ilk 15 satırı göster
-              head -n 15 patch_log.txt
+
               echo "✅ $filename başarıyla uygulandı."
-              rm -f patch_log.txt
             else
-              # 🚨 HATA DURUMU 🚨
-              echo "❌ $filename UYGULANAMADI! İşlem durduruluyor."
-              
-              echo "=================================================="
-              echo "📜 TAM HATA LOGU (patch_log.txt):"
-              cat patch_log.txt
-              echo "=================================================="
-              
-              echo "🗑️ REDDEDİLEN (REJECTED) KISIMLAR:"
-              # Çalışma dizininde oluşan tüm .rej dosyalarını bul ve içini ekrana bas
-              REJ_FILES=$(find . -name "*.rej")
-              if [ -n "$REJ_FILES" ]; then
-                for rej in $REJ_FILES; do
-                  echo "--- İçerik: $rej ---"
-                  cat "$rej"
-                done
-              else
-                echo "Hiç .rej dosyası bulunamadı. Sorun dosya yolunda olabilir."
-              fi
-              echo "=================================================="
-              
+              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
               exit 1
             fi
+            rm -f patch_log.txt
           done
-
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -272,10 +250,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSHRINK_SLABD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSHRINK_LRUVECD
-          
-                   
+                        
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
           # ==========================================================
