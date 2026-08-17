@@ -112,26 +112,37 @@ jobs:
         run: |
           cd common
           PATCH_DIR="../hjpatches"
-          echo "🚀 Standart yamalar sırasıyla basılıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
-            head -n 20 patch_log.txt
 
-            if [ $PATCH_STATUS -eq 0 ]; then
+          echo "🚀 Standart yamalar uygulanıyor (FUZZ=0)..."
 
-              echo "✅ $filename başarıyla uygulandı."
-            else
-              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
-              exit 1
-            fi
-            rm -f patch_log.txt
+          for patch_file in $(find "$PATCH_DIR" -maxdepth 1 -type f -name "*.patch" | sort); do
+          filename=$(basename "$patch_file")
+
+          echo "=================================================="
+          echo "📦 İşleniyor: $filename"
+          echo "=================================================="
+
+          patch -p1 --fuzz=0 --dry-run < "$patch_file" > patch_log.txt 2>&1
+          PATCH_STATUS=$?
+
+          cat patch_log.txt
+
+          if [ $PATCH_STATUS -eq 0 ]; then
+          echo "✅ DRY-RUN BAŞARILI: $filename"
+          else
+          echo "❌ DRY-RUN BAŞARISIZ: $filename"
+          echo "❌ Bu patch fuzz=0 ile uygulanamıyor."
+          echo "❌ Yukarıdaki çıktı hatalı hunk/context'i gösteriyor."
+          rm -f patch_log.txt
+          exit 1
+          fi
+
+          rm -f patch_log.txt
+
+          echo
           done
+
+          echo "✅ TÜM PATCHLER FUZZ=0 İLE TEMİZ UYGULANABİLİYOR."
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
