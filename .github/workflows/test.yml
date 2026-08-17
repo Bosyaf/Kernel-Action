@@ -113,7 +113,7 @@ jobs:
           cd common
           PATCH_DIR="../hjpatches"
 
-          echo "🚀 Standart yamalar uygulanıyor (FUZZ=0)..."
+          echo "🚀 Standart yamalar FUZZ=0 ile test ediliyor..."
 
           for patch_file in $(find "$PATCH_DIR" -maxdepth 1 -type f -name "*.patch" | sort); do
           filename=$(basename "$patch_file")
@@ -122,27 +122,30 @@ jobs:
           echo "📦 İşleniyor: $filename"
           echo "=================================================="
 
+          set +e
           patch -p1 --fuzz=0 --dry-run < "$patch_file" > patch_log.txt 2>&1
           PATCH_STATUS=$?
+          set -e
 
           cat patch_log.txt
 
           if [ $PATCH_STATUS -eq 0 ]; then
           echo "✅ DRY-RUN BAŞARILI: $filename"
           else
-          echo "❌ DRY-RUN BAŞARISIZ: $filename"
-          echo "❌ Bu patch fuzz=0 ile uygulanamıyor."
-          echo "❌ Yukarıdaki çıktı hatalı hunk/context'i gösteriyor."
+          echo
+          echo "❌❌❌ DRY-RUN BAŞARISIZ: $filename"
+          echo "=================================================="            echo "YUKARIDAKİ ÇIKTI HANGİ HUNK'IN PATLADIĞINI GÖSTERİYOR."
+          echo "=================================================="
+
           rm -f patch_log.txt
           exit 1
           fi
 
           rm -f patch_log.txt
-
           echo
           done
-
-          echo "✅ TÜM PATCHLER FUZZ=0 İLE TEMİZ UYGULANABİLİYOR."
+ 
+          echo "✅ TÜM PATCHLER FUZZ=0 İLE BAŞARIYLA TEST EDİLDİ."
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
