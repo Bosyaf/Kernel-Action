@@ -119,7 +119,7 @@ jobs:
             echo "--------------------------------------------------"
             echo "📦 İşleniyor: $filename"
             
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
             head -n 20 patch_log.txt
 
