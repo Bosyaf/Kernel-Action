@@ -248,9 +248,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ENERGY_MODEL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
           # ADIOS
           ./scripts/config --file $CONFIG_FILE --enable MQ_IOSCHED_ADIOS
           ./scripts/config --file $CONFIG_FILE --disable MQ_IOSCHED_DEFAULT_ADIOS
