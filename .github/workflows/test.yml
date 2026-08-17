@@ -105,7 +105,32 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
-          
+
+      - name: DEBUG BORE Source Context
+        run: |
+         cd common
+
+         echo "=================================================="
+         echo "===== FUTEX SOURCE: kernel/futex/waitwake.c ====="
+         echo "=================================================="
+         sed -n '335,375p' kernel/futex/waitwake.c
+
+         echo
+         echo "=================================================="
+         echo "===== FAIR SOURCE: kernel/sched/fair.c ====="
+         echo "=================================================="
+         sed -n '6385,6460p' kernel/sched/fair.c
+
+         echo
+         echo "=================================================="
+         echo "===== BORE PATCH CONTEXT ====="
+         echo "=================================================="
+         grep -n -A25 -B8 'futex_waiting = true' ../hjpatches/01_bore-android14-6.1-v6.8.0.patch
+
+         echo
+         grep -n -A30 -B12 'restart_burst(se)' ../hjpatches/01_bore-android14-6.1-v6.8.0.patch
+
+       
       # 3. YAMALAR VE CERRAHİ SCRİPTLER (hjpatches & hjshpy)
       # =================================================================
       - name: 5. Standart Yamalar (hjpatches)
