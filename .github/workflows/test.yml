@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my_lts.git common
+          git clone --depth=1 https://github.com/Bosyaf/myLTS.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -119,7 +119,7 @@ jobs:
             echo "--------------------------------------------------"
             echo "📦 İşleniyor: $filename"
             
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
             head -n 20 patch_log.txt
 
