@@ -105,72 +105,33 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
-
-      - name: DEBUG BORE Source Context
-        run: |
-         cd common
-
-         echo "=================================================="
-         echo "===== FUTEX SOURCE: kernel/futex/waitwake.c ====="
-         echo "=================================================="
-         sed -n '335,375p' kernel/futex/waitwake.c
-
-         echo
-         echo "=================================================="
-         echo "===== FAIR SOURCE: kernel/sched/fair.c ====="
-         echo "=================================================="
-         sed -n '6385,6460p' kernel/sched/fair.c
-
-         echo
-         echo "=================================================="
-         echo "===== BORE PATCH CONTEXT ====="
-         echo "=================================================="
-         grep -n -A25 -B8 'futex_waiting = true' ../hjpatches/01_bore-android14-6.1-v6.8.0.patch
-
-         echo
-         grep -n -A30 -B12 'restart_burst(se)' ../hjpatches/01_bore-android14-6.1-v6.8.0.patch
-
-       
+          
       # 3. YAMALAR VE CERRAHİ SCRİPTLER (hjpatches & hjshpy)
       # =================================================================
       - name: 5. Standart Yamalar (hjpatches)
         run: |
           cd common
           PATCH_DIR="../hjpatches"
+          echo "🚀 Standart yamalar sırasıyla basılıyor..."
+          
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            echo "--------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
+            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
+            head -n 20 patch_log.txt
 
-          echo "🚀 Standart yamalar FUZZ=0 ile test ediliyor..."
+            if [ $PATCH_STATUS -eq 0 ]; then
 
-          for patch_file in $(find "$PATCH_DIR" -maxdepth 1 -type f -name "*.patch" | sort); do
-          filename=$(basename "$patch_file")
-
-          echo "=================================================="
-          echo "📦 İşleniyor: $filename"
-          echo "=================================================="
-
-          set +e
-          patch -p1 --fuzz=0 --dry-run < "$patch_file" > patch_log.txt 2>&1
-          PATCH_STATUS=$?
-          set -e
-
-          cat patch_log.txt
-
-          if [ $PATCH_STATUS -eq 0 ]; then
-          echo "✅ DRY-RUN BAŞARILI: $filename"
-          else
-          echo
-          echo "❌❌❌ DRY-RUN BAŞARISIZ: $filename"
-          echo "=================================================="            echo "YUKARIDAKİ ÇIKTI HANGİ HUNK'IN PATLADIĞINI GÖSTERİYOR."
-          echo "=================================================="
-
-          rm -f patch_log.txt
-          exit 1
-          fi
-
-          rm -f patch_log.txt
-          echo
+              echo "✅ $filename başarıyla uygulandı."
+            else
+              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
+              exit 1
+            fi
+            rm -f patch_log.txt
           done
- 
-          echo "✅ TÜM PATCHLER FUZZ=0 İLE BAŞARIYLA TEST EDİLDİ."
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -284,19 +245,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
-          # ADIOS
-          ./scripts/config --file $CONFIG_FILE --enable MQ_IOSCHED_ADIOS
-          ./scripts/config --file $CONFIG_FILE --disable MQ_IOSCHED_DEFAULT_ADIOS
-
-          # le9uo Working Set Protection
-          ./scripts/config --file $CONFIG_FILE --enable WORKINGSET_PROTECTION_ENABLED
-          ./scripts/config --file $CONFIG_FILE --set-val ANON_MIN_RATIO 5
-          ./scripts/config --file $CONFIG_FILE --set-val CLEAN_LOW_RATIO 0
-          ./scripts/config --file $CONFIG_FILE --set-val CLEAN_MIN_RATIO 5
-                             
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD       
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE                      
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
           # ==========================================================
@@ -349,7 +299,8 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
            KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+rcpc+dotprod+lse+fp16 \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
+           -falign-functions=32 \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
