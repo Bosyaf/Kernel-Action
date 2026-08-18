@@ -246,7 +246,17 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD       
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE                      
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE  
+           # ZRAM-IR (Çoklu ZRAM Sıkıştırması) Ayarları[span_0](start_span)[span_0](end_span)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_MULTI_COMP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_RECOMP_ZSTD
+          
+          # le9uo (Working Set Protection) Ayarları[span_1](start_span)[span_1](end_span)
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WORKINGSET_PROTECTION_ENABLED
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_ANON_MIN_RATIO 5
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_LOW_RATIO 0
+          ./scripts/config --file $CONFIG_FILE --set-val CONFIG_CLEAN_MIN_RATIO 5
+          
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
           # ==========================================================
