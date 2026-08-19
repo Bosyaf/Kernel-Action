@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/myLTS.git common
+          git clone --depth=1 https://github.com/Bosyaf/myAOSP.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -247,8 +247,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD       
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE  
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          
+                
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
           # ==========================================================
