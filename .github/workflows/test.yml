@@ -163,6 +163,7 @@ jobs:
           exit 0
           EOF
           chmod -R +x scripts/
+          find . -type f -name "*.sh" -exec chmod +x {} +
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           # --- Ağ Ayarları Mühürlemesi ---
