@@ -264,10 +264,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_NOMOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZEROMOUNT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_STACKPROTECTOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_STACKPROTECTOR_STRONG
-
-          
+            
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
