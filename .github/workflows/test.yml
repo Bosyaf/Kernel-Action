@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          git clone --depth=1 https://github.com/Bosyaf/mySTAG.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -105,33 +105,7 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
-          
-      # 3. YAMALAR VE CERRAHİ SCRİPTLER (hjpatches & hjshpy)
-      # =================================================================
-      - name: 5. Standart Yamalar (hjpatches)
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart yamalar sırasıyla basılıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
-            head -n 20 patch_log.txt
-
-            if [ $PATCH_STATUS -eq 0 ]; then
-
-              echo "✅ $filename başarıyla uygulandı."
-            else
-              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
-              exit 1
-            fi
-            rm -f patch_log.txt
-          done
+                
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
