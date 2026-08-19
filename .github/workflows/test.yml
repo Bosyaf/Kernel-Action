@@ -212,15 +212,6 @@ jobs:
           CONFIG_DEFAULT_FQ=y
           CONFIG_DEFAULT_NET_SCH="fq"
           EOF
-           # --- Güvenlik (Stack Protector) Mühürlemesi ---
-          echo "🛡️ Stack Protector (Yığın Koruması) zorla devreden çıkarılıyor..."
-          sed -i '/CONFIG_STACKPROTECTOR/d' $DEFCONFIG
-          sed -i '/CONFIG_STACKPROTECTOR_STRONG/d' $DEFCONFIG
-          
-          cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
-          # CONFIG_STACKPROTECTOR is not set
-          # CONFIG_STACKPROTECTOR_STRONG is not set
-          EOF
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -312,7 +303,6 @@ jobs:
            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3+rng+flagm+rdma+ssbs+sb+fp16+bf16 \
            -falign-functions=32 \
            -falign-loops=32 \
-           -fno-stack-protector \
            -fomit-frame-pointer \
            -ffunction-sections \
            -fdata-sections \
