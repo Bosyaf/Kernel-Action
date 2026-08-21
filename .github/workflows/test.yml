@@ -46,7 +46,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/my.git common
+          git clone --depth=1 https://github.com/Bosyaf/mystag.git common
                 
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
@@ -68,9 +68,6 @@ jobs:
             gki_defconfig
           CONFIG_FILE="out/.config"
          
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLASS_EXT       
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLIM_SCHED
-          
           # ==========================================================
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
