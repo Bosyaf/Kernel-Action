@@ -251,8 +251,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD       
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE  
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLASS_EXT       
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLIM_SCHED
+          
                 
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
