@@ -89,18 +89,7 @@ jobs:
          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLASS_EXT       
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLIM_SCHED
-      
-          # ========== 9. KERNELSU VE SUSFS ==========
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+          
           # ==========================================================
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
