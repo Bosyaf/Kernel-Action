@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/mystag.git common
+          git clone --depth=1 https://github.com/Bosyaf/mymod.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -130,42 +130,7 @@ jobs:
             fi
             rm -f patch_log.txt
           done
-      - name: 6. Cerrahi Scriptler (hjshpy)
-        run: |
-          cd common
-          KERNEL_SRC_ABS=$(pwd)
-          SCRIPT_ROOT="../hjshpy"
-          echo "🚀 Cerrahi scriptler başlatılıyor..."
-          
-          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
-            dir_name=$(basename "$sub_dir")
-            echo "--------------------------------------------------"
-            echo "💉 Klasör Grubu: $dir_name"
-            
-            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
-            
-            if [ -n "$sh_file" ]; then
-              script_name=$(basename "$sh_file")
-              echo "⚙️ Çalıştırılıyor: $script_name"
-              
-              cd "$sub_dir"
-              chmod +x "$script_name"
-              export KERNEL_SRC="$KERNEL_SRC_ABS"
-              
-              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
-              
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✅ $script_name başarıyla bitti."
-              else
-                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
-              fi
-              
-              cd "$KERNEL_SRC_ABS"
-            else
-              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
-            fi
-          done
-          echo "✅ Cerrahi script döngüsü tamamlandı."
+      
       # =================================================================
       
       - name: 7. Baseband Guard (Asya Yaması)
@@ -244,8 +209,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD       
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE  
-                
+                      
           # ==========================================================
           # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
           # ==========================================================
@@ -255,22 +219,8 @@ jobs:
                    
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-        
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD        
+                  
           # 6. KERNELSU VE SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
