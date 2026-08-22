@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/mymod.git common
+          git clone --depth=1 --branch android14-6.1-luminaire https://github.com/Bosyaf/LuminaireKernel-6.1.git common
       # =================================================================
       
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
@@ -190,7 +190,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -209,13 +208,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD       
-                      
-          # ==========================================================
-          # 🔥 CAGLAR++ 120 FPS & KUSURSUZ ROOT GİZLEME CONFIG
-          # ==========================================================
-          # 3. NoMount & ZeroMount (SuSFS Destekli Agresif Root/Modül Gizleme)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NOMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZEROMOUNT
+          
                    
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
