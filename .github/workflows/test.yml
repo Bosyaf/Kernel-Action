@@ -119,25 +119,29 @@ jobs:
             echo "--------------------------------------------------"
             echo "📦 İşleniyor: $filename"
             
+            # Hata anında sistemi kapatma özelliğini GEÇİCİ OLARAK DURDUR
+            set +e 
+            
             # Yamayı uygula ve tüm çıktıyı log dosyasına al
             patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
+            PATCH_STATUS=$?
+            
+            # Sistemi kapatma özelliğini GERİ AÇ
+            set -e 
             
             if [ $PATCH_STATUS -eq 0 ]; then
-              # Başarılıysa ekranı çok kirletmemek için logun kısa bir kısmını bas
               head -n 10 patch_log.txt
               echo "✅ $filename başarıyla uygulandı."
             else
-              # Başarısızsa hatanın tam sebebini görmek için tüm logu ekrana bas
               echo "❌ $filename UYGULANAMADI! Hata detayları aşağıda:"
               echo "==================== HATA LOGU BAŞLANGICI ===================="
               cat patch_log.txt
               echo "==================== HATA LOGU BİTİŞİ ===================="
-              echo "⚠️ Kritik olmayan bir hata, ancak diğer yamalara ve derlemeye DEVAM EDİLİYOR..."
-              # exit 1 komutunu sildik, böylece işlem asla kesilmeyecek!
+              echo "⚠️ Kritik olmayan bir hata, derlemeye DEVAM EDİLİYOR..."
             fi
             rm -f patch_log.txt
           done
+
 
       
       # =================================================================
