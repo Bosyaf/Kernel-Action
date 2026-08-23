@@ -2073,27 +2073,3 @@ index 000000000000..777ee970e7eb
 +MODULE_AUTHOR(ADIOS_AUTHOR);
 +MODULE_LICENSE("GPL");
 +MODULE_DESCRIPTION(ADIOS_PROGNAME);
-diff --git a/block/elevator.c b/block/elevator.c
-index 06288117e2dd..04172d100483 100644
---- a/block/elevator.c
-+++ b/block/elevator.c
-@@ -638,11 +638,16 @@ static struct elevator_type *elevator_get_default(struct request_queue *q)
- 	if (q->tag_set->flags & BLK_MQ_F_NO_SCHED_BY_DEFAULT)
- 		return NULL;
- 
-+#ifdef CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-+	return elevator_get(q, "adios", false);
-+#else // !CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
-+
- 	if (q->nr_hw_queues != 1 &&
- 	    !blk_mq_is_shared_tags(q->tag_set->flags))
- 		return NULL;
- 
- 	return elevator_get(q, "mq-deadline", false);
-+#endif // !CONFIG_MQ_IOSCHED_DEFAULT_ADIOS
- }
- 
- /*
--- 
-2.55.0
-
