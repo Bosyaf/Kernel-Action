@@ -213,7 +213,16 @@ jobs:
                    
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD        
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
                   
           # 6. KERNELSU VE SUSFS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
