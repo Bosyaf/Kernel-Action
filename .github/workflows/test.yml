@@ -178,9 +178,6 @@ jobs:
           sed -i '/CONFIG_DEFAULT_PFIFO_FAST/d' $DEFCONFIG
           sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
           sed -i '/CONFIG_DEFAULT_BBR/d' $DEFCONFIG
-          # ZRAM default kompresyon temizliği
-          sed -i '/CONFIG_ZRAM_DEF_COMP_/d' $DEFCONFIG
-          sed -i '/CONFIG_ZRAM_DEF_COMP=/d' $DEFCONFIG
           cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
           CONFIG_TCP_CONG_ADVANCED=y
           CONFIG_TCP_CONG_BBR3=y
@@ -190,9 +187,6 @@ jobs:
           CONFIG_NET_SCH_DEFAULT=y
           CONFIG_DEFAULT_FQ=y
           CONFIG_DEFAULT_NET_SCH="fq"
-          # ZRAM default lz4
-          CONFIG_ZRAM_DEF_COMP_LZ4=y
-          CONFIG_ZRAM_DEF_COMP="lz4"
           EOF
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -228,9 +222,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MQ_IOSCHED_ADIOS
           
-                   
+                         
           # 5. SİSTEM, GİZLİLİK VE DOSYA SİSTEMİ
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
