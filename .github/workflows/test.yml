@@ -1,4 +1,4 @@
-Name: CG+ Nimrodel (ZyC Clang + Thin LTO)
+name: CG+ Nimrodel (ZyC Clang + Thin LTO)
 
 permissions:
   contents: write
