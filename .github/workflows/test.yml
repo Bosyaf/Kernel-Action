@@ -258,14 +258,16 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-           KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-           -fomit-frame-pointer \
+          KCFLAGS="-O2 \
+           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+flagm+ssbs+sb \
+           -falign-functions=32 \
+           -falign-loops=32 \
            -ffunction-sections \
            -fdata-sections \
+           -fno-semantic-interposition \
+           -fomit-frame-pointer \
            -fno-unwind-tables \
            -fno-asynchronous-unwind-tables \
-           -fno-semantic-interposition \
            -Wno-error \
            -Wno-unused-command-line-argument \
            -Wno-format \
@@ -279,6 +281,7 @@ jobs:
            -Wl,--strip-debug \
            -Wl,--icf=safe" \
            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+
            
            IMAGE_TIME=$(($(date +%s) - BUILD_START))
            echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
