@@ -9106,32 +9106,3 @@ index ce05928392bf..f47f79079297 100755
  }
  
  extern spinlock_t css_set_lock;
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 716788a51a5e..a258adcea40c 100755
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -4917,7 +4917,6 @@ late_initcall(sched_core_sysctl_init);
-  */
- int sched_fork(unsigned long clone_flags, struct task_struct *p)
- {
--
- #ifdef CONFIG_HMBIRD_SCHED
- 	int ret;
- #endif
-@@ -4973,7 +4972,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
- 		p->sched_class = &hmbird_sched_class;
- 	} else if (rt_prio(p->prio)) {
- 		p->sched_class = &rt_sched_class;
--	else
-+	} else {
- 		p->sched_class = &fair_sched_class;
- 	}
- #else
-@@ -6291,6 +6290,7 @@ __pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
- 		if (p) {
- 			hmbird_notify_pick_next_task(rq, p, class);
- 			return p;
-+		}
- 	}
- #else
- 	for_each_class(class) {
