@@ -50,12 +50,44 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/myaosp.git common
-      
+          git clone --depth=1 --branch air-t-oss https://github.com/mizdrake7/kernel_xiaomi_air.git common
+      # =================================================================
+      # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
+      # =================================================================
+      - name: 3. KernelSU-Next & SUSFS Entegrasyonu
+        run: |
+          cd common
+          # KSU-Next Kurulum
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs > /dev/null 2>&1
+          
+          # Multi-Manager Patch
+          cd KernelSU-Next
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
+          if [ -f "$PATCH" ]; then patch -p1 --forward < "$PATCH" > /dev/null 2>&1 || true; fi
+          cd ..
+          
+          # SUSFS4KSU Kurulum ve Kopyalama
+          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
+          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
+          cp -R susfs4ksu/kernel_patches/include/* ./include/
+          
+          # SUSFS Yama Uygulamaları
+          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
+          if [ -n "$SUSFS_PATCH" ]; then patch -p1 < "$SUSFS_PATCH" > /dev/null 2>&1 || true; fi
+          
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then patch -p1 < fs_namespace.patch > /dev/null 2>&1 || true; fi
+          rm -f fs_namespace.patch
+          
+          # SUSFS Canlı Yamalar
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
+          find . -name "*.rej" -delete 2>/dev/null || true
+          echo "✅ KernelSU ve SUSFS işlemleri tamamlandı!"
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
       # =================================================================
-      - name: 3. Standart Yamalar (hjpatches)
+      - name: 4. Standart Yamalar (hjpatches)
         run: |
           cd common
           PATCH_DIR="../hjpatches"
@@ -64,7 +96,7 @@ jobs:
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             set +e 
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?
             set -e 
             
@@ -77,7 +109,11 @@ jobs:
             rm -f patch_log.txt
           done
 
-      
+      - name: 5. Baseband Guard (Asya Yaması)
+        run: |
+          cd common
+          wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash > /dev/null 2>&1 || true
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
       # =================================================================
@@ -132,18 +168,11 @@ jobs:
             gki_defconfig
             
           CONFIG_FILE="out/.config"
-          
-          # -----------------------------------------------------
-          # 1. BAŞLANGIÇ & CMDLINE
-          # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
-          
+              
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -----------------------------------------------------
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -168,35 +197,30 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-
-          # -----------------------------------------------------
-          # ZRAM OVERLAY HAZIRLIĞI (LZ4 MODÜL)
-          # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_ZRAM
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ZRAM_DEF_COMP_LZORLE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_ZRAM_DEF_COMP "lz4"
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_LZ4
-          
                          
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+                       
+          # -----------------------------------------------------
+          # 5. KERNELSU & SUSFS MODÜLLERİ
+          # -----------------------------------------------------
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
           
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
           # -----------------------------------------------------
           # 6. SÜRÜM BİLGİSİ
           # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           
@@ -213,52 +237,16 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           BUILD_START=$(date +%s)
           
-          echo "🔥 Aşama 1: LZ4 ZRAM Modülünü Üret ve Overlay Klasörüne Sakla..."
-          # Sadece zram dizinini derleyip zram.ko dosyasını oluştururuz
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            drivers/block/zram/
-            
-          # Üretilen zram.ko'yu yamanın arayacağı tuzak klasörüne kopyalarız
-          mkdir -p kernel/module/module_overlay/modules/
-          cp out/drivers/block/zram/zram.ko kernel/module/module_overlay/modules/zram.ko
-          
-          echo "🔥 Aşama 2: Thin LTO Kernel Image Derlemesi Başlıyor..."
-          # Ana derleme başlar, convert_overlay.sh çalışır ve zram.ko'yu Image içine gömer
+          echo "🔥 Thin LTO Kernel Derlemesi Başlıyor..."
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-          KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+flagm+ssbs+sb \
-           -falign-functions=32 \
-           -falign-loops=32 \
-           -ffunction-sections \
-           -fdata-sections \
-           -fno-semantic-interposition \
-           -fomit-frame-pointer \
-           -fno-unwind-tables \
-           -fno-asynchronous-unwind-tables \
-           -Wno-error \
-           -Wno-unused-command-line-argument \
-           -Wno-format \
-           -Wno-format-extra-args \
-           -Wno-constant-logical-operand \
-           -Wno-unused-variable \
-           -Wno-address-of-packed-member" \
-          KLDFLAGS="-Wl,-O2 \
-           -Wl,--gc-sections \
-           -Wl,--as-needed \
-           -Wl,--strip-debug \
-           -Wl,--icf=safe" \
-           Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
-
+           Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+           
            IMAGE_TIME=$(($(date +%s) - BUILD_START))
            echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
            echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
@@ -278,3 +266,4 @@ jobs:
           files: "Nimrodel.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
