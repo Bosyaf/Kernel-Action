@@ -140,8 +140,13 @@ jobs:
           exit 0
           EOF
           chmod -R +x scripts/
+          
+          # --- Yeni Eklenen Scriptler İçin İzin Fixi ---
+          chmod +x drivers/of/overwriter/overwrite_configs/convert_configs.sh || true
+          
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
+
           
           # -----------------------------------------------------
           # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
