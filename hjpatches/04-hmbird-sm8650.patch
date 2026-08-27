@@ -9106,3 +9106,117 @@ index ce05928392bf..f47f79079297 100755
  }
  
  extern spinlock_t css_set_lock;
+
+--- a/kernel/time/tick-sched.c
++++ b/kernel/time/tick-sched.c
+@@ -1131,6 +1138,9 @@ void tick_nohz_idle_stop_tick(void)
+ 	ktime_t expires;
+ 
+ 	trace_android_vh_tick_nohz_idle_stop_tick(NULL);
++#ifdef CONFIG_HMBIRD_SCHED
++	android_vh_tick_nohz_idle_stop_tick_handler(NULL,NULL);
++#endif
+ 	/*
+ 	 * If tick_nohz_get_sleep_length() ran tick_nohz_next_event(), the
+ 	 * tick timer expiration time is known already.
+
+   --- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -998,6 +1001,10 @@ void __put_task_struct(struct task_struct *tsk)
+ 	WARN_ON(!tsk->exit_state);
+ 	WARN_ON(refcount_read(&tsk->usage));
+ 	WARN_ON(tsk == current);
++
++#ifdef CONFIG_HMBIRD_SCHED
++	hmbird_free(tsk);
++#endif
+ 	io_uring_free(tsk);
+ 	cgroup_free(tsk);
+ 	task_numa_free(tsk, true);
+
+  --- a/kernel/Kconfig.preempt
++++ b/kernel/Kconfig.preempt
+@@ -132,3 +132,33 @@ config SCHED_CORE
+ 	  SCHED_CORE is default disabled. When it is enabled and unused,
+ 	  which is the likely usage by Linux distributions, there should
+ 	  be no measurable impact on performance.
++
++config HMBIRD_SCHED
++	bool "hmbird Scheduling Class(base on ext scheduler)"
++	help
++	  This option enables a new scheduler class sched_ext (SCX), which
++	  allows scheduling policies to be implemented as BPF programs to
++	  achieve the following:
++
++	  - Ease of experimentation and exploration: Enabling rapid
++	    iteration of new scheduling policies.
++	  - Customization: Building application-specific schedulers which
++	    implement policies that are not applicable to general-purpose
++	    schedulers.
++	  - Rapid scheduler deployments: Non-disruptive swap outs of
++	    scheduling policies in production environments.
++
++	  sched_ext leverages BPF’s struct_ops feature to define a structure
++	  which exports function callbacks and flags to BPF programs that
++	  wish to implement scheduling policies. The struct_ops structure
++	  exported by sched_ext is struct sched_ext_ops, and is conceptually
++	  similar to struct sched_class.
++
++	  See Documentation/scheduler/sched-ext.rst for more details.
++
++config DYNAMIC_WALT_SUPPORT
++	bool "Dynamic WALT Support for Extensible Scheduling Class"
++	depends on HMBIRD_SCHED
++	default n
++	help
++	  Enable dynamic WALT support for Extensible Scheduling Class.
+
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -375,6 +375,10 @@ static __init int sched_init_debug(void)
+ #endif
+ 
+ 	debugfs_create_file("debug", 0444, debugfs_sched, NULL, &sched_debug_fops);
++
++#ifdef CONFIG_HMBIRD_SCHED
++	debugfs_create_file("hmbird", 0444, debugfs_sched, NULL, &sched_hmbird_fops);
++#endif
+ 	return 0;
+ }
+ late_initcall(sched_init_debug);
+
+ --- a/kernel/sched/idle.c
++++ b/kernel/sched/idle.c
+@@ -408,11 +408,17 @@ static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p, int fl
+ 
+ static void put_prev_task_idle(struct rq *rq, struct task_struct *prev)
+ {
++#ifdef CONFIG_HMBIRD_SCHED
++	hmbird_update_idle(rq, false);
++#endif
+ }
+ 
+ static void set_next_task_idle(struct rq *rq, struct task_struct *next, bool first)
+ {
+ 	update_idle_core(rq);
++#ifdef CONFIG_HMBIRD_SCHED
++	hmbird_update_idle(rq, true);
++#endif
+ 	schedstat_inc(rq->sched_goidle);
+ }
+
+ --- a/kernel/sched/build_policy.c
++++ b/kernel/sched/build_policy.c
+@@ -55,3 +59,11 @@
+ 
+ #include "cputime.c"
+ #include "deadline.c"
++
++#ifdef CONFIG_HMBIRD_SCHED
++#include "hmbird/hmbird_util_track.c"
++#include "hmbird/hmbird_sched_proc.c"
++#include "hmbird/hmbird_shadow_tick.c"
++#include "hmbird/hmbird.c"
++#include "hmbird/hmbird_misc.c"
++#endif
+
