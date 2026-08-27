@@ -77,44 +77,7 @@ jobs:
             rm -f patch_log.txt
           done
 
-      - name: 4. Cerrahi Scriptler (hjshpy)
-        run: |
-          cd common
-          KERNEL_SRC_ABS=$(pwd)
-          SCRIPT_ROOT="../hjshpy"
-          echo "🚀 Cerrahi scriptler başlatılıyor..."
-          
-          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
-            dir_name=$(basename "$sub_dir")
-            echo "--------------------------------------------------"
-            echo "💉 Klasör Grubu: $dir_name"
-            
-            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
-            
-            if [ -n "$sh_file" ]; then
-              script_name=$(basename "$sh_file")
-              echo "⚙️ Çalıştırılıyor: $script_name"
-              
-              cd "$sub_dir"
-              chmod +x "$script_name"
-              export KERNEL_SRC="$KERNEL_SRC_ABS"
-              
-              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
-              
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✅ $script_name başarıyla bitti."
-              else
-                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
-              fi
-              
-              cd "$KERNEL_SRC_ABS"
-            else
-              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
-            fi
-          done
-          echo "✅ Cerrahi script döngüsü tamamlandı."
-
-
+      
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
       # =================================================================
