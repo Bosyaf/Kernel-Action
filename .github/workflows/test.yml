@@ -47,12 +47,10 @@ jobs:
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
-
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/myaosp.git common
-
       # =================================================================
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
       # =================================================================
@@ -86,7 +84,9 @@ jobs:
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           find . -name "*.rej" -delete 2>/dev/null || true
           echo "✅ KernelSU ve SUSFS işlemleri tamamlandı!"
-
+      # =================================================================
+      # 3. STANDART YAMALAR VE GÜVENLİK
+      # =================================================================
       - name: 4. Standart Yamalar (hjpatches)
         run: |
           cd common
@@ -96,7 +96,7 @@ jobs:
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             set +e 
-            patch -p1 --fuzz=1 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?
             set -e 
             
@@ -105,22 +105,14 @@ jobs:
             else
               echo "  ❌ $filename UYGULANAMADI! Hata logu:"
               cat patch_log.txt
-              
-              # --- REJECT DOSYALARINI LOG EKRANINA YAZDIRAN SİHİRLİ KOMUT ---
-              echo "================ EKSİK (REJECT) KODLAR ================"
-              find . -name "*.rej" -type f -exec echo -e "\n--- DOSYA: {} ---" \; -exec cat {} \;
-              exit 1
             fi
             rm -f patch_log.txt
           done
-
-            
       - name: 5. Baseband Guard (Asya Yaması)
         run: |
           cd common
           wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash > /dev/null 2>&1 || true
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
-
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
       # =================================================================
@@ -143,13 +135,8 @@ jobs:
           exit 0
           EOF
           chmod -R +x scripts/
-          
-          # --- Yeni Eklenen Scriptler İçin İzin Fixi ---
-          chmod +x drivers/of/overwriter/overwrite_configs/convert_configs.sh || true
-          
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-
           
           # -----------------------------------------------------
           # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
@@ -216,22 +203,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-
-          # ==========================================================
-          # 🔥 HMBIRD SCHEDULER (ÖZEL ZAMANLAYICI) AKTİVASYONU
-          # ==========================================================
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HMBIRD_SCHED
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DYNAMIC_WALT_SUPPORT
-          
-          # Hmbird'ün Config.gz tarafından ezilmesini kesin olarak önlemek için:
-          cat << 'EOF' >> init/Kconfig
-          config HMBIRD_SCHED
-              def_bool y
-          config DYNAMIC_WALT_SUPPORT
-              def_bool y
-          EOF
-
-                          
+                         
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------
@@ -272,7 +244,6 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
       # =================================================================
       # 5. DERLEME, PAKETLEME VE YAYINLAMA
       # =================================================================
@@ -312,7 +283,6 @@ jobs:
            IMAGE_TIME=$(($(date +%s) - BUILD_START))
            echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
            echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 8. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
@@ -324,7 +294,6 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r -q "../Nimrodel.zip" ./*
           echo "📦 Paket hazır: Nimrodel.zip"
-
       - name: 9. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
@@ -333,5 +302,6 @@ jobs:
           files: "Nimrodel.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
           
