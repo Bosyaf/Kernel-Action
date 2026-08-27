@@ -85,30 +85,7 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
           echo "✅ KernelSU ve SUSFS işlemleri tamamlandı!"
       # =================================================================
-      # 3. STANDART YAMALAR VE GÜVENLİK
-      # =================================================================
-      - name: 4. Standart Yamalar (hjpatches)
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart Yamalar Uygulanıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            set +e 
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?
-            set -e 
-            
-            if [ $PATCH_STATUS -eq 0 ]; then
-              echo "  ✅ $filename"
-            else
-              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-              cat patch_log.txt
-            fi
-            rm -f patch_log.txt
-          done
-
+      
       - name: 5. Baseband Guard (Asya Yaması)
         run: |
           cd common
