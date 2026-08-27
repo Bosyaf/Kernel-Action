@@ -85,29 +85,7 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
           echo "✅ KernelSU ve SUSFS işlemleri tamamlandı!"
       # =================================================================
-      # 3. STANDART YAMALAR VE GÜVENLİK
-      # =================================================================
-      - name: 4. Standart Yamalar (hjpatches)
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart Yamalar Uygulanıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            set +e 
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?
-            set -e 
-            
-            if [ $PATCH_STATUS -eq 0 ]; then
-              echo "  ✅ $filename"
-            else
-              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-              cat patch_log.txt
-            fi
-            rm -f patch_log.txt
-          done
+      
       - name: 5. Baseband Guard (Asya Yaması)
         run: |
           cd common
@@ -137,30 +115,7 @@ jobs:
           chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          
-          # -----------------------------------------------------
-          # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
-          # -----------------------------------------------------
-          DEFCONFIG="arch/arm64/configs/gki_defconfig"
-          sed -i '/CONFIG_DEFAULT_TCP_CONG/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_NET_SCH/d' $DEFCONFIG
-          sed -i '/CONFIG_NET_SCH_DEFAULT/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_FQ/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_PFIFO_FAST/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_BBR/d' $DEFCONFIG
-          
-          cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_TCP_CONG_BBR3=y
-          CONFIG_DEFAULT_BBR3=y
-          CONFIG_DEFAULT_TCP_CONG="bbr3"
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_NET_SCH_DEFAULT=y
-          CONFIG_DEFAULT_FQ=y
-          CONFIG_DEFAULT_NET_SCH="fq"
-          EOF
-          
+                 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
