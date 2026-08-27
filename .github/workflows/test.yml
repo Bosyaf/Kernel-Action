@@ -51,43 +51,11 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/myaosp.git common
-      # =================================================================
-      # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
-      # =================================================================
-      - name: 3. KernelSU-Next & SUSFS Entegrasyonu
-        run: |
-          cd common
-          # KSU-Next Kurulum
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs > /dev/null 2>&1
-          
-          # Multi-Manager Patch
-          cd KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
-          if [ -f "$PATCH" ]; then patch -p1 --forward < "$PATCH" > /dev/null 2>&1 || true; fi
-          cd ..
-          
-          # SUSFS4KSU Kurulum ve Kopyalama
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -R susfs4ksu/kernel_patches/include/* ./include/
-          
-          # SUSFS Yama Uygulamaları
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then patch -p1 < "$SUSFS_PATCH" > /dev/null 2>&1 || true; fi
-          
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then patch -p1 < fs_namespace.patch > /dev/null 2>&1 || true; fi
-          rm -f fs_namespace.patch
-          
-          # SUSFS Canlı Yamalar
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
-          find . -name "*.rej" -delete 2>/dev/null || true
-          echo "✅ KernelSU ve SUSFS işlemleri tamamlandı!"
+      
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
       # =================================================================
-      - name: 4. Standart Yamalar (hjpatches)
+      - name: 3. Standart Yamalar (hjpatches)
         run: |
           cd common
           PATCH_DIR="../hjpatches"
@@ -144,12 +112,9 @@ jobs:
               echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
             fi
           done
-          echo "✅ Cerrahi script döngüsü tamamlandı."background: 
-      - name: 5. Baseband Guard (Asya Yaması)
-        run: |
-          cd common
-          wget -qO- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash > /dev/null 2>&1 || true
-          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' security/Kconfig || true
+          echo "✅ Cerrahi script döngüsü tamamlandı."
+
+
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
       # =================================================================
@@ -244,7 +209,7 @@ jobs:
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BBG
+          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WIREGUARD
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP_NF_TARGET_TTL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
@@ -255,29 +220,10 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZEROMOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NOMOUNT
-
-                  
-          # -----------------------------------------------------
-          # 5. KERNELSU & SUSFS MODÜLLERİ
-          # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
           # -----------------------------------------------------
           # 6. SÜRÜM BİLGİSİ
           # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel+"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           
