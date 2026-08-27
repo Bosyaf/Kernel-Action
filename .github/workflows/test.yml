@@ -111,7 +111,29 @@ jobs:
             fi
             rm -f patch_log.txt
           done
-
+      # =================================================================
+      # 4.5. HMBIRD / SCX CERRAHİ DOSYA TAŞIMA VE KAYIT
+      # =================================================================
+      - name: 4.5. Hmbird Hayalet Kod Fixi
+        run: |
+          cd common
+          echo "🛠️ Hmbird SCX dosyaları doğru klasörlere (kernel/sched) taşınıyor..."
+          mv ext.c ext.h hmbird_sched_proc.h hmbird_sched_proc_main.c slim.h slim_sysctl.c kernel/sched/ 2>/dev/null || true
+          mv build_policy.c kernel/sched/build_policy.c 2>/dev/null || true
+          
+          echo "🛠️ Hmbird yaması drivers/Makefile'a işleniyor..."
+          echo 'obj-y += hmbird_patch.o' >> drivers/Makefile
+          
+          echo "🛠️ Config'lerin (olddefconfig) tarafından silinmemesi için Kconfig'e zorla yazılıyor..."
+          cat << 'EOF' >> init/Kconfig
+          config SCHED_CLASS_EXT
+              def_bool y
+          config EXT_GROUP_SCHED
+              def_bool y
+          config SLIM_SCHED
+              def_bool y
+          EOF
+          
       - name: 5. Baseband Guard (Asya Yaması)
         run: |
           cd common
