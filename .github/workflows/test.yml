@@ -59,13 +59,14 @@ jobs:
           rm -f kernel/oplus_cpu
           cp -r /tmp/oneplus_source/vendor/oplus/kernel/cpu kernel/oplus_cpu
           
-          # 2. OSvelte RAM Yöneticisini portla (SİLMEK YERİNE KOPYALIYORUZ)
-          rm -f mm/mm_osvelte
-          cp -r /tmp/oneplus_source/vendor/oplus/kernel/mm_osvelte mm/mm_osvelte
+          # 2. OSvelte RAM Yöneticisini portla (Senin bulduğun doğru klasör yolu)
+          rm -rf mm/mm_osvelte
+          cp -r /tmp/oneplus_source/vendor/oplus/kernel/mm/mm_osvelte mm/mm_osvelte
           
           # Temizlik
           rm -rf /tmp/oneplus_source
-          echo "OnePlus dosyaları başarıyla portlandı!"
+          echo "OnePlus CPU ve OSvelte dosyaları başarıyla portlandı!"
+
 
           
       - name: 3. Full Kernel Config & Derleme Hazırlığı
