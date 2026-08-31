@@ -262,7 +262,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
           KCFLAGS="-O2 \
-           -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+flagm+ssbs+sb \
+           -march=armv9.2-a+crypto+rng+nosve+nosme \
            -falign-functions=32 \
            -falign-loops=32 \
            -ffunction-sections \
@@ -271,6 +271,8 @@ jobs:
            -fomit-frame-pointer \
            -fno-unwind-tables \
            -fno-asynchronous-unwind-tables \
+           -fmerge-all-constants \
+           -finline-functions \
            -Wno-error \
            -Wno-unused-command-line-argument \
            -Wno-format \
@@ -282,8 +284,9 @@ jobs:
            -Wl,--gc-sections \
            -Wl,--as-needed \
            -Wl,--strip-debug \
-           -Wl,--icf=safe" \
-           Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+           -Wl,--icf=safe \
+           -Wl,--sort-section=alignment" \
+          Image || { echo "❌ Image derleme HATASI!"; exit 1; }
            
            IMAGE_TIME=$(($(date +%s) - BUILD_START))
            echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
