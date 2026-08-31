@@ -219,7 +219,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
                   
           # -----------------------------------------------------
@@ -286,8 +285,7 @@ jobs:
            -Wl,--strip-debug \
            -Wl,--icf=safe \
            -Wl,--sort-section=alignment" \
-          Image || { echo "❌ Image derleme HATASI!"; exit 1; }
-           
+          Image || { echo "❌ Image derleme HATASI!"; exit 1; }        
            IMAGE_TIME=$(($(date +%s) - BUILD_START))
            echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
            echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
