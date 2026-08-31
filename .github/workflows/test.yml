@@ -58,9 +58,16 @@ jobs:
           mkdir -p out
           DEFCONFIG="arch/arm64/configs/gki_defconfig"
           
-          echo "⚙️ Sched_Ext ve Oplus modülleri aktif ediliyor..."
+          echo "⚙️ Sched_Ext, BPF, BTF ve Oplus modülleri aktif ediliyor..."
           echo "CONFIG_SLIM_SCHED=y" >> $DEFCONFIG
           echo "CONFIG_OPLUS_SYSTEM_KERNEL_QCOM=y" >> $DEFCONFIG
+          echo "CONFIG_BPF=y" >> $DEFCONFIG
+          echo "CONFIG_BPF_SYSCALL=y" >> $DEFCONFIG
+          echo "CONFIG_BPF_JIT=y" >> $DEFCONFIG
+          echo "CONFIG_CGROUP_BPF=y" >> $DEFCONFIG
+          echo "CONFIG_DEBUG_INFO_BTF=y" >> $DEFCONFIG
+          echo "CONFIG_DMABUF_HEAPS=y" >> $DEFCONFIG
+          echo "CONFIG_NET_XGRESS=y" >> $DEFCONFIG
           
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
