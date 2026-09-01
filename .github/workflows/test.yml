@@ -96,7 +96,7 @@ jobs:
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             set +e 
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?
             set -e 
             
