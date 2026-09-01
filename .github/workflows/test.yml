@@ -256,7 +256,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-              -march=armv9.2-a+crypto+crc+flagm+rcpc+lse+rng+cssc+nosve+nosme \
+              -march=armv9.2-a+crypto+crc+flagm+dotprod+rcpc+lse+rng+cssc+nosve+nosme \
               -falign-functions=32 \
               -falign-loops=32 \
               -ffunction-sections \
