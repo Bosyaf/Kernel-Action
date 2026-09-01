@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
+          git clone --depth=1 https://github.com/Bosyaf/custom.git common
       # =================================================================
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
       # =================================================================
