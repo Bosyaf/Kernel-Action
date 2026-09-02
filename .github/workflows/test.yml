@@ -108,7 +108,69 @@ jobs:
             fi
             rm -f patch_log.txt
           done
-      
+
+      - name: 5. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart yamalar sırasıyla basılıyor..."
+          
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            echo "--------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
+            head -n 20 patch_log.txt
+
+            if [ $PATCH_STATUS -eq 0 ]; then
+
+              echo "✅ $filename başarıyla uygulandı."
+            else
+              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
+              exit 1
+            fi
+            rm -f patch_log.txt
+          done
+          
+      - name: 6. Cerrahi Scriptler (hjshpy)
+        run: |
+          cd common
+          KERNEL_SRC_ABS=$(pwd)
+          SCRIPT_ROOT="../hjshpy"
+          echo "🚀 Cerrahi scriptler başlatılıyor..."
+          
+          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
+            dir_name=$(basename "$sub_dir")
+            echo "--------------------------------------------------"
+            echo "💉 Klasör Grubu: $dir_name"
+            
+            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
+            
+            if [ -n "$sh_file" ]; then
+              script_name=$(basename "$sh_file")
+              echo "⚙️ Çalıştırılıyor: $script_name"
+              
+              cd "$sub_dir"
+              chmod +x "$script_name"
+              export KERNEL_SRC="$KERNEL_SRC_ABS"
+              
+              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
+              
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✅ $script_name başarıyla bitti."
+              else
+                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
+              fi
+              
+              cd "$KERNEL_SRC_ABS"
+            else
+              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
+            fi
+          done
+          echo "✅ Cerrahi script döngüsü tamamlandı."
+          
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
       # =================================================================
@@ -214,7 +276,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
                   
           # -----------------------------------------------------
