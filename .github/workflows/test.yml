@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
+          git clone --depth=1 https://github.com/Bosyaf/custom.git common
       # =================================================================
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
       # =================================================================
@@ -109,30 +109,6 @@ jobs:
             rm -f patch_log.txt
           done
 
-      # 3. STANDART YAMALAR VE GÜVENLİK
-      # =================================================================
-      - name: 4. Standart Yamalar (hjpatches)
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart Yamalar Uygulanıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            set +e 
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?
-            set -e 
-            
-            if [ $PATCH_STATUS -eq 0 ]; then
-              echo "  ✅ $filename"
-            else
-              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-              cat patch_log.txt
-            fi
-            rm -f patch_log.txt
-          done
-          
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -311,6 +287,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           BUILD_START=$(date +%s)
           echo "🔥 Thin LTO Kernel Derlemesi Başlıyor..."
+
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -360,4 +337,6 @@ jobs:
           files: "Nimrodel.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
           
