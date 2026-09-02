@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
+          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
       # =================================================================
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
       # =================================================================
@@ -214,6 +214,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
                   
           # -----------------------------------------------------
@@ -250,7 +251,6 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           BUILD_START=$(date +%s)
           echo "🔥 Thin LTO Kernel Derlemesi Başlıyor..."
-
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -258,7 +258,6 @@ jobs:
             KCFLAGS="-O2 \
               -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
               -falign-functions=32 \
-              -falign-loops=32 \
               -fdata-sections \
               -fomit-frame-pointer \
               -ffunction-sections \
@@ -294,4 +293,5 @@ jobs:
           files: "Nimrodel.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
