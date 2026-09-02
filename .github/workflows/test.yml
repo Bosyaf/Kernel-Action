@@ -257,8 +257,6 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
               -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
-              -falign-functions=32 \
-              -falign-loops=32 \
               -ffunction-sections \
               -fdata-sections \
               -fomit-frame-pointer \
