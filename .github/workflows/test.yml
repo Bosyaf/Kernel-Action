@@ -147,11 +147,36 @@ jobs:
           echo "✅ Cerrahi script döngüsü tamamlandı."
 
           # =================================================================
-      - name: 6.1 Kernel Config (Grup Düzeni ve Mühürleme)
+      - name: 7. Düz Cerrahi Scriptler (hjshpy kök dizini)
         run: |
           cd common
-          rm -rf "${KERNEL_SRC}/android/abi_gki_protected_exports_"*
-          log "Protected exports removed ✅"
+          KERNEL_SRC_ABS=$(pwd)
+          FLAT_SCRIPT_ROOT="../hjshpy"
+          echo "🚀 Kök dizin cerrahi scriptleri başlatılıyor..."
+          
+          for sh_file in $(ls "$FLAT_SCRIPT_ROOT"/*.sh 2>/dev/null | sort); do
+            if [ -f "$sh_file" ]; then
+              script_name=$(basename "$sh_file")
+              echo "--------------------------------------------------"
+              echo "⚙️ Çalıştırılıyor: $script_name"
+              
+              cd "$FLAT_SCRIPT_ROOT"
+              chmod +x "$script_name"
+              export KERNEL_SRC="$KERNEL_SRC_ABS"
+              
+              ./"$script_name" 2>&1 | tee flat_script_run.log | head -n 20
+              
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✅ $script_name başarıyla bitti."
+              else
+                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
+              fi
+              
+              cd "$KERNEL_SRC_ABS"
+            fi
+          done
+          echo "✅ Kök dizin cerrahi script döngüsü tamamlandı."
+
           
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
