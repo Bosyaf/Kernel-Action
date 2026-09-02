@@ -108,44 +108,7 @@ jobs:
             fi
             rm -f patch_log.txt
           done
-
-      - name: 6. Cerrahi Scriptler (hjshpy)
-        run: |
-          cd common
-          KERNEL_SRC_ABS=$(pwd)
-          SCRIPT_ROOT="../hjshpy"
-          echo "🚀 Cerrahi scriptler başlatılıyor..."
-          
-          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
-            dir_name=$(basename "$sub_dir")
-            echo "--------------------------------------------------"
-            echo "💉 Klasör Grubu: $dir_name"
-            
-            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
-            
-            if [ -n "$sh_file" ]; then
-              script_name=$(basename "$sh_file")
-              echo "⚙️ Çalıştırılıyor: $script_name"
-              
-              cd "$sub_dir"
-              chmod +x "$script_name"
-              export KERNEL_SRC="$KERNEL_SRC_ABS"
-              
-              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
-              
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "✅ $script_name başarıyla bitti."
-              else
-                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
-              fi
-              
-              cd "$KERNEL_SRC_ABS"
-            else
-              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
-            fi
-          done
-          echo "✅ Cerrahi script döngüsü tamamlandı."
-          
+    
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
       # =================================================================
@@ -293,14 +256,14 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-              -march=armv9.2-a+crypto+crc+rcpc+lse+dotprod \
+              -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse \
               -falign-functions=32 \
               -falign-loops=32 \
               -ffunction-sections \
               -fdata-sections \
-              -fno-semantic-interposition \
               -fomit-frame-pointer \
-              -fmerge-all-constants \
+              -fno-unwind-tables \
+              -fno-asynchronous-unwind-tables \
               -Wno-error \
               -Wno-unused-command-line-argument \
               -Wno-format \
@@ -312,8 +275,7 @@ jobs:
               -Wl,--gc-sections \
               -Wl,--as-needed \
               -Wl,--strip-debug \
-              -Wl,--icf=safe \
-              -Wl,--sort-section=alignment" \
+              -Wl,--icf=safe" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
@@ -338,5 +300,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-          
