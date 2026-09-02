@@ -167,7 +167,7 @@ jobs:
           # -----------------------------------------------------
           # 1. BAŞLANGIÇ & CMDLINE
           # -----------------------------------------------------
-          CONFIG_CMDLINE "console=ttynull stack_depot_disable=on nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0 bootconfig"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0 bootconfig"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # -----------------------------------------------------
@@ -251,7 +251,6 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
           BUILD_START=$(date +%s)
           echo "🔥 Thin LTO Kernel Derlemesi Başlıyor..."
-
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -301,6 +300,4 @@ jobs:
           files: "Nimrodel.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
           
