@@ -145,6 +145,10 @@ jobs:
             fi
           done
           echo "✅ Cerrahi script döngüsü tamamlandı."
+
+          rm -rf "${KERNEL_SRC}/android/abi_gki_protected_exports_"*
+
+          log "Protected exports removed ✅"
           
       # =================================================================
       # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
