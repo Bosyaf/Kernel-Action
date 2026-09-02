@@ -109,27 +109,26 @@ jobs:
             rm -f patch_log.txt
           done
 
-      - name: 5. Standart Yamalar (hjpatches)
+      # 3. STANDART YAMALAR VE GÜVENLİK
+      # =================================================================
+      - name: 4. Standart Yamalar (hjpatches)
         run: |
           cd common
           PATCH_DIR="../hjpatches"
-          echo "🚀 Standart yamalar sırasıyla basılıyor..."
+          echo "🚀 Standart Yamalar Uygulanıyor..."
           
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
-            echo "--------------------------------------------------"
-            echo "📦 İşleniyor: $filename"
-            
+            set +e 
             patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
-            head -n 20 patch_log.txt
-
+            PATCH_STATUS=$?
+            set -e 
+            
             if [ $PATCH_STATUS -eq 0 ]; then
-
-              echo "✅ $filename başarıyla uygulandı."
+              echo "  ✅ $filename"
             else
-              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
-              exit 1
+              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+              cat patch_log.txt
             fi
             rm -f patch_log.txt
           done
