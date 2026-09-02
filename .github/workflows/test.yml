@@ -325,17 +325,14 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-              -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+nosve+nosme \
+              -march=armv9.2-a+crypto+crc+rcpc+lse+dotprod \
               -falign-functions=32 \
               -falign-loops=32 \
               -ffunction-sections \
               -fdata-sections \
               -fno-semantic-interposition \
               -fomit-frame-pointer \
-              -fno-unwind-tables \
-              -fno-asynchronous-unwind-tables \
               -fmerge-all-constants \
-              -finline-functions \
               -Wno-error \
               -Wno-unused-command-line-argument \
               -Wno-format \
