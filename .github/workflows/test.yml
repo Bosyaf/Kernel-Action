@@ -146,8 +146,11 @@ jobs:
           done
           echo "✅ Cerrahi script döngüsü tamamlandı."
 
+          # =================================================================
+      - name: 6.1 Kernel Config (Grup Düzeni ve Mühürleme)
+        run: |
+          cd common
           rm -rf "${KERNEL_SRC}/android/abi_gki_protected_exports_"*
-
           log "Protected exports removed ✅"
           
       # =================================================================
