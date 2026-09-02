@@ -69,7 +69,7 @@ jobs:
           CONFIG_FILE="out/.config"
           # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
           # ==========================================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
                 
           # ==========================================================
           # Localversion
