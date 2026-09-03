@@ -75,7 +75,6 @@ index ddd1240..9459619 100644
  {
  	const char *p;
  	size_t len;
-+	int i;
  
  	if (!module_blacklist)
 -		return false;
