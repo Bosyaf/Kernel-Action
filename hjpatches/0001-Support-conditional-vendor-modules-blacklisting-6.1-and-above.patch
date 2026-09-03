@@ -5,8 +5,8 @@ Subject: [PATCH] Support conditional vendor modules blacklisting
 
 ---
  arch/arm64/Kconfig   |  7 +++++++
- kernel/module/main.c | 49 +++++++++++++++++++++++++++++++++++++++++++-
- 2 files changed, 55 insertions(+), 1 deletion(-)
+ kernel/module/main.c | 48 +++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 54 insertions(+), 1 deletion(-)
 
 diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
 index de459a7..c081a01 100644
@@ -66,7 +66,7 @@ index ddd1240..9459619 100644
  /*
   * Mutex protects:
   * 1) List of modules (also safely readable with preempt_disable),
-@@ -2301,13 +2330,15 @@ int __weak module_frob_arch_sections(Elf_Ehdr *hdr,
+@@ -2301,13 +2330,14 @@ int __weak module_frob_arch_sections(Elf_Ehdr *hdr,
  
  /* module_blacklist is a comma-separated list of module names */
  static char *module_blacklist;
@@ -75,7 +75,6 @@ index ddd1240..9459619 100644
  {
  	const char *p;
  	size_t len;
-+	int i;
  
  	if (!module_blacklist)
 -		return false;
@@ -108,4 +107,3 @@ index ddd1240..9459619 100644
  core_param(module_blacklist, module_blacklist, charp, 0400);
 -- 
 2.47.3
-
