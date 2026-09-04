@@ -1,0 +1,125 @@
+diff --git a/drivers/dma-buf/Kconfig b/drivers/dma-buf/Kconfig
+index 541efe01abc7..50c809571d1b 100644
+--- a/drivers/dma-buf/Kconfig
++++ b/drivers/dma-buf/Kconfig
+@@ -21,7 +21,6 @@ config SW_SYNC
+ 	bool "Sync File Validation Framework"
+ 	default n
+ 	depends on SYNC_FILE
+-	depends on DEBUG_FS
+ 	help
+ 	  A sync object driver that uses a 32bit counter to coordinate
+ 	  synchronization.
+diff --git a/drivers/dma-buf/sw_sync.c b/drivers/dma-buf/sw_sync.c
+index 7f5ed1aa7a9f..0d3e826fe90d 100644
+--- a/drivers/dma-buf/sw_sync.c
++++ b/drivers/dma-buf/sw_sync.c
+@@ -7,6 +7,8 @@
+ 
+ #include <linux/file.h>
+ #include <linux/fs.h>
++#include <linux/init.h>
++#include <linux/miscdevice.h>
+ #include <linux/uaccess.h>
+ #include <linux/slab.h>
+ #include <linux/sync_file.h>
+@@ -404,9 +406,21 @@ static long sw_sync_ioctl(struct file *file, unsigned int cmd,
+ 	}
+ }
+ 
+-const struct file_operations sw_sync_debugfs_fops = {
++const struct file_operations sw_sync_fops = {
+ 	.open           = sw_sync_debugfs_open,
+ 	.release        = sw_sync_debugfs_release,
+ 	.unlocked_ioctl = sw_sync_ioctl,
+ 	.compat_ioctl	= compat_ptr_ioctl,
+ };
++
++static struct miscdevice mi_sw_sync_device = {
++	.minor = MISC_DYNAMIC_MINOR,
++	.name = "mi_sw_sync",
++	.fops = &sw_sync_fops,
++};
++
++static int __init mi_sw_sync_init(void)
++{
++	return misc_register(&mi_sw_sync_device);
++}
++late_initcall(mi_sw_sync_init);
+diff --git a/drivers/dma-buf/sync_debug.c b/drivers/dma-buf/sync_debug.c
+index 237bce21d1e7..4b9491d12dd5 100644
+--- a/drivers/dma-buf/sync_debug.c
++++ b/drivers/dma-buf/sync_debug.c
+@@ -8,6 +8,8 @@
+ #include <linux/debugfs.h>
+ #include "sync_debug.h"
+ 
++#ifdef CONFIG_DEBUG_FS
++
+ static struct dentry *dbgfs;
+ 
+ static LIST_HEAD(sync_timeline_list_head);
+@@ -122,10 +124,14 @@ static void sync_print_sync_file(struct seq_file *s,
+ 				  struct sync_file *sync_file)
+ {
+ 	char buf[128];
++	const char *name = NULL;
+ 	int i;
+ 
+-	seq_printf(s, "[%p] %s: %s\n", sync_file,
+-		   sync_file_get_name(sync_file, buf, sizeof(buf)),
++	if (sync_file->fence->ops->get_timeline_name)
++		name = sync_file->fence->ops->get_timeline_name(sync_file->fence);
++	strscpy(buf, name ?: "<unknown>", sizeof(buf));
++
++	seq_printf(s, "[%p] %s: %s\n", sync_file, buf,
+ 		   sync_status_str(dma_fence_get_status(sync_file->fence)));
+ 
+ 	if (dma_fence_is_array(sync_file->fence)) {
+@@ -183,8 +189,10 @@ static __init int sync_debugfs_init(void)
+ 	debugfs_create_file_unsafe("info", 0444, dbgfs, NULL,
+ 				   &sync_info_debugfs_fops);
+ 	debugfs_create_file_unsafe("sw_sync", 0644, dbgfs, NULL,
+-				   &sw_sync_debugfs_fops);
++				   &sw_sync_fops);
+ 
+ 	return 0;
+ }
+ late_initcall(sync_debugfs_init);
++
++#endif /* CONFIG_DEBUG_FS */
+diff --git a/drivers/dma-buf/sync_debug.h b/drivers/dma-buf/sync_debug.h
+index 6176e52ba2d7..9dc18b2bf549 100644
+--- a/drivers/dma-buf/sync_debug.h
++++ b/drivers/dma-buf/sync_debug.h
+@@ -42,7 +42,9 @@ struct sync_timeline {
+ 	struct list_head	pt_list;
+ 	spinlock_t		lock;
+ 
++#ifdef CONFIG_DEBUG_FS
+ 	struct list_head	sync_timeline_list;
++#endif
+ };
+ 
+ static inline struct sync_timeline *dma_fence_parent(struct dma_fence *fence)
+@@ -62,11 +64,18 @@ struct sync_pt {
+ 	struct rb_node node;
+ };
+ 
+-extern const struct file_operations sw_sync_debugfs_fops;
++extern const struct file_operations sw_sync_fops;
+ 
++#ifdef CONFIG_DEBUG_FS
+ void sync_timeline_debug_add(struct sync_timeline *obj);
+ void sync_timeline_debug_remove(struct sync_timeline *obj);
+ void sync_file_debug_add(struct sync_file *fence);
+ void sync_file_debug_remove(struct sync_file *fence);
++#else
++static inline void sync_timeline_debug_add(struct sync_timeline *obj) { }
++static inline void sync_timeline_debug_remove(struct sync_timeline *obj) { }
++static inline void sync_file_debug_add(struct sync_file *fence) { }
++static inline void sync_file_debug_remove(struct sync_file *fence) { }
++#endif
+ 
+ #endif /* _LINUX_SYNC_H */
+ 
