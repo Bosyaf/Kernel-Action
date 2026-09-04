@@ -1,4 +1,4 @@
-name: Bosyaf (lote5_workqueue.patch)
+Name: Bosyaf (lote5_workqueue.patch)
 
 permissions:
   contents: write
@@ -65,12 +65,17 @@ jobs:
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           
           # ============================================================
-          # ZRAM / Zsmalloc Modül ve Sembol Listesi Temizliği
+          # ZRAM / Zsmalloc Modül ve Sembol Listesi Temizliği (Loglu)
           # ============================================================
-          bash "$GITHUB_WORKSPACE/sh/modulelist.sh" "$GITHUB_WORKSPACE"
-
-          echo "✅ modulelist.sh çalıştırıldı."
-
+          echo "🚀 modulelist.sh çalıştırılıyor..."
+          if bash "$GITHUB_WORKSPACE/sh/modulelist.sh" "$GITHUB_WORKSPACE" 2>&1 | tee modulelist_log.txt; then
+              echo "✅ modulelist.sh başarıyla tamamlandı. Loglar aşağıdadır:"
+              cat modulelist_log.txt
+          else
+              echo "❌ modulelist.sh çalışırken hata verdi! Loglar aşağıdadır:"
+              cat modulelist_log.txt
+          fi
+          
           # İlk defconfig derlemesi
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
@@ -80,38 +85,13 @@ jobs:
           CONFIG_FILE="out/.config"
 
           # ============================================================
-          # ZRAM ve Zsmalloc (=y)
+          # ZRAM İstenen Özel Ayarlar (Sadece LZ4)
           # ============================================================
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_SWAP
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSMALLOC
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_BLK_DEV_ZRAM || true
-
-          # ============================================================
-          # ZRAM Default Compressor = LZ4
-          # ============================================================
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_ZRAM_DEF_COMP_LZORLE
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_ZRAM_DEF_COMP_ZSTD
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_ZRAM_DEF_COMP_LZO
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM_DEF_COMP_LZ4
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_ZRAM_DEF_COMP "lz4"
-
-          # ============================================================
-          # ZRAM Özellikleri
-          # ============================================================
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM_WRITEBACK
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM_MEMORY_TRACKING
-
-          # ============================================================
-          # Compressor Desteği
-          # ============================================================
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4_COMPRESS
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4HC_COMPRESS
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4_DECOMPRESS
-
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZO_COMPRESS
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZO_DECOMPRESS
-
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSTD_COMMON
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSTD_COMPRESS
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSTD_DECOMPRESS
 
           # Localversion
           ./scripts/config --file "$CONFIG_FILE" --set-str CONFIG_LOCALVERSION "-Nimrodel"
@@ -123,11 +103,10 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-
           echo "============================================================"
           echo "🔎 FINAL ZRAM CONFIG"
           echo "============================================================"
-          grep -E '^CONFIG_(SWAP|BLK_DEV_ZRAM|ZRAM|ZSMALLOC|ZRAM_DEF_COMP|LZ4_COMPRESS|LZ4HC_COMPRESS|LZ4_DECOMPRESS|LZO_COMPRESS|LZO_DECOMPRESS|ZSTD_COMMON|ZSTD_COMPRESS|ZSTD_DECOMPRESS)=' "$CONFIG_FILE" || true
+          grep -E '^CONFIG_ZRAM_DEF_COMP' "$CONFIG_FILE" || true
             
       - name: 4. Kernel Derleme
         run: |
@@ -140,7 +119,6 @@ jobs:
             KCFLAGS="-O2 -Wno-frame-larger-than" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 5. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
@@ -159,4 +137,4 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          
