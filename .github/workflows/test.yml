@@ -46,7 +46,8 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
+          git clone --depth=1 --branch android14-6.1-staging \
+          https://github.com/Bosyaf/LuminaireKernel-6.1.git common
      
           
       - name: 3. Full Kernel Config & Derleme Hazırlığı
