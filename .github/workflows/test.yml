@@ -1,140 +1,201 @@
-name: Bosyaf (lote5_workqueue.patch)
-
-permissions:
-  contents: write
-  actions: write
+name: Build GKI Kernel (Android14-6.1)
 
 on:
   workflow_dispatch:
+    inputs:
+      kernel_branch:
+        description: '内核分支'
+        required: true
+        default: 'common-android14-6.1'
+
+env:
+  CCACHE_DIR: ~/.ccache
 
 jobs:
-  build-kernel:
-    runs-on: ubuntu-latest
-    timeout-minutes: 420
-    env:
-      KBUILD_BUILD_USER: "bos"
-      KBUILD_BUILD_HOST: "yaf"
+  build:
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Maximize Space
-        uses: easimon/maximize-build-space@master
+      - name: 显示 Runner 硬件信息
+        run: |
+          echo "=== CPU 信息 ==="
+          nproc
+          free -h
+          df -h /
+          echo "=== 磁盘空间 ==="
+          df -h
+
+      - name: 安装编译依赖 + repo
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            bc bison build-essential ccache cpio flex \
+            git libelf-dev libssl-dev lz4 lzip ninja-build \
+            python3 python3-pip rsync unzip zip zlib1g-dev
+          # 安装 repo 工具
+          sudo curl -o /usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+          sudo chmod a+x /usr/local/bin/repo
+          echo "=== repo 版本 ==="
+          repo --version || true
+
+      - name: 创建 4GB Swap
+        run: |
+          if [ ! -f /swapfile ]; then
+            sudo fallocate -l 4G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            echo "Swap 已创建"
+          else
+            echo "Swap 已存在"
+          fi
+          free -h
+
+      - name: 恢复 Bazel 缓存
+        uses: actions/cache@v4
         with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-gb: 16
+          path: |
+            ~/.ccache
+            gki-kernel/bazel-bin
+            gki-kernel/bazel-out
+          key: bazel-gki-${{ inputs.kernel_branch }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-gki-${{ inputs.kernel_branch }}-
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: 使用 repo 下载 Google 官方内核源代码
+        run: |
+          echo "=== 使用 repo 下载 ${{ inputs.kernel_branch }} ==="
+          mkdir -p gki-kernel
+          cd gki-kernel
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          repo init -u https://android.googlesource.com/kernel/manifest -b ${{ inputs.kernel_branch }}
+          repo sync -c -j$(nproc)
 
-      - name: 1. Paketler ve Neutron Clang (AntMan) Kurulumu
-        run: |
-          sudo apt update -qq
-          sudo apt install -y --no-install-recommends \
-            python3 git curl libelf-dev build-essential flex bison \
-            libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
-            rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
-            pkg-config zstd
-          echo "🔥 AntMan kullanılarak en son Neutron Clang çekiliyor..."
-          mkdir -p "$HOME/toolchains/neutron-clang"
-          cd "$HOME/toolchains/neutron-clang"
-          curl -LO "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman"
-          chmod +x antman
-          ./antman -S
-          echo "$HOME/toolchains/neutron-clang/bin" >> "$GITHUB_PATH"
-          echo "✅ Neutron Clang İndirildi ve PATH'e eklendi!"
-  
-      - name: 2. Kaynakları Çek
-        run: |
-          git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
+          echo "=== 目录结构 ==="
+          ls -la
+          echo "=== tools/bazel ==="
+          ls -la tools/bazel 2>/dev/null || true
+          echo "=== WORKSPACE ==="
+          ls -la WORKSPACE 2>/dev/null || true
+          echo "=== prebuilts/clang ==="
+          ls prebuilts/clang/host/linux-x86/ 2>/dev/null | head -5 || true
+          echo "=== prebuilts/bazel ==="
+          ls prebuilts/bazel/linux-x86_64/ 2>/dev/null | head -5 || true
+          echo "=== 内核版本 ==="
+          head -5 common/Makefile 2>/dev/null || true
 
-     # =================================================================
-      # 3. STANDART YAMALAR VE GÜVENLİK
-      # =================================================================
-      - name: 4. Standart Yamalar (hjpatches)
+      - name: 生成 defconfig_fragment
         run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart Yamalar Uygulanıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            set +e 
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?
-            set -e 
-            
-            if [ $PATCH_STATUS -eq 0 ]; then
-              echo "  ✅ $filename"
-            else
-              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-              cat patch_log.txt
-            fi
-            rm -f patch_log.txt
-          done
-          
-      - name: 3. Full Kernel Config & Derleme Hazırlığı
-        run: |
-          cd common
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-        
-          sed -i 's/^PHONY += all/  /g' Makefile || true
-          touch .scmversion
-          cat << 'EOF' > scripts/check-local-export
-          #!/bin/sh
-          exit 0
+          cat > gki-kernel/common/gki_defconfig_fragment <<'EOF'
+          # CONFIG_DEBUG_INFO_DWARF4 is not set
+          # CONFIG_PM_DEBUG is not set
+          # CONFIG_PM_ADVANCED_DEBUG is not set
+          # CONFIG_CMA_DEBUGFS is not set
+          # CONFIG_UAPI_HEADER_TEST is not set
+          # CONFIG_WERROR is not set
           EOF
-          chmod -R +x scripts/
-          mkdir -p out
-          [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          # ============================================================
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-          CONFIG_FILE="out/.config"
-          # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
-          # ==========================================================
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-                
-          # ==========================================================
-          # Localversion
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          sed -i 's/check_defconfig//' build.config.gki || true
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            olddefconfig
-      - name: 4. Kernel Derleme
+          echo "=== defconfig_fragment ==="
+          cat gki-kernel/common/gki_defconfig_fragment
+
+      - name: 使用 Kleaf (Bazel) 编译 GKI 内核
         run: |
-          cd common
-          export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
-          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
-            AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            KCFLAGS="-O2 -Wno-frame-larger-than" \
-            Image || { echo "❌ Derleme HATASI!"; exit 1; }
-          echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 5. AnyKernel3 Paketleme
+          cd gki-kernel
+
+          echo "=== Clang 工具链版本 ==="
+          prebuilts/clang/host/linux-x86/clang-r487747c/bin/clang --version 2>/dev/null || \
+          ls prebuilts/clang/host/linux-x86/ 2>/dev/null || true
+
+          echo "=== Bazel 版本 ==="
+          tools/bazel --version 2>/dev/null || true
+
+          echo "=== 开始 Kleaf/Bazel 编译 ==="
+          tools/bazel run \
+            --config=fast \
+            --lto=thin \
+            --defconfig_fragment=//common:gki_defconfig_fragment \
+            --jobs="$(nproc)" \
+            //common:kernel_aarch64_dist \
+            -- --dist_dir=out/dist
+
+          echo "=== 编译完成 ==="
+          echo "=== dist 产物列表 ==="
+          ls -lah out/dist/
+
+      - name: 克隆 AnyKernel3
         run: |
-          cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Galadriel.zip" ./*
-          echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-      - name: 6. Release Yükle
-        uses: softprops/action-gh-release@v2
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          echo "=== AnyKernel3 目录 ==="
+          ls -la AnyKernel3/
+
+      - name: 打包 AnyKernel3 刷机包
+        run: |
+          KERNEL_IMG="gki-kernel/out/dist/Image"
+          KERNEL_GZ="gki-kernel/out/dist/Image.gz"
+
+          if [ ! -f "$KERNEL_IMG" ] && [ ! -f "$KERNEL_GZ" ]; then
+            echo "ERROR: 找不到内核镜像"
+            echo "dist 目录内容:"
+            ls -lah gki-kernel/out/dist/ || true
+            exit 1
+          fi
+
+          echo "=== AnyKernel3 目录结构 ==="
+          ls -la AnyKernel3/
+
+          # 复制内核镜像到 AnyKernel3
+          if [ -f "$KERNEL_GZ" ]; then
+            cp "$KERNEL_GZ" AnyKernel3/Image.gz
+            echo "使用 Image.gz"
+          else
+            cp "$KERNEL_IMG" AnyKernel3/Image
+            echo "使用 Image"
+          fi
+
+          # AK3 配置文件是 anykernel.sh (不是 anykernel3.sh)
+          AK3_CFG="AnyKernel3/anykernel.sh"
+          if [ ! -f "$AK3_CFG" ]; then
+            echo "ERROR: 找不到 anykernel.sh"
+            ls -la AnyKernel3/
+            exit 1
+          fi
+
+          # 修改 anykernel.sh 配置
+          sed -i 's|kernel.string=.*|kernel.string=GKI Android14-6.1 Kleaf (arm64)|' "$AK3_CFG"
+          sed -i 's|^BLOCK=.*|BLOCK=/dev/block/by-name/boot;|' "$AK3_CFG"
+          sed -i '/^IS_SLOT_DEVICE/d' "$AK3_CFG"
+          sed -i '/^do.devicecheck/a IS_SLOT_DEVICE=auto;' "$AK3_CFG"
+          sed -i 's|^do.devicecheck=.*|do.devicecheck=0|' "$AK3_CFG"
+          sed -i 's|^do.modules=.*|do.modules=0|' "$AK3_CFG"
+          sed -i 's|^do.systemless=.*|do.systemless=0|' "$AK3_CFG"
+
+          echo "=== anykernel.sh 配置 ==="
+          head -30 "$AK3_CFG"
+
+          # 打包 AK3 zip (按官方文档: -x .git README.md *placeholder)
+          cd AnyKernel3
+          rm -rf .git .github
+          zip -r9 ../GKI-Android14-6.1-AK3.zip * -x .git README.md *placeholder
+          cd ..
+
+          echo "=== AK3 刷机包 ==="
+          ls -lah GKI-Android14-6.1-AK3.zip
+
+      - name: 收集产物
+        run: |
+          mkdir -p artifacts
+
+          # 从 Bazel dist 目录复制内核镜像
+          cp gki-kernel/out/dist/Image artifacts/ 2>/dev/null || true
+          cp gki-kernel/out/dist/Image.gz artifacts/ 2>/dev/null || true
+          cp GKI-Android14-6.1-AK3.zip artifacts/ 2>/dev/null || true
+
+          echo "=== 产物列表 ==="
+          ls -lah artifacts/
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (Neutron Clang)"
-          files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-          
+          name: GKI-Android14-6.1-arm64
+          path: artifacts/*
+          retention-days: 30
