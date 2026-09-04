@@ -46,7 +46,8 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
+          git clone --depth=1 --branch android14-6.1-staging \
+          https://github.com/Bosyaf/LuminaireKernel-6.1.git common
      
           
       - name: 3. Full Kernel Config & Derleme Hazırlığı
@@ -63,36 +64,19 @@ jobs:
           chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          
           # ============================================================
-          # ZRAM / Zsmalloc Modül ve Sembol Listesi Temizliği
-          # ============================================================
-          sed -i '/zram\.ko/d' modules.bzl || true
-          sed -i '/zsmalloc\.ko/d' modules.bzl || true
-          sed -i '/#required by zram\.ko/,/^$/d' android/abi_gki_aarch64_xiaomi || true
-
-          # İlk defconfig derlemesi
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
-          
           CONFIG_FILE="out/.config"
-
-          # ZRAM ve Zsmalloc Enjeksiyonu (=y)
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SWAP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZSMALLOC
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_DEF_COMP_LZ4
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_WRITEBACK
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ZRAM_MEMORY_TRACKING
-
+          
+          # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
+          
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
-          
           sed -i 's/check_defconfig//' build.config.gki || true
-          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
@@ -109,7 +93,6 @@ jobs:
             KCFLAGS="-O2 -Wno-frame-larger-than" \
             Image || { echo "❌ Derleme HATASI!"; exit 1; }
           echo "BOOTHASH=Bosyaf-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 5. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
@@ -120,7 +103,6 @@ jobs:
           cp ../common/out/arch/arm64/boot/Image .
           zip -r "../CG-Galadriel.zip" ./*
           echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-
       - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
@@ -129,4 +111,8 @@ jobs:
           files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+
           
