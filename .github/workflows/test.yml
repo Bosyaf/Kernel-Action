@@ -64,17 +64,34 @@ jobs:
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           
-          # ============================================================
-          # ZRAM / Zsmalloc Modül ve Sembol Listesi Temizliği (Loglu)
-          # ============================================================
-          echo "🚀 modulelist.sh çalıştırılıyor..."
-          if bash "$GITHUB_WORKSPACE/sh/modulelist.sh" "$GITHUB_WORKSPACE" 2>&1 | tee modulelist_log.txt; then
-              echo "✅ modulelist.sh başarıyla tamamlandı. Loglar aşağıdadır:"
-              cat modulelist_log.txt
+      - name: 3.5. SH Klasöründeki Tüm Scriptleri Çalıştır (Loglu)
+        run: |
+          echo "🚀 sh klasöründeki tüm .sh dosyaları bulunuyor ve çalıştırılıyor..."
+          
+          # sh klasörü var mı kontrol edelim
+          if [ -d "$GITHUB_WORKSPACE/sh" ]; then
+            # Klasördeki tüm .sh dosyalarını sırayla döngüye al
+            for script in "$GITHUB_WORKSPACE/sh/"*.sh; do
+              # Eğer klasörde .sh dosyası yoksa döngüyü atla
+              [ -e "$script" ] || continue
+              
+              script_name=$(basename "$script")
+              echo "============================================================"
+              echo "⚙️ ÇALIŞTIRILIYOR: $script_name"
+              echo "============================================================"
+              
+              # Scripti çalıştır, çıktıları hem ekrana bas hem log dosyasına yaz
+              if bash "$script" "$GITHUB_WORKSPACE" 2>&1 | tee "${script_name}_log.txt"; then
+                  echo "✅ $script_name BAŞARIYLA TAMAMLANDI."
+              else
+                  echo "❌ $script_name ÇALIŞIRKEN HATA VERDİ!"
+              fi
+              echo "------------------------------------------------------------"
+            done
           else
-              echo "❌ modulelist.sh çalışırken hata verdi! Loglar aşağıdadır:"
-              cat modulelist_log.txt
+            echo "⚠️ 'sh' klasörü bulunamadı, işlem atlanıyor."
           fi
+
           
           # İlk defconfig derlemesi
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
