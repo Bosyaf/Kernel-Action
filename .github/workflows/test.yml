@@ -64,33 +64,27 @@ jobs:
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           
-      - name: 3.5. SH Klasöründeki Tüm Scriptleri Çalıştır (Loglu)
+      - name: 4. Standart Yamalar (hjpatches)
         run: |
-          echo "🚀 sh klasöründeki tüm .sh dosyaları bulunuyor ve çalıştırılıyor..."
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart Yamalar Uygulanıyor..."
           
-          # sh klasörü var mı kontrol edelim
-          if [ -d "$GITHUB_WORKSPACE/sh" ]; then
-            # Klasördeki tüm .sh dosyalarını sırayla döngüye al
-            for script in "$GITHUB_WORKSPACE/sh/"*.sh; do
-              # Eğer klasörde .sh dosyası yoksa döngüyü atla
-              [ -e "$script" ] || continue
-              
-              script_name=$(basename "$script")
-              echo "============================================================"
-              echo "⚙️ ÇALIŞTIRILIYOR: $script_name"
-              echo "============================================================"
-              
-              # Scripti çalıştır, çıktıları hem ekrana bas hem log dosyasına yaz
-              if bash "$script" "$GITHUB_WORKSPACE" 2>&1 | tee "${script_name}_log.txt"; then
-                  echo "✅ $script_name BAŞARIYLA TAMAMLANDI."
-              else
-                  echo "❌ $script_name ÇALIŞIRKEN HATA VERDİ!"
-              fi
-              echo "------------------------------------------------------------"
-            done
-          else
-            echo "⚠️ 'sh' klasörü bulunamadı, işlem atlanıyor."
-          fi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            set +e 
+            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            PATCH_STATUS=$?
+            set -e 
+            
+            if [ $PATCH_STATUS -eq 0 ]; then
+              echo "  ✅ $filename"
+            else
+              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+              cat patch_log.txt
+            fi
+            rm -f patch_log.txt
+          done
 
           
           # İlk defconfig derlemesi
