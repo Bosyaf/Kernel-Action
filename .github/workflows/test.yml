@@ -71,9 +71,7 @@ jobs:
           CONFIG_FILE="out/.config"
           # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
           # ==========================================================
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSMALLOC
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM
-                
+          
           # ==========================================================
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
