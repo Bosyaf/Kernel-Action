@@ -235,7 +235,7 @@ jobs:
           # -----------------------------------------------------
           # 6. SÜRÜM BİLGİSİ
           # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe+"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimloth"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           
