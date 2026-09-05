@@ -68,6 +68,10 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
+
+          # ZRAM + ZSMALLOC built-in olduğundan GKI modül listelerinden çıkar
+          sed -i '/zsmalloc\.ko/d; /zram\.ko/d' android/gki_aarch64_modules 2>/dev/null || true
+          sed -i '/zsmalloc\.ko/d; /zram\.ko/d' modules.bzl 2>/dev/null || true
           
           # ==========================================================
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM
