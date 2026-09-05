@@ -68,8 +68,11 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             gki_defconfig
           CONFIG_FILE="out/.config"
-          # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
+          
           # ==========================================================
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSMALLOC
+          
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4K_COMPRESS
           ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4K_DECOMPRESS
 
