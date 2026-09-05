@@ -92,6 +92,9 @@ jobs:
         run: |
           cd common
           export PATH="$HOME/toolchains/neutron-clang/bin:$PATH"
+          echo "===== ZRAM KONTROL ====="
+          grep -n -A3 -B3 -E '"lz4k"|"lz4kd"' drivers/block/zram/zcomp.c || true
+          grep -E 'CONFIG_(LZ4K|LZ4KD|CRYPTO_LZ4K|CRYPTO_LZ4KD)' out/.config
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
