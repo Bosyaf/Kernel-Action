@@ -96,7 +96,7 @@ jobs:
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             set +e 
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?
             set -e 
             
@@ -192,6 +192,10 @@ jobs:
           # -----------------------------------------------------
           # 3. PERFORMANS: PREEMPTION & THIN LTO 
           # -----------------------------------------------------
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYNC_FILE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT     
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
