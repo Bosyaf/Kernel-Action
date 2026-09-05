@@ -51,7 +51,7 @@ jobs:
       - name: 2.5. Standart Yamalar (hjpatches)
         run: |
           cd common
-          PATCH_DIR="../hjpatches"
+          PATCH_DIR="../sh"
           echo "🚀 Standart Yamalar Uygulanıyor..."
           
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
