@@ -50,7 +50,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone -b android14-6.1-staging https://github.com/Bosyaf/android_kernel_common-6.1.git --depth=1 common
+          git clone --depth=1 https://github.com/Bosyaf/aosp.git common
       # =================================================================
       # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
       # =================================================================
@@ -173,7 +173,7 @@ jobs:
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+          
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -192,6 +192,10 @@ jobs:
           # -----------------------------------------------------
           # 3. PERFORMANS: PREEMPTION & THIN LTO 
           # -----------------------------------------------------     
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SYNC_FILE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SW_SYNC
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_MI_UNION_POWER
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_BINDER_SCHED_OPT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
@@ -215,7 +219,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
                   
           # -----------------------------------------------------
