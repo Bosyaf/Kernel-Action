@@ -47,29 +47,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/aosp.git common
-     
-      - name: 2.5. Standart Yamalar (hjpatches)
-        run: |
-          cd common
-          PATCH_DIR="../sh"
-          echo "🚀 Standart Yamalar Uygulanıyor..."
-          
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            set +e 
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?
-            set -e 
-            
-            if [ $PATCH_STATUS -eq 0 ]; then
-              echo "  ✅ $filename"
-            else
-              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-              cat patch_log.txt
-            fi
-            rm -f patch_log.txt
-          done
-          
+               
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -92,8 +70,14 @@ jobs:
           CONFIG_FILE="out/.config"
           # 3. GEREKSİZLERİ / HATA VERENLERİ KAPATMA
           # ==========================================================
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZSMALLOC
-          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_ZRAM
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4K_COMPRESS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4K_DECOMPRESS
+
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4KD_COMPRESS
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_LZ4KD_DECOMPRESS
+
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CRYPTO_LZ4K
+          ./scripts/config --file "$CONFIG_FILE" --enable CONFIG_CRYPTO_LZ4KD
                 
           # ==========================================================
           # Localversion
