@@ -77,7 +77,9 @@ jobs:
             peridot_defconfig
           CONFIG_FILE="out/.config"
           
-        
+          # dm-bow eksik hedef hatasını önlemek için kapatılıyor
+          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DM_BOW
+                
           # ==========================================================
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
