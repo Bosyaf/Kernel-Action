@@ -46,7 +46,7 @@ jobs:
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
-          git clone --depth=1 https://github.com/Bosyaf/samx_kernel_peridot.git common
+          git clone --depth=1 https://github.com/Bosyaf/build_kernel_peridot.git common
                
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
@@ -77,8 +77,7 @@ jobs:
             peridot_defconfig
           CONFIG_FILE="out/.config"
           
-          # dm-bow eksik hedef hatasını önlemek için kapatılıyor
-          ./scripts/config --file "$CONFIG_FILE" --disable CONFIG_DM_BOW
+          
                 
           # ==========================================================
           # Localversion
