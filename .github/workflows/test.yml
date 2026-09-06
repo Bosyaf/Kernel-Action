@@ -37,13 +37,9 @@ jobs:
             
           echo "🔥 GitLab üzerinden yeni AOSP Clang (clang-r487747c) çekiliyor..."
           
-          # GITHUB_WORKSPACE (genişletilmiş alan) içine kuruyoruz
           mkdir -p toolchains
-          
-          # Disk dolma hatasını engellemek için zip yerine doğrudan branch'i clone'luyoruz
           git clone --depth=1 --branch clang-r487747c https://gitlab.com/Neebe3289/android_prebuilts_clang_host_linux-x86.git toolchains/aosp-clang
           
-          # GITHUB_WORKSPACE yolunu PATH'e ekliyoruz
           echo "${GITHUB_WORKSPACE}/toolchains/aosp-clang/bin" >> "$GITHUB_PATH"
           echo "✅ Yeni AOSP Clang İndirildi ve PATH'e eklendi!"
   
@@ -55,9 +51,16 @@ jobs:
       - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
-          # Yeni yol ile export yapıyoruz
           export PATH="${GITHUB_WORKSPACE}/toolchains/aosp-clang/bin:$PATH"
         
+          # Clang 17 sürümünün tanıması için yeni nesil CPU bayraklarını uyumlu hale getiriyoruz
+          find . -name "Makefile" -type f -exec sed -i 's/cortex-a720/cortex-a710/g' {} + || true
+          find . -name "Makefile" -type f -exec sed -i 's/cortex-x4/cortex-x3/g' {} + || true
+          find . -name "Makefile" -type f -exec sed -i 's/cortex-a520/cortex-a510/g' {} + || true
+          find arch/arm64 -name "*.mk" -type f -exec sed -i 's/cortex-a720/cortex-a710/g' {} + || true
+          find arch/arm64 -name "*.mk" -type f -exec sed -i 's/cortex-x4/cortex-x3/g' {} + || true
+          find arch/arm64 -name "*.mk" -type f -exec sed -i 's/cortex-a520/cortex-a510/g' {} + || true
+
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           cat << 'EOF' > scripts/check-local-export
@@ -107,7 +110,6 @@ jobs:
       - name: 4. Kernel Derleme
         run: |
           cd common
-          # Yeni yol ile export yapıyoruz
           export PATH="${GITHUB_WORKSPACE}/toolchains/aosp-clang/bin:$PATH"
           make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
