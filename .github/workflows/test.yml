@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 1. Paketler ve AOSP Clang Kurulumu
+      - name: 1. Paketler ve Yeni AOSP Clang Kurulumu
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
@@ -35,17 +35,17 @@ jobs:
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
             
-          echo "🔥 GitLab üzerinden AOSP Clang 17 çekiliyor..."
+          echo "🔥 GitLab üzerinden yeni AOSP Clang (clang-r487747c) çekiliyor..."
           
           # GITHUB_WORKSPACE (genişletilmiş alan) içine kuruyoruz
           mkdir -p toolchains
           
-          # ZIP indirmek diski 2 kat doldurduğu için doğrudan git clone kullanıyoruz.
-          git clone --depth=1 --branch 17 https://gitlab.com/anandhan07/aosp-clang.git toolchains/aosp-clang
+          # Disk dolma hatasını engellemek için zip yerine doğrudan branch'i clone'luyoruz
+          git clone --depth=1 --branch clang-r487747c https://gitlab.com/Neebe3289/android_prebuilts_clang_host_linux-x86.git toolchains/aosp-clang
           
           # GITHUB_WORKSPACE yolunu PATH'e ekliyoruz
           echo "${GITHUB_WORKSPACE}/toolchains/aosp-clang/bin" >> "$GITHUB_PATH"
-          echo "✅ AOSP Clang İndirildi ve PATH'e eklendi!"
+          echo "✅ Yeni AOSP Clang İndirildi ve PATH'e eklendi!"
   
       - name: 2. Kaynakları Çek
         run: |
