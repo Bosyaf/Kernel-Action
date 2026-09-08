@@ -71,13 +71,7 @@ jobs:
 
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UAG_NONLINEAR_FREQ_CTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_UAG_USE_TL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_UA_KERNEL_CPU_IOCTL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_UAG_AMU_AWARE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_MULTI_LV_TL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_TOUCH_BOOST
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_UAG_SOFT_LIMIT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_SCHED_ASSIST
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_FEATURE_FRAME_BOOST
           
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
