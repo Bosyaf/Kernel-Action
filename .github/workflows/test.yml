@@ -114,7 +114,7 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            drivers/cpufreq/ || { echo "❌ cpufreq derleme HATASI!"; exit 1; }
+            kernel/oplus_cpu/ || { echo "❌ cpufreq derleme HATASI!"; exit 1; }
           
           echo "✅ cpufreq HATA VERMEDEN BAŞARIYLA DERLENDİ!"
           
