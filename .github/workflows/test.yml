@@ -114,7 +114,27 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            kernel/oplus_cpu/ || { echo "❌ cpufreq derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+          IMAGE_TIME=$(($(date +%s) - BUILD_START))
+          echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
+          echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+      - name: 8. AnyKernel3 Paketleme
+        run: |
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Nimrodel Kernel/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
           
-          echo "✅ cpufreq HATA VERMEDEN BAŞARIYLA DERLENDİ!"
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r -q "../Nimrodel.zip" ./*
+          echo "📦 Paket hazır: Nimrodel.zip"
+      - name: 9. Release Yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Nimrodel Kernel"
+          files: "Nimrodel.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
