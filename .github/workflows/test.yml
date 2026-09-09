@@ -114,7 +114,7 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,-O2" \
-            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
