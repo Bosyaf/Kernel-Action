@@ -52,39 +52,72 @@ jobs:
 
       - name: 3. KernelSU-Next & SUSFS Entegrasyonu
         run: |
-          cd common
-          # KSU-Next Kurulum
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs > /dev/null 2>&1
+          echo "[LOG] 3. Adım başlatılıyor: KernelSU-Next ve SUSFS Entegrasyonu"
+          cd common || { echo "❌ HATA: 'common' dizinine girilemedi!"; exit 1; }
+          echo "✅ 'common' dizinine girildi."
         
-          # Multi-Manager Patch
-          cd KernelSU-Next
-          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
-          if [ -f "$PATCH" ]; then patch -p1 --forward < "$PATCH" > /dev/null 2>&1 || true; fi
-          cd ..
-        
-          # SUSFS4KSU Kurulum ve Kopyalama (Güncel simonpunk reposuna geçirildi)
-          git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -R susfs4ksu/kernel_patches/include/* ./include/
-        
-          # SUSFS Yama Uygulamaları
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then patch -p1 < "$SUSFS_PATCH" > /dev/null 2>&1 || true; fi
-        
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then patch -p1 < fs_namespace.patch > /dev/null 2>&1 || true; fi
-          rm -f fs_namespace.patch
-        
-          # Eksik kütüphaneleri manuel ekleme (Yama başarısız olursa diye güvenlik adımı)
-          if ! grep -q "linux/susfs.h" fs/super.c; then
-          sed -i '/#include "internal.h"/a #include <linux/susfs.h>\n#include <linux/ksu.h>' fs/super.c
+          echo "[LOG] KernelSU-Next (dev-susfs) kurulumu başlatılıyor..."
+          if curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs > /dev/null 2>&1; then
+            echo "✅ KernelSU-Next kurulumu başarıyla tamamlandı."
+          else
+            echo "❌ HATA: KernelSU-Next kurulumu başarısız oldu!"
           fi
         
-          # SUSFS Canlı Yamalar
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
+          echo "[LOG] Multi-Manager yaması kontrol ediliyor..."
+          cd KernelSU-Next || echo "⚠️ Uyarı: KernelSU-Next dizini bulunamadı."
+          PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
+          if [ -f "$PATCH" ]; then 
+            patch -p1 --forward < "$PATCH" > /dev/null 2>&1 && echo "✅ Multi-Manager yaması başarıyla uygulandı." || echo "⚠️ Uyarı: Multi-Manager yaması uygulanamadı veya zaten uygulanmış."
+          else
+            echo "⚠️ Uyarı: Multi-Manager yama dosyası ($PATCH) bulunamadı, atlanıyor."
+          fi
+          cd ..
+        
+          echo "[LOG] SUSFS4KSU (simonpunk) deposu klonlanıyor..."
+          if git clone --depth=1 -q https://gitlab.com/simonpunk/susfs4ksu -b gki-android14-6.1-dev susfs4ksu; then
+            echo "✅ SUSFS4KSU başarıyla klonlandı."
+          else
+            echo "❌ HATA: SUSFS4KSU klonlanamadı!"
+          fi
+        
+          echo "[LOG] SUSFS dosyaları çekirdeğe kopyalanıyor..."
+          cp -R susfs4ksu/kernel_patches/fs/* ./fs/ && echo "✅ 'fs' dizini dosyaları kopyalandı." || echo "❌ HATA: 'fs' dizini kopyalanamadı."
+          cp -R susfs4ksu/kernel_patches/include/* ./include/ && echo "✅ 'include' dizini dosyaları kopyalandı." || echo "❌ HATA: 'include' dizini kopyalanamadı."
+        
+          echo "[LOG] 50_add_susfs ana yaması aranıyor ve uygulanıyor..."
+          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
+          if [ -n "$SUSFS_PATCH" ]; then 
+            patch -p1 < "$SUSFS_PATCH" > /dev/null 2>&1 && echo "✅ SUSFS ana yaması ($SUSFS_PATCH) uygulandı." || echo "⚠️ Uyarı: SUSFS ana yaması reddedildi (reject) veya kısmen uygulandı."
+          else
+            echo "❌ HATA: 50_add_susfs yaması bulunamadı!"
+          fi
+        
+          echo "[LOG] fs_namespace yaması indiriliyor..."
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then 
+            patch -p1 < fs_namespace.patch > /dev/null 2>&1 && echo "✅ fs_namespace yaması başarıyla uygulandı." || echo "⚠️ Uyarı: fs_namespace yaması uygulanamadı."
+            rm -f fs_namespace.patch
+          else
+            echo "❌ HATA: fs_namespace yaması indirilemedi!"
+          fi
+        
+          echo "[LOG] fs/super.c içerisine susfs.h kontrolü yapılıyor..."
+          if grep -q "linux/susfs.h" fs/super.c; then
+            echo "✅ susfs.h zaten fs/super.c içerisinde mevcut."
+          else
+            sed -i '/#include "internal.h"/a #include <linux/susfs.h>' fs/super.c
+            echo "✅ susfs.h kütüphanesi fs/super.c içerisine manuel eklendi."
+          fi
+        
+          echo "[LOG] fs/susfs.c için canlı yamalar (sed) uygulanıyor..."
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c && echo "✅ BIT_ANDROID_DATA_ROOT_DIR bellek yaması uygulandı."
+          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c && echo "✅ BIT_ANDROID_SDCARD_ROOT_DIR bellek yaması uygulandı."
+        
+          echo "[LOG] Reject (*.rej) dosyaları temizleniyor..."
           find . -name "*.rej" -delete 2>/dev/null || true
-          echo "✅ KernelSU ve SUSFS işlemleri tamamlandı!"
+          echo "✅ Temizlik tamamlandı."
+        
+          echo "🎉 [BAŞARILI] KernelSU ve SUSFS işlemleri eksiksiz tamamlandı!"
 
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
