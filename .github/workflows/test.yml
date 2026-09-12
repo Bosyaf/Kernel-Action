@@ -1,4 +1,4 @@
-name: CG+ Nimrodel (ZyC Clang + Thin LTO)
+name: Bosyaf (patch denemeleri )
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 420
     env:
-      KBUILD_BUILD_USER: "boss"
+      KBUILD_BUILD_USER: "bos"
       KBUILD_BUILD_HOST: "yaf"
 
     steps:
@@ -21,14 +21,11 @@ jobs:
         with:
           root-reserve-mb: 8192
           temp-reserve-mb: 2048
-          swap-size-gb: 24
+          swap-size-gb: 16
 
       - name: Checkout
         uses: actions/checkout@v4
 
-      # =================================================================
-      # 1. ORTAM HAZIRLIĞI VE DERLEYİCİ
-      # =================================================================
       - name: 1. Paketler ve ZyC Clang Çekimi
         run: |
           sudo apt update -qq
@@ -47,13 +44,12 @@ jobs:
           rm -f clang.tar.gz
           echo "$GITHUB_WORKSPACE/clang-zyc/bin" >> "$GITHUB_PATH"
           echo "✅ Clang İndirildi ve PATH'e eklendi!"
+  
       - name: 2. Kaynakları Çek
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/aosp.git common
-      # =================================================================
-      # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
-      # =================================================================
+
       - name: 3. KernelSU-Next & SUSFS Entegrasyonu
         run: |
           cd common
@@ -107,23 +103,12 @@ jobs:
               cat patch_log.txt
             fi
             rm -f patch_log.txt
-          done
-    
-      # =================================================================
-      # 4. KERNEL YAPILANDIRMASI (DEFCONFIG GRUPLANDIRMASI)
-      # =================================================================
-      - name: 6. Kernel Config (Grup Düzeni ve Mühürleme)
+          done             
+      - name: 3. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          
-          # Bellek Optimizasyonları (OOM Koruması)
-          sudo sysctl -w vm.overcommit_memory=1
-          sudo sysctl -w vm.swappiness=100
-          sudo sysctl -w vm.vfs_cache_pressure=500
-          sudo sysctl -w vm.dirty_ratio=10
-          sudo sysctl -w vm.dirty_background_ratio=5
-          
+        
           sed -i 's/^PHONY += all/  /g' Makefile || true
           touch .scmversion
           cat << 'EOF' > scripts/check-local-export
@@ -131,10 +116,9 @@ jobs:
           exit 0
           EOF
           chmod -R +x scripts/
+          rm -rf out
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          
-          # -----------------------------------------------------
           # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
           # -----------------------------------------------------
           DEFCONFIG="arch/arm64/configs/gki_defconfig"
@@ -156,25 +140,21 @@ jobs:
           CONFIG_DEFAULT_FQ=y
           CONFIG_DEFAULT_NET_SCH="fq"
           EOF
-          
+          # ============================================================
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            gki_defconfig
-            
+            peridot_defconfig
           CONFIG_FILE="out/.config"
-          
-          # -----------------------------------------------------
-          # 1. BAŞLANGIÇ & CMDLINE
-          # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0 init_on_alloc=0 init_on_free=0 workqueue.power_efficient=1 random.trust_cpu=1 cryptomgr.notests raid=noautodetect bootconfig"
+
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -----------------------------------------------------
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -182,6 +162,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_500
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_1000
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_HZ 300
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NO_HZ_IDLE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
@@ -189,7 +171,7 @@ jobs:
           
           # -----------------------------------------------------
           # 3. PERFORMANS: PREEMPTION & THIN LTO 
-          # -----------------------------------------------------
+          # -----------------------------------------------------     
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
@@ -209,7 +191,6 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NETFILTER_XT_TARGET_HMARK
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
@@ -229,80 +210,69 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_ENABLE_LOG
-          
-          # -----------------------------------------------------
-          # 6. SÜRÜM BİLGİSİ
-          # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Voronwe+"
+          # ==========================================================
+          # Localversion
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Nimrodel"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
-          
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
-            # =================================================================
-      # 5. DERLEME, PAKETLEME VE YAYINLAMA
-      # =================================================================
-      - name: 7. Kernel Derleme
+            
+      - name: 4. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
-          BUILD_START=$(date +%s)
-          echo "🔥 Thin LTO Kernel Derlemesi Başlıyor..."
-
-          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
-              -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+rng+nosve+nosme \
-              -falign-functions=32 \
-              -falign-loops=32 \
-              -ffunction-sections \
-              -fdata-sections \
-              -fno-semantic-interposition \
-              -fomit-frame-pointer \
-              -fno-unwind-tables \
-              -fno-asynchronous-unwind-tables \
-              -fmerge-all-constants \
-              -finline-functions \
-              -Wno-error \
-              -Wno-unused-command-line-argument \
-              -Wno-format \
-              -Wno-format-extra-args \
-              -Wno-constant-logical-operand \
-              -Wno-unused-variable \
-              -Wno-address-of-packed-member" \
-            KLDFLAGS="-Wl,-O2 \
-              -Wl,--gc-sections \
-              -Wl,--as-needed \
-              -Wl,--strip-debug \
-              -Wl,--icf=safe \
-              -Wl,--sort-section=alignment" \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
+            -falign-functions=32 \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
+            -fstack-protector \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
+            -fno-math-errno \
+            -Wno-unused-command-line-argument \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand \
+            -Wno-unused-variable \
+            -Wno-address-of-packed-member" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,-O2" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-      - name: 8. AnyKernel3 Paketleme
+          
+      - name: 5. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Nimrodel Kernel/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
           sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
           sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          
           cp ../common/out/arch/arm64/boot/Image .
-          zip -r -q "../Nimrodel.zip" ./*
-          echo "📦 Paket hazır: Nimrodel.zip"
-      - name: 9. Release Yükle
+          zip -r "../CG-Galadriel.zip" ./*
+          echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
+          
+      - name: 6. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Nimrodel Kernel"
-          files: "Nimrodel.zip"
+          name: "CG+ Galadriel (AOSP Clang)"
+          files: "*.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
           
