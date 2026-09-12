@@ -116,7 +116,6 @@ jobs:
           exit 0
           EOF
           chmod -R +x scripts/
-          rm -rf out
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
