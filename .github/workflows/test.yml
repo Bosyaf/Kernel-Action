@@ -52,15 +52,27 @@ jobs:
 
       - name: 3. KernelSU-Next & SUSFS Entegrasyonu
         run: |
+          # SUSFS repo clone and file copy
+          cd $GITHUB_WORKSPACE
+          git clone --depth=1 https://github.com/cctv18/susfs4oki.git susfs4ksu -b oki-android14-6.1
+          wget https://github.com/cctv18/oppo_oplus_realme_sm8650/raw/refs/heads/main/other_patch/69_hide_stuff.patch -O ./common/69_hide_stuff.patch
+          cp ./susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./common/
+          cp -r ./susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp -r ./susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          
           cd common
           # KSU-Next Kurulum
           curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs > /dev/null 2>&1
             
+          # SUSFS Patch
+          patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch || true
+          patch -p1 -F 3 < 69_hide_stuff.patch || true
+
           # 2. Multi-Manager Patch (Varsa uygula)
           if [ -f "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" ]; then
-          cd KernelSU-Next
-          patch -p1 --forward < "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" || true
-          cd ..
+            cd KernelSU-Next
+            patch -p1 --forward < "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" || true
+            cd ..
           fi
           
       # =================================================================
@@ -72,22 +84,26 @@ jobs:
           PATCH_DIR="../hjpatches"
           echo "🚀 Standart Yamalar Uygulanıyor..."
           
-          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
-            filename=$(basename "$patch_file")
-            set +e 
-            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
-            PATCH_STATUS=$?
-            set -e 
-            
-            if [ $PATCH_STATUS -eq 0 ]; then
-              echo "  ✅ $filename"
-            else
-              echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-              cat patch_log.txt
+          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+            if [ -f "$patch_file" ]; then
+              filename=$(basename "$patch_file")
+              set +e 
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+              PATCH_STATUS=$?
+              set -e 
+              
+              if [ $PATCH_STATUS -eq 0 ]; then
+                echo "  ✅ $filename"
+              else
+                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+                cat patch_log.txt
+              fi
+              rm -f patch_log.txt
             fi
-            rm -f patch_log.txt
           done             
-      - name: 3. Full Kernel Config & Derleme Hazırlığı
+
+      - name: 5. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -101,6 +117,7 @@ jobs:
           chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
+          
           # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
           # -----------------------------------------------------
           DEFCONFIG="arch/arm64/configs/gki_defconfig"
@@ -184,15 +201,22 @@ jobs:
           # -----------------------------------------------------
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_PATH
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_TRY_UMOUNT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_ENABLE_LOG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KSU_SUSFS_ENABLE_LOG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_KSU_SUSFS_SUS_MAP
           # ==========================================================
+          
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ecthelion"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
@@ -202,7 +226,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             olddefconfig
             
-      - name: 4. Kernel Derleme
+      - name: 6. Kernel Derleme
         run: |
           cd common
           export PATH="$GITHUB_WORKSPACE/clang-zyc/bin:$PATH"
@@ -237,7 +261,7 @@ jobs:
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
           
-      - name: 5. AnyKernel3 Paketleme
+      - name: 7. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
           sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
@@ -248,7 +272,7 @@ jobs:
           zip -r "../CG-Galadriel.zip" ./*
           echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
           
-      - name: 6. Release Yükle
+      - name: 8. Release Yükle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.BOOTHASH }}
