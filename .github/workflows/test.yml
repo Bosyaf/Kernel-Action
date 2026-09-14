@@ -50,58 +50,50 @@ jobs:
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/Ecthelion.git common
 
-      # 2. KERNELSU-NEXT, MULTI-MANAGER & SUSFS4KSU
-      # =================================================================
-      - name: 3. KernelSU-Next & Multi-Manager Desteği
+      - name: 5. KernelSU-Next & Multi-Manager Desteği (LTS)
         run: |
           cd common
-          echo "📦 KernelSU-Next kuruluyor..."
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+          echo "📦 KernelSU-Next (LTS) kuruluyor..."
+          # Pershoot reposundan LTS uyumlu lts-susfs dalı çekiliyor
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/lts-susfs/kernel/setup.sh" | bash -s lts-susfs
           
           cd KernelSU-Next
           PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
           if [ -f "$PATCH" ]; then
             echo "🔥 Multi-manager patch uygulanıyor..."
-            patch -p1 --forward < "$PATCH" && \
-            echo "✅ Multi-manager patch başarılı!" || \
-            echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
+            git apply "$PATCH" || patch -p1 --forward < "$PATCH" || echo "⚠️ Patch uygulanamadı (zaten uygulanmış olabilir)"
           else
             echo "⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
-      - name: 4. SUSFS4KSU Kurulumu ve Fixler
+
+      - name: 6. SUSFS4KSU Kurulumu (LTS)
         run: |
           cd common
-          echo "📦 SUSFS4KSU kuruluyor..."
-          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
+          echo "📦 SUSFS4KSU (LTS-Dev) kuruluyor..."
+          # Belirttiğiniz gki-android14-6.1-lts-dev dalı klonlanıyor
+          git clone --depth=1 -q https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-lts-dev susfs4ksu
+          
           echo "📦 SUSFS dosyaları kopyalanıyor..."
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/
           cp -R susfs4ksu/kernel_patches/include/* ./include/
           
-          echo "📦 SUSFS patch uygulanıyor..."
+          echo "📦 SUSFS LTS patch uygulanıyor..."
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
           if [ -n "$SUSFS_PATCH" ]; then
             echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
-            patch -p1 < "$SUSFS_PATCH" || true
+            # LTS sürümünde yamayı git apply ile çakışmasız ve temiz bir şekilde uyguluyoruz
+            git apply --whitespace=nowarn "$SUSFS_PATCH" || patch -p1 < "$SUSFS_PATCH"
           else
-            echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
+            echo "  ❌ HATA: SUSFS Patch dosyası bulunamadı!"
+            exit 1
           fi
           
-          echo "📦 namespace.c SUSFS patch uygulanıyor..."
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
-          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then
-            patch -p1 < fs_namespace.patch || true
-            echo "  ✅ Uygulandı"
-          else
-            echo "  ⚠️ Patch bulunamadı"
-          fi
-          rm -f fs_namespace.patch
+          # NOT: LTS-Dev dalında dentry check hataları ve namespace çakışmaları halihazırda 
+          # düzeltildiği için harici fs_namespace.patch ve sed canlı yamaları kaldırılmıştır.
           
-          echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
-          sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
-          echo "  ✅ Canlı Yama Başarılı!"
-          find . -name "*.rej" -delete 2>/dev/null || true
+          # Geçici dosyaları temizle
+          rm -rf susfs4ksu
+          echo "✅ KernelSU-Next (LTS) ve SUSFS (LTS-Dev) entegrasyonu başarıyla tamamlandı!"
         
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
