@@ -81,27 +81,58 @@ jobs:
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
           if [ -n "$SUSFS_PATCH" ]; then
             echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
-            patch -p1 < "$SUSFS_PATCH" || true
+            patch -p1 --fuzz=3 < "$SUSFS_PATCH" || true
           else
             echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
           
-          echo "📦 namespace.c SUSFS patch uygulanıyor..."
-          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
-          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
-          if [ -f fs_namespace.patch ]; then
-            patch -p1 < fs_namespace.patch || true
-            echo "  ✅ Uygulandı"
-          else
-            echo "  ⚠️ Patch bulunamadı"
-          fi
-          rm -f fs_namespace.patch
+          echo "🛡️ fs/namespace.c ve fs/super.c Canlı Enjeksiyonu Uygulanıyor..."
+          python3 -c '
+          import os
+
+          def inject(file_path, code, check_str):
+              if not os.path.exists(file_path):
+                  return
+              with open(file_path, "r") as f:
+                  content = f.read()
+              if check_str not in content:
+                  target = "#include <linux/fs.h>"
+                  if target in content:
+                      content = content.replace(target, target + "\n" + code)
+                      with open(file_path, "w") as f:
+                          f.write(content)
+                      print(f"  ✅ {file_path} dosyasına eksik SUSFS tanımlamaları eklendi.")
+                  else:
+                      print(f"  ⚠️ {file_path} içinde #include <linux/fs.h> bulunamadı!")
+
+          ns_code = """
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          #include <linux/susfs_def.h>
+          extern bool susfs_is_current_ksu_domain(void);
+          extern struct static_key_false susfs_is_sdcard_android_data_not_decrypted;
+          #ifndef CL_COPY_MNT_NS
+          #define CL_COPY_MNT_NS BIT(25)
+          #endif
+          static DEFINE_IDA(susfs_mnt_id_ida);
+          static DEFINE_IDA(susfs_mnt_group_ida);
+          #endif"""
+
+          super_code = """
+          #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+          extern bool susfs_is_current_ksu_domain(void);
+          extern struct static_key_false susfs_is_sdcard_android_data_not_decrypted;
+          #endif"""
+
+          inject("fs/namespace.c", ns_code, "susfs_is_current_ksu_domain")
+          inject("fs/super.c", super_code, "susfs_is_current_ksu_domain")
+          '
           
           echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_SDCARD_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_SDCARD_ROOT_DIR));/g' fs/susfs.c
           echo "  ✅ Canlı Yama Başarılı!"
           find . -name "*.rej" -delete 2>/dev/null || true
+
           
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
