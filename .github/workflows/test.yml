@@ -81,29 +81,21 @@ jobs:
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
           if [ -n "$SUSFS_PATCH" ]; then
             echo "  → Uygulanıyor: $(basename "$SUSFS_PATCH")"
-            patch -p1 --fuzz=3 < "$SUSFS_PATCH" || true
+            patch -p1 < "$SUSFS_PATCH" || true
           else
             echo "  ⚠️ Patch dosyası bulunamadı, atlanıyor..."
           fi
           
-          echo "🛡️ SUSFS Header Enjeksiyonu Uygulanıyor..."
-          python3 -c '
-          import os
-
-          def ensure_header(file_path):
-              if not os.path.exists(file_path):
-                  return
-              with open(file_path, "r") as f:
-                  content = f.read()
-              if "<linux/susfs.h>" not in content:
-                  content = "#include <linux/susfs.h>\n" + content
-                  with open(file_path, "w") as f:
-                      f.write(content)
-                  print(f"  ✅ {file_path} dosyasına #include <linux/susfs.h> eklendi.")
-
-          ensure_header("fs/namespace.c")
-          ensure_header("fs/super.c")
-          '
+          echo "📦 namespace.c SUSFS patch uygulanıyor..."
+          wget -q "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -O fs_namespace.patch || \
+          curl -LSs "https://raw.githubusercontent.com/Bosyaf/Kernel-Action/main/fs_namespace.patch" -o fs_namespace.patch
+          if [ -f fs_namespace.patch ]; then
+            patch -p1 < fs_namespace.patch || true
+            echo "  ✅ Uygulandı"
+          else
+            echo "  ⚠️ Patch bulunamadı"
+          fi
+          rm -f fs_namespace.patch
           
           echo "🛡️ SUSFS Dentry Check Fix (Canlı Yama) Uygulanıyor..."
           sed -i 's/return (base->d_inode->i_mapping->flags & BIT_ANDROID_DATA_ROOT_DIR);/return (base \&\& !IS_ERR(base) \&\& base->d_inode \&\& (base->d_inode->i_mapping->flags \& BIT_ANDROID_DATA_ROOT_DIR));/g' fs/susfs.c
