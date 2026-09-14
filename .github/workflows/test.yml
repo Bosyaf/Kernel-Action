@@ -202,7 +202,7 @@ jobs:
           # ==========================================================
           
           # Localversion
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Ecthelion"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Maeglin"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
