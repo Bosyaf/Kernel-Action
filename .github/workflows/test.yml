@@ -63,17 +63,6 @@ jobs:
           cd ..
           fi
           
-      - name: Setup SUSFS
-        run: |
-          git clone --depth=1 -b gki-android14-6.1 \
-            https://gitlab.com/simonpunk/susfs4ksu \
-            susfs4ksu
-          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -R susfs4ksu/kernel_patches/include/* ./include/
-          
-          # SUSFS Yama Uygulamaları
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then patch -p1 < "$SUSFS_PATCH" > /dev/null 2>&1 || true; fi
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
       # =================================================================
@@ -86,7 +75,7 @@ jobs:
           for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
             filename=$(basename "$patch_file")
             set +e 
-            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            patch -p1 --fuzz=3 < "$patch_file" > patch_log.txt 2>&1
             PATCH_STATUS=$?
             set -e 
             
