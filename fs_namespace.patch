@@ -1,5 +1,5 @@
---- a/fs/namespace.c
-+++ b/fs/namespace.c
+--- a/fs/namespace.c	2026-03-10 15:31:40.244000129 +0300
++++ b/fs/namespace.c	2026-03-10 15:33:18.208000135 +0300
 @@ -37,6 +37,18 @@
  #include "internal.h"
  #include <trace/hooks/blk.h>
@@ -18,17 +18,4 @@
 +
  /* Maximum number of mounts in a mount namespace */
  static unsigned int sysctl_mount_max __read_mostly = 100000;
---- a/fs/super.c
-+++ b/fs/super.c
-@@ -34,6 +34,11 @@
- #include <linux/fs_parser.h>
- #include <trace/events/vfs.h>
  
-+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-+extern bool susfs_is_current_ksu_domain(void);
-+extern struct static_key_false susfs_is_sdcard_android_data_not_decrypted;
-+#endif
-+
- static int alloc_super(struct file_system_type *type, int flags,
- 		       struct fs_context *fc)
-          
