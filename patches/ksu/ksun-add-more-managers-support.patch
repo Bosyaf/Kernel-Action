@@ -1,7 +1,7 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
-@@ -1,4 +1,4 @@
+@@ -73,4 +73,4 @@
  ifndef KSU_NEXT_MANAGER_LIST
 -# KSUN, pershoot
 -KSU_NEXT_MANAGER_LIST := 0x3e6:79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7,0x338:f26471a28031130362bce7eebffb9a0b8afc3095f163ce0c75a309f03b644a1f
