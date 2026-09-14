@@ -67,7 +67,14 @@ jobs:
           # SUSFS Patch
           patch -p1 < 50_add_susfs_in_gki-android14-6.1.patch || true
           patch -p1 -F 3 < 69_hide_stuff.patch || true
-
+          # ---------------------------------------------------------
+          # EKSİK KÜTÜPHANE DÜZELTMESİ (BU KISIM EKLENDİ)
+          # ---------------------------------------------------------
+          echo "🔧 fs/proc/base.c için SUSFS header'ı kontrol ediliyor..."
+          if ! grep -q "linux/susfs.h" fs/proc/base.c; then
+              sed -i '1i #include <linux/susfs.h>' fs/proc/base.c
+              echo "✅ linux/susfs.h eklendi!"
+          fi
           # 2. Multi-Manager Patch (Varsa uygula)
           if [ -f "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" ]; then
             cd KernelSU-Next
