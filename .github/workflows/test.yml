@@ -50,45 +50,29 @@ jobs:
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           git clone --depth=1 https://github.com/Bosyaf/aosp.git common
 
-      - name: 3. KernelSU-Next & SUSFS Entegrasyonu
+      - name: Setup KernelSU Next (pershoot/dev-susfs)
         run: |
-          cd common
-
-          # 1. KSU-Next Kurulumu
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" \
+            | bash -s $KERNELSU_VERSION
+            
           # 2. Multi-Manager Patch (Varsa uygula)
           if [ -f "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" ]; then
           cd KernelSU-Next
           patch -p1 --forward < "$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch" || true
           cd ..
           fi
-
-          # 3. SUSFS Klonlama ve Dosyaları Kopyalama
-          git clone --depth=1 https://gitlab.com/pershoot/susfs4ksu -b gki-android14-6.1-dev susfs4ksu
-          cp -r susfs4ksu/kernel_patches/fs/* ./fs/
-          cp -r susfs4ksu/kernel_patches/include/* ./include/
-
-          # 4. SUSFS Yamasını Uygula (Hata verse bile devam etmesi için || true)
-          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
-          if [ -n "$SUSFS_PATCH" ]; then
-          echo "Applying SUSFS Patch: $SUSFS_PATCH"
-          patch -p1 --forward < "$SUSFS_PATCH" || true
-          fi
-
-          # 5. Hunk #1 FAILED olan dosyalara include'ları manuel ve temiz şekilde enjekte et
-          for file in fs/namespace.c fs/super.c; do
-          if [ -f "$file" ] && ! grep -q "linux/susfs.h" "$file"; then
-            echo "Injecting susfs.h into $file"
-            sed -i '1s/^/#if defined(CONFIG_KSU_SUSFS)\n#include <linux\/susfs.h>\n#endif\n/' "$file"
-          fi
-          done
-
-          # 6. Rej dosyalarını ve klonlanan repo klasörünü temizle
-          find . -name "*.rej" -delete 2>/dev/null || true
-          rm -rf susfs4ksu
-
-          echo "✅ KernelSU-Next ve SUSFS başarıyla yamalandı ve hazırlandı!"
+          
+      - name: Setup SUSFS
+        run: |
+          git clone --depth=1 -b gki-android14-6.1 \
+            https://gitlab.com/simonpunk/susfs4ksu \
+            susfs4ksu
+          cp susfs4ksu/kernel_patches/fs/susfs.c kernel/fs/
+          cp susfs4ksu/kernel_patches/include/linux/susfs*.h kernel/include/linux/
+          cd kernel
+          git apply ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch \
+            || echo "SUSFS patch applied with warnings or skipped"
 
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
