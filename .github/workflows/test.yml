@@ -54,8 +54,8 @@ jobs:
         run: |
           cd common
           echo "📦 KernelSU-Next (LTS) kuruluyor..."
-          # Pershoot reposundan LTS uyumlu lts-susfs dalı çekiliyor
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/lts-susfs/kernel/setup.sh" | bash -s lts-susfs
+          # Kurulum scriptini çalışan dev-susfs dalından çekip, parametre olarak 'lts-susfs' dalını veriyoruz
+          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s lts-susfs
           
           cd KernelSU-Next
           PATCH="$GITHUB_WORKSPACE/patches/ksu/ksun-add-more-managers-support.patch"
@@ -87,9 +87,6 @@ jobs:
             echo "  ❌ HATA: SUSFS Patch dosyası bulunamadı!"
             exit 1
           fi
-          
-          # NOT: LTS-Dev dalında dentry check hataları ve namespace çakışmaları halihazırda 
-          # düzeltildiği için harici fs_namespace.patch ve sed canlı yamaları kaldırılmıştır.
           
           # Geçici dosyaları temizle
           rm -rf susfs4ksu
