@@ -68,12 +68,12 @@ jobs:
           git clone --depth=1 -b gki-android14-6.1 \
             https://gitlab.com/simonpunk/susfs4ksu \
             susfs4ksu
-          cp susfs4ksu/kernel_patches/fs/susfs.c kernel/fs/
-          cp susfs4ksu/kernel_patches/include/linux/susfs*.h kernel/include/linux/
-          cd kernel
-          git apply ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch \
-            || echo "SUSFS patch applied with warnings or skipped"
-
+          cp -R susfs4ksu/kernel_patches/fs/* ./fs/
+          cp -R susfs4ksu/kernel_patches/include/* ./include/
+          
+          # SUSFS Yama Uygulamaları
+          SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
+          if [ -n "$SUSFS_PATCH" ]; then patch -p1 < "$SUSFS_PATCH" > /dev/null 2>&1 || true; fi
       # =================================================================
       # 3. STANDART YAMALAR VE GÜVENLİK
       # =================================================================
