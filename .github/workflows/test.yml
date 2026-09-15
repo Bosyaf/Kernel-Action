@@ -47,7 +47,6 @@ jobs:
   
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
-          cd common
           echo "📦 [1/5] KernelSU-Next kuruluyor (Bosyaf/Ksu-next)..."
           git clone --depth=1 https://github.com/Bosyaf/Ksu-next.git KernelSU-Next
           bash KernelSU-Next/kernel/setup.sh
@@ -67,7 +66,6 @@ jobs:
 
       - name: 4. SUSFS4KSU Kurulumu ve Fixler
         run: |
-          cd common
           echo "📦 [3/5] SUSFS kuruluyor (Bosyaf/Susfs)..."
           git clone --depth=1 https://github.com/Bosyaf/Susfs.git susfs4ksu
           echo "📦 SUSFS dosyaları kopyalanıyor..."
