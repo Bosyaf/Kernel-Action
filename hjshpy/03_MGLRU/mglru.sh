@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 VMSCAN_C="${KERNEL_SRC}/mm/vmscan.c"
-PATCHER="${SAGA_PATCH_DIR}/kernel/addons/mglru/patch.py"
+PATCHER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patch.py"
 [ -f "$VMSCAN_C" ] || { warn "mm/vmscan.c not found, skipping mglru"; return 0; }
 grep -q "^static ssize_t store_enabled(struct kobject \*kobj," "$VMSCAN_C" \
     || { warn "store_enabled() not found in this kernel's shape — MGLRU doesn't exist here or its shape changed, skipping"; return 0; }
