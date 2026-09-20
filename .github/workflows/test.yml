@@ -114,7 +114,34 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"
-        
+
+         # 3. YAMALAR VE CERRAHİ SCRİPTLER (hjpatches & hjshpy)
+      # =================================================================
+      - name: 5. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart yamalar sırasıyla basılıyor..."
+          
+          for patch_file in $(ls "$PATCH_DIR"/*.patch | sort); do
+            filename=$(basename "$patch_file")
+            echo "--------------------------------------------------"
+            echo "📦 İşleniyor: $filename"
+            
+            patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+            PATCH_STATUS=$?   # Yamadan çıkan sonucu hemen güvene alıyoruz
+            head -n 20 patch_log.txt
+
+            if [ $PATCH_STATUS -eq 0 ]; then
+
+              echo "✅ $filename başarıyla uygulandı."
+            else
+              echo "❌ $filename UYGULANAMADI! Hata detayları yukarıda."
+              exit 1
+            fi
+            rm -f patch_log.txt
+          done
+          
       - name: 3. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
