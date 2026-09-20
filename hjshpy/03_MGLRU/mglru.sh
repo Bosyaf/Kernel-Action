@@ -7,8 +7,7 @@ grep -q "^static ssize_t store_enabled(struct kobject \*kobj," "$VMSCAN_C" \
 python3 "$PATCHER" "$VMSCAN_C"
 rc=$?
 if [ $rc -eq 0 ]; then
-    log "mglru force-enable (adaptive) applied ✅"
+    echo "[info] mglru force-enable (adaptive) applied ✅"
 else
-    error "mglru: patch script failed!"
+    echo "[error] mglru: patch script failed!"
 fi
-
