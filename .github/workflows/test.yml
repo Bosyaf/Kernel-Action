@@ -291,7 +291,6 @@ jobs:
             -fno-semantic-interposition \
             -mllvm -polly \
             -mllvm -polly-invariant-load-hoisting \
-            -mllvm -polly-loop-fusion=auto
             -Wno-frame-larger-than \
             -Wno-unused-command-line-argument \
             -Wno-error \
