@@ -48,7 +48,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Duchamp Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/work.git common
+          git clone --depth=1 https://github.com/Bosyaf/Maeglin.git common
   
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
