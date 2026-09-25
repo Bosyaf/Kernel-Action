@@ -283,9 +283,6 @@ jobs:
             -fno-asynchronous-unwind-tables \
             -fno-math-errno \
             -fno-semantic-interposition \
-            -mllvm -polly \
-            -mllvm -polly-invariant-load-hoisting \
-            -mllvm -polly-run-dce \
             -Wno-frame-larger-than \
             -Wno-unused-command-line-argument \
             -Wno-error \
