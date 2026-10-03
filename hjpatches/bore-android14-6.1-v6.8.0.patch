@@ -419,7 +419,7 @@ index 5342b5600..1830a2e46 100644
   * Minimal preemption granularity for CPU-bound tasks:
   *
 - * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
-+ * (BORE default: 3 msec constant, units: nanoseconds)
++ * (BORE default: 2 msec constant, units: nanoseconds)
 + * (CFS  default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
   */
 +#ifdef CONFIG_SCHED_BORE
