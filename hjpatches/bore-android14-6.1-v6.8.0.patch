@@ -386,12 +386,12 @@ index 5342b5600..1830a2e46 100644
   *  run vmstat and monitor the context-switches (cs) field)
   *
 - * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
-+ * (BORE default: 24ms constant, units: nanoseconds)
++ * (BORE default: 16ms constant, units: nanoseconds)
 + * (CFS  default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
   */
 +#ifdef CONFIG_SCHED_BORE
-+unsigned int sysctl_sched_latency			= 24000000ULL;
-+static unsigned int normalized_sysctl_sched_latency	= 24000000ULL;
++unsigned int sysctl_sched_latency			= 16000000ULL;
++static unsigned int normalized_sysctl_sched_latency	= 16000000ULL;
 +#else
  unsigned int sysctl_sched_latency			= 6000000ULL;
 -EXPORT_SYMBOL_GPL(sysctl_sched_latency);
@@ -423,8 +423,8 @@ index 5342b5600..1830a2e46 100644
 + * (CFS  default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
   */
 +#ifdef CONFIG_SCHED_BORE
-+unsigned int sysctl_sched_min_granularity			= 3000000ULL;
-+static unsigned int normalized_sysctl_sched_min_granularity	= 3000000ULL;
++unsigned int sysctl_sched_min_granularity			= 2000000ULL;
++static unsigned int normalized_sysctl_sched_min_granularity	= 2000000ULL;
 +#else
  unsigned int sysctl_sched_min_granularity			= 750000ULL;
 -EXPORT_SYMBOL_GPL(sysctl_sched_min_granularity);
@@ -439,12 +439,12 @@ index 5342b5600..1830a2e46 100644
   * have immediate wakeup/sleep latencies.
   *
 - * (default: 1 msec * (1 + ilog(ncpus)), units: nanoseconds)
-+ * (BORE default: 4 msec constant, units: nanoseconds)
++ * (BORE default: 3 msec constant, units: nanoseconds)
 + * (CFS  default: 1 msec * (1 + ilog(ncpus)), units: nanoseconds)
   */
 +#ifdef CONFIG_SCHED_BORE
-+unsigned int sysctl_sched_wakeup_granularity		= 4000000UL;
-+static unsigned int normalized_sysctl_sched_wakeup_granularity	= 4000000UL;
++unsigned int sysctl_sched_wakeup_granularity		= 3000000UL;
++static unsigned int normalized_sysctl_sched_wakeup_granularity	= 3000000UL;
 +#else
  unsigned int sysctl_sched_wakeup_granularity			= 1000000UL;
 -EXPORT_SYMBOL_GPL(sysctl_sched_wakeup_granularity);
