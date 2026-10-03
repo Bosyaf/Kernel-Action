@@ -20,7 +20,7 @@ CAPS_REPLACEMENT = (
     "\t * (MM_WALK/NONLEAF_YOUNG). Do not add those bits back until CORE\n"
     "\t * alone has been confirmed stable.\n"
     "\t */\n"
-    "\tcaps |= BIT(LRU_GEN_CORE);\n"
+    "\tcaps |= 7;\n"
     "\n"
     "\tfor (i = 0; i < NR_LRU_GEN_CAPS; i++) {"
 )
