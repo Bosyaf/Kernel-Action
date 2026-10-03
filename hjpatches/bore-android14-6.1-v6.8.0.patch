@@ -462,7 +462,7 @@ index 5342b5600..1830a2e46 100644
 +u8   __read_mostly sched_bore_topapp_discount  = 14;
 +u8   __read_mostly sched_bore_topapp_smooth_boost = 4;
 +unsigned int __read_mostly sched_burst_penalty_scale   = 1280;
-+unsigned int __read_mostly sched_burst_cache_lifetime  = 75000000;
++unsigned int __read_mostly sched_burst_cache_lifetime  = 60000000;
 +#endif
 +
  int sched_thermal_decay_shift;
