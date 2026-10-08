@@ -181,34 +181,31 @@ jobs:
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
           
-          # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
-          # -----------------------------------------------------
-          DEFCONFIG="arch/arm64/configs/gki_defconfig"
-          sed -i '/CONFIG_DEFAULT_TCP_CONG/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_NET_SCH/d' $DEFCONFIG
-          sed -i '/CONFIG_NET_SCH_DEFAULT/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_FQ/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_PFIFO_FAST/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_BBR/d' $DEFCONFIG
-          
-          cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_TCP_CONG_BBR3=y
-          CONFIG_DEFAULT_BBR3=y
-          CONFIG_DEFAULT_TCP_CONG="bbr3"
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_NET_SCH_DEFAULT=y
-          CONFIG_DEFAULT_FQ=y
-          CONFIG_DEFAULT_NET_SCH="fq"
-          EOF
+          # 1. Defconfig Oluştur
           # ============================================================
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             houji_defconfig
+            
           CONFIG_FILE="out/.config"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE="console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
+
+          # -----------------------------------------------------
+          # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
+          # -----------------------------------------------------
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_ADVANCED
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TCP_CONG_BBR3
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_BBR3
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_TCP_CONG "bbr3"
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_NET_SCH_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_DEFAULT_FQ
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_DEFAULT_NET_SCH "fq"
+
+          # -----------------------------------------------------
+          # CMDLINE
+          # -----------------------------------------------------
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off workqueue.power_efficient=y kmemleak=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # -----------------------------------------------------
