@@ -103,7 +103,69 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"
-             
+
+      - name: 4. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart Yamalar Uygulanıyor..."
+          
+          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+            if [ -f "$patch_file" ]; then
+              filename=$(basename "$patch_file")
+              set +e 
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+              PATCH_STATUS=$?
+              set -e 
+              
+              if [ $PATCH_STATUS -eq 0 ]; then
+                echo "  ✅ $filename"
+              else
+                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+                cat patch_log.txt
+              fi
+              rm -f patch_log.txt
+            fi
+          done
+          
+      - name: 3. Cerrahi Scriptler (hjshpy)
+        run: |
+          cd common
+          KERNEL_SRC_ABS=$(pwd)
+          SCRIPT_ROOT="../hjshpy"
+          echo "🚀 Cerrahi scriptler başlatılıyor..."
+          
+          for sub_dir in $(ls -d "$SCRIPT_ROOT"/*/ | sort); do
+            dir_name=$(basename "$sub_dir")
+            echo "--------------------------------------------------"
+            echo "💉 Klasör Grubu: $dir_name"
+            
+            sh_file=$(find "$sub_dir" -maxdepth 1 -name "*.sh" | head -n 1)
+            
+            if [ -n "$sh_file" ]; then
+              script_name=$(basename "$sh_file")
+              echo "⚙️ Çalıştırılıyor: $script_name"
+              
+              cd "$sub_dir"
+              chmod +x "$script_name"
+              export KERNEL_SRC="$KERNEL_SRC_ABS"
+              
+              ./"$script_name" 2>&1 | tee script_run.log | head -n 20
+              
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
+                echo "✅ $script_name başarıyla bitti."
+              else
+                echo "⚠️ $script_name HATA VERDİ! Ama atlanıyor, sıradaki script çalıştırılacak."
+              fi
+              
+              cd "$KERNEL_SRC_ABS"
+            else
+              echo "⚠️ $dir_name içinde .sh dosyası bulunamadı, atlanıyor."
+            fi
+          done
+          echo "✅ Cerrahi script döngüsü tamamlandı."
+          
       - name: 4. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
