@@ -200,7 +200,6 @@ jobs:
           CONFIG_NET_SCH_FQ=y
           CONFIG_NET_SCH_DEFAULT=y
           CONFIG_DEFAULT_FQ=y
-          CONFIG_DEFAULT_NET_SCH="fq"
           EOF
           # ============================================================
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
