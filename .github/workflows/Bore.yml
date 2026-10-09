@@ -48,7 +48,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Duchamp Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/Lts_6.1.git common
+          git clone --depth=1 https://github.com/Bosyaf/6.1.git common
   
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
@@ -230,7 +230,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
+          ###./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
                   
           # -----------------------------------------------------
