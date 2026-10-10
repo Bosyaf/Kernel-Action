@@ -1,4 +1,4 @@
-name: Build Kernel
+name: Build Kernel (gki_defconfig)
 
 on:
   workflow_dispatch:
@@ -13,6 +13,11 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+
+    env:
+      KERNEL_DIR: ${{ github.workspace }}/kernel_source
+      TOOLCHAIN_DIR: ${{ github.workspace }}/toolchains/clang-17.0.2
+      CLANG_URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.2/clang%2Bllvm-17.0.2-x86_64-linux-gnu-ubuntu-22.04.tar.xz
 
     steps:
       - name: Install Dependencies
@@ -36,21 +41,81 @@ jobs:
       - name: Restore Clang Cache
         uses: actions/cache@v4
         with:
-          path: toolchains/clang-1
-          key: aosp-clang-r487747c-linux-x86-64-v1
+          path: toolchains/clang-17.0.2
+          key: llvm-clang-17.0.2-ubuntu-22.04-v1
+
+      - name: Install LLVM 17.0.2
+        run: |
+          if [ ! -x "$TOOLCHAIN_DIR/bin/clang" ] || \
+             [ ! -x "$TOOLCHAIN_DIR/bin/ld.lld" ]; then
+            mkdir -p "$TOOLCHAIN_DIR"
+            wget -O /tmp/clang.tar.xz "$CLANG_URL"
+            tar -xJf /tmp/clang.tar.xz \
+              --strip-components=1 -C "$TOOLCHAIN_DIR"
+            rm -f /tmp/clang.tar.xz
+          fi
+
+          "$TOOLCHAIN_DIR/bin/clang" --version
+          "$TOOLCHAIN_DIR/bin/ld.lld" --version
+
+      - name: Configure gki_defconfig
+        working-directory: kernel_source
+        run: |
+          export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
 
       - name: Build Kernel
         working-directory: kernel_source
         run: |
-          chmod +x build_kernel.sh
-          bash -n build_kernel.sh
-          ./build_kernel.sh
+          export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+          export CC="$TOOLCHAIN_DIR/bin/clang"
+          export LD="$TOOLCHAIN_DIR/bin/ld.lld"
+          export HOSTCC="$TOOLCHAIN_DIR/bin/clang"
+          export HOSTCXX="$TOOLCHAIN_DIR/bin/clang++"
 
-      - name: Upload Kernel ZIP
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="$CC" LD="$LD" \
+            HOSTCC="$HOSTCC" HOSTCXX="$HOSTCXX"
+
+      - name: Package Kernel Image
+        working-directory: kernel_source
+        run: |
+          set -e
+          mkdir -p package
+          IMAGE_DIR="out/arch/arm64/boot"
+
+          if [ -f "$IMAGE_DIR/Image.gz-dtb" ]; then
+            cp "$IMAGE_DIR/Image.gz-dtb" package/
+          elif [ -f "$IMAGE_DIR/Image.gz" ]; then
+            cp "$IMAGE_DIR/Image.gz" package/
+          elif [ -f "$IMAGE_DIR/Image" ]; then
+            cp "$IMAGE_DIR/Image" package/
+          else
+            echo "Kernel Image bulunamadi!"
+            exit 1
+          fi
+
+          [ ! -f "$IMAGE_DIR/dtbo.img" ] || cp "$IMAGE_DIR/dtbo.img" package/
+          [ ! -f "$IMAGE_DIR/dt.img" ] || cp "$IMAGE_DIR/dt.img" package/
+
+          cd package
+          zip -r "../gki-kernel.zip" .
+
+      - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RealKing-Peridot-Kernel
-          path: kernel_source/RealKing-Peridot-*.zip
+          name: gki-kernel
+          path: kernel_source/gki-kernel.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
