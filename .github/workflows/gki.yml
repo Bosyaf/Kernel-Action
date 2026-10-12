@@ -214,7 +214,7 @@ jobs:
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -----------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -298,6 +298,7 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
+            -falign-functions=32 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
