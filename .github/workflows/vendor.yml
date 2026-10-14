@@ -24,6 +24,7 @@ jobs:
             libelf-dev libncurses-dev libssl-dev \
             lz4 make pahole perl python3 \
             rsync unzip wget zip zstd
+
       - name: Clone Kernel Source
         uses: actions/checkout@v4
         with:
@@ -44,6 +45,17 @@ jobs:
           chmod +x build_kernel.sh
           bash -n build_kernel.sh
           ./build_kernel.sh
+
+      # 📊 YENİ EKLENEN ADIM: Config Raporunu GitHub Artifact Olarak Yükler
+      - name: Upload Config Analysis Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Config-Analysis-Report
+          path: kernel_source/config_report.txt
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload Kernel ZIP
         uses: actions/upload-artifact@v4
         with:
