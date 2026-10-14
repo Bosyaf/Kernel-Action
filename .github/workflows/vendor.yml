@@ -27,7 +27,7 @@ jobs:
       - name: Clone Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: Bosyaf/bb
+          repository: Bosyaf/perf
           ref: main
           path: kernel_source
           fetch-depth: 1
