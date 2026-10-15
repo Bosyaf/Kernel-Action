@@ -48,7 +48,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Duchamp Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/perf.git common
+          git clone --depth=1 https://github.com/Bosyaf/msm-lts-6.1.git common
   
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
@@ -106,6 +106,31 @@ jobs:
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"
 
+      - name: 4. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart Yamalar Uygulanıyor..."
+          
+          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+            if [ -f "$patch_file" ]; then
+              filename=$(basename "$patch_file")
+              set +e 
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+              PATCH_STATUS=$?
+              set -e 
+              
+              if [ $PATCH_STATUS -eq 0 ]; then
+                echo "  ✅ $filename"
+              else
+                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+                cat patch_log.txt
+              fi
+              rm -f patch_log.txt
+            fi
+          done
+          
       - name: 3. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -183,7 +208,7 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" STRIP="llvm-strip" \
-            shen_gki_defconfig
+            houji_defconfig
           CONFIG_FILE="out/.config"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
@@ -191,6 +216,7 @@ jobs:
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -----------------------------------------------------
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -209,9 +235,21 @@ jobs:
           # -----------------------------------------------------
           # 3. PERFORMANS: PREEMPTION & THIN LTO 
           # -----------------------------------------------------     
+          # ============================================================
+          # CLANG THIN LTO ENTEGRASYONU
+          # ============================================================
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_SUPPORTS_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_ARCH_SUPPORTS_LTO_CLANG_THIN
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_HAS_LTO_CLANG
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
+
+          # Alternatifleri (None ve Full) ZORLA Kapatıyoruz:
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LTO_CLANG_FULL
+
+          # ThinLTO'yu ZORLA Açıyoruz:
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_LTO_CLANG_THIN
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_NONE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_PREEMPT_VOLUNTARY
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT
@@ -291,10 +329,6 @@ jobs:
             -Wno-format-extra-args \
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
-            -Wno-uninitialized-const-pointer \
-            -Wno-uninitialized \
-            -Wno-default-const-init-var-unsafe \
-            -Wno-default-const-init-field-unsafe"
             -Wno-address-of-packed-member" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
