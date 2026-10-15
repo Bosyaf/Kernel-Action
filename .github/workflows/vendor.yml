@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. Bazel Derlemesi İçin Disk Alanı Açma (20GB+ Gerekir)
+      # 1. Disk Alanı Açma
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -26,7 +26,7 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
 
-      # 2. Sistem Bağımlılıkları ve Java Kurulumu
+      # 2. Sistem Bağımlılıkları ve Java
       - name: Install Dependencies
         run: |
           sudo apt-get update
@@ -36,7 +36,15 @@ jobs:
             lz4 make openjdk-17-jdk pahole perl python3 \
             python3-pip rsync tar unzip wget zip zstd
 
-      # 3. Kernel Kaynağını Çekme (sched_ext Dalı)
+      # 3. Bazel (Bazelisk) İndirme ve 'tools/bazel' Konumuna Kurma
+      - name: Setup Bazel Binary
+        run: |
+          mkdir -p tools
+          curl -L -o tools/bazel https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64
+          chmod +x tools/bazel
+          echo "$(pwd)/tools" >> $GITHUB_PATH
+
+      # 4. Kernel Kaynağını Çekme
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
@@ -45,14 +53,14 @@ jobs:
           path: kernel_source
           fetch-depth: 1
 
-      # 4. Doğrudan build_with_bazel.py İle Derleme
+      # 5. build_with_bazel.py İle Derleme
       - name: Build Kernel with Bazel
         working-directory: kernel_source
         run: |
           chmod +x build_with_bazel.py
           python3 build_with_bazel.py -t pineapple gki --log info
 
-      # 5. Derlenen Çıktıları (Image ve .ko Modülleri) Zip Yapma
+      # 6. Derlenen Çıktıları Paketleme
       - name: Prepare Artifacts
         if: always()
         run: |
@@ -61,7 +69,7 @@ jobs:
           cd dist_output
           zip -r9 ../Kernel-SM8650-Output.zip ./* || true
 
-      # 6. Artifact Olarak İndirmeye Sunma
+      # 7. Artifact Yükleme
       - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
