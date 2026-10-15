@@ -314,6 +314,10 @@ jobs:
             -Wno-format-extra-args \
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
+            -Wno-uninitialized-const-pointer \
+            -Wno-uninitialized \
+            -Wno-default-const-init-var-unsafe \
+            -Wno-default-const-init-field-unsafe"
             -Wno-address-of-packed-member" \
             KLDFLAGS="-Wl,--gc-sections \
             -Wl,--as-needed \
@@ -321,7 +325,7 @@ jobs:
             -Wl,--icf=safe \
             -Wl,--no-warnings \
             -Wl,-O2" \
-            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+            Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
