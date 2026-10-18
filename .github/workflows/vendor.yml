@@ -12,8 +12,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
-
+    timeout-minutes: 420
+    env:
+      KBUILD_BUILD_USER: "bos"
+      KBUILD_BUILD_HOST: "yaf"
+      
     steps:
       - name: Install Dependencies
         run: |
