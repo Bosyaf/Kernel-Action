@@ -308,7 +308,9 @@ jobs:
             -Wl,--strip-debug \
             -Wl,--icf=safe \
             -Wl,--no-warnings \
-            -Wl,-O2" \
+            -Wl,-O2 \
+            -Wl,--no-keep-memory \
+            -Wl,--threads=2" \
             Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
