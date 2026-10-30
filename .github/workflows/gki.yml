@@ -49,7 +49,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Duchamp Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/msm_android14-6.1.git common
+          git clone --depth=1 https://github.com/Bosyaf/aosp_lts.git common
   
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
@@ -106,7 +106,32 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"
-                
+
+      - name: 4. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart Yamalar Uygulanıyor..."
+          
+          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+            if [ -f "$patch_file" ]; then
+              filename=$(basename "$patch_file")
+              set +e 
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+              PATCH_STATUS=$?
+              set -e 
+              
+              if [ $PATCH_STATUS -eq 0 ]; then
+                echo "  ✅ $filename"
+              else
+                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+                cat patch_log.txt
+              fi
+              rm -f patch_log.txt
+            fi
+          done
+          
       - name: 3. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -194,10 +219,7 @@ jobs:
           # -------------------------------------------------------
           
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_OPLUS_CPU_FREQ_GOV_UAG
-          ./scripts/config --file $CONFIG_FILE --enable UAG_NONLINEAR_FREQ_CTL
-          ./scripts/config --file $CONFIG_FILE --enable OPLUS_UAG_USE_TL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
