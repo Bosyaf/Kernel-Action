@@ -1,3 +1,4 @@
+
 name: Build Kernel
 
 on:
@@ -13,10 +14,11 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 420
+
     env:
       KBUILD_BUILD_USER: "bos"
       KBUILD_BUILD_HOST: "yaf"
-      
+
     steps:
       - name: Install Dependencies
         run: |
@@ -26,43 +28,43 @@ jobs:
             device-tree-compiler flex gcc g++ git \
             libelf-dev libncurses-dev libssl-dev \
             lz4 make pahole perl python3 \
-            rsync unzip wget zip zstd
+            rsync unzip wget zip zstd p7zip-full
+
       - name: Clone Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: Bosyaf/ack
-          ref: main
+          repository: hoshikv/kernel_xiaomi_sm8635
+          ref: port-doze2
           path: kernel_source
           fetch-depth: 1
 
       - name: Restore Clang Cache
         uses: actions/cache@v4
         with:
-          path: toolchains/clang-1
-          key: aosp-clang-r487747c-linux-x86-64-v1
+          path: clang
+          key: clang-r547379-linux-x86-64-v1
 
       - name: Build Kernel
         working-directory: kernel_source
         run: |
-          chmod +x build_kernel.sh
-          bash -n build_kernel.sh
-          ./build_kernel.sh
-      # 📊 YENİ EKLENEN ADIM: Config Raporunu GitHub Artifact Olarak Yükler
-      - name: Upload Config Analysis Report
+          chmod +x build.sh
+          bash -n build.sh
+          bash -e ./build.sh
+
+      - name: Upload Kernel Config
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Config-Analysis-Report
-          path: kernel_source/config_report.txt
+          name: Kernel-Config
+          path: kernel_source/out/.config
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload Kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: RealKing-Peridot-Kernel
-          path: kernel_source/RealKing-Peridot-*.zip
+          name: Chidori-Kernel-SM8635
+          path: kernel_source/Chidori-Kernel-V1.9-peridot-*.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
-          
