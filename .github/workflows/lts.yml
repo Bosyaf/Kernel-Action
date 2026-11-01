@@ -265,7 +265,12 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-                         
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_SLEEP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_SLEEP_SMP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PM_AUTOSLEEP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_USERSPACE_AUTOSLEEP
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IDLE_INJECT
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------          
