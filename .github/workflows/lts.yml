@@ -271,6 +271,15 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_USERSPACE_AUTOSLEEP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_IDLE_INJECT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_LAZY_DEFAULT_OFF
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RSEQ
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_SUNXI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_HISI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_HRTICK
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_UNMAP_KERNEL_AT_EL0
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------          
