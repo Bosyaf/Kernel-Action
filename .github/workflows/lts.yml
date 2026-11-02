@@ -283,6 +283,14 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_SUSPEND_SKIP_SYNC
           ./scripts/config --file $CONFIG_FILE --set-val CONFIG_PM_WAKELOCKS_LIMIT 100
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_WAKELOCKS_GC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CPU_MITIGATIONS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_BLK_DEBUG_FS
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SLAB_MERGE_DEFAULT
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLAB_FREELIST_RANDOM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SLAB_FREELIST_HARDENED
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHUFFLE_PAGE_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CMA_DEBUGFS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DAMON
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------          
