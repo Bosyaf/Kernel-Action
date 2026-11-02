@@ -291,6 +291,66 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SHUFFLE_PAGE_ALLOCATOR
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_CMA_DEBUGFS
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_DAMON
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NET_SELFTESTS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PCIE_KIRIN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ALLOW_DEV_COREDUMP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEV_COREDUMP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_BLK_DEV_NVME
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SERIAL_SAMSUNG
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SERIAL_SPRD
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HW_RANDOM_HISI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HW_RANDOM_CN10K
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_POWER_RESET_HISI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HISI_THERMAL
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_EMULATION
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PID_IN_CONTEXTIDR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_KUNIT_DEBUGFS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DMABUF_SYSFS_STATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_MTK_GZVM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SURFACE_PLATFORMS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI3516CV300
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI3519
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI3559A
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI3660
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI3670
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI3798CV200
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_CLK_HI6220
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RESET_HISI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_STUB_CLK_HI6220
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_STUB_CLK_HI3660
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SUN4I_TIMER
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_FSL_ERRATUM_A008585
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HISILICON_ERRATUM_161010101
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HI3660_MBOX
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HI6220_MBOX
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SUN6I_MSGBOX
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IOMMU_DEFAULT_DMA_STRICT
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_IOMMU_DEFAULT_DMA_LAZY
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOC_BRCMSTB
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SUNXI_MBUS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SUNXI_SRAM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_ARCH_TEGRA_234_SOC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOC_TEGRA_FUSE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOC_TEGRA_PMC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOC_TEGRA_POWERGATE_BPMP
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SOC_TEGRA_CBB
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_TEGRA_MC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_HISILICON_IRQ_MBIGEN
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SUN6I_R_INTC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SUNXI_NMI_INTC
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RESET_SUNXI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_RESET_HI3660
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_COMMON_RESET_HI6220
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_LIBNVDIMM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_PRINT_QUOTA_WARNING
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_SECURITY_SELINUX_AVC_STATS
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_INIT_STACK_ALL_ZERO
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_INIT_STACK_NONE
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_INIT_ON_ALLOC_DEFAULT_ON
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_SHA1_ARM64_CE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_CRYPTO_AES_ARM64_CE_CCM
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_CRYPTO_DEV_ALLWINNER
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------          
