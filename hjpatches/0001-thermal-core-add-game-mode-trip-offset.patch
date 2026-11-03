@@ -1,5 +1,4 @@
 diff --git a/drivers/thermal/thermal_core.c b/drivers/thermal/thermal_core.c
-index 15e22342ba71..ce1340f4d2ac 100644
 --- a/drivers/thermal/thermal_core.c
 +++ b/drivers/thermal/thermal_core.c
 @@ -29,6 +29,14 @@
@@ -17,13 +16,14 @@ index 15e22342ba71..ce1340f4d2ac 100644
  static DEFINE_IDA(thermal_tz_ida);
  static DEFINE_IDA(thermal_cdev_ida);
  
-@@ -438,10 +446,18 @@ static void handle_thermal_trip(struct thermal_zone_device *tz, int trip)
- 			thermal_notify_tz_trip_down(tz->id, trip);
+@@ -372,11 +380,19 @@ static void handle_thermal_trip(struct thermal_zone_device *tz, int trip)
+ 			thermal_notify_tz_trip_down(tz->id, trip,
+ 						    tz->temperature);
  	}
  
 -	if (type == THERMAL_TRIP_CRITICAL || type == THERMAL_TRIP_HOT)
 +	if (type == THERMAL_TRIP_CRITICAL || type == THERMAL_TRIP_HOT) {
- 		handle_critical_trips(tz, trip, type);
+ 		handle_critical_trips(tz, trip, trip_temp, type);
 -	else
 +	} else if (READ_ONCE(game_mode)) {
 +		int off = clamp(READ_ONCE(game_offset_mc), 0, 10000);
@@ -35,6 +35,6 @@ index 15e22342ba71..ce1340f4d2ac 100644
 +	} else {
  		handle_non_critical_trips(tz, trip);
 +	}
- 	/*
- 	 * Alright, we handled this trip successfully.
- 	 * So, start monitoring again.
+ }
+ 
+ static void update_temperature(struct thermal_zone_device *tz)
