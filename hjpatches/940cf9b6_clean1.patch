@@ -3304,6 +3304,8 @@ index 0000000000000..e730e1e33deb1
 +#include <linux/cpu.h>
 +#include <linux/cpufreq.h>
 +#include <linux/sched.h>
++#include <linux/sched/cputime.h>
++#define MAX_CLUSTERS 4
 +#include <../kernel/sched/sched.h>
 +
 +#include <trace/events/sched.h>
