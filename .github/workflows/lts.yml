@@ -108,6 +108,31 @@ jobs:
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"
 
+      - name: 4. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart Yamalar Uygulanıyor..."
+          
+          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+            if [ -f "$patch_file" ]; then
+              filename=$(basename "$patch_file")
+              set +e 
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+              PATCH_STATUS=$?
+              set -e 
+              
+              if [ $PATCH_STATUS -eq 0 ]; then
+                echo "  ✅ $filename"
+              else
+                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+                cat patch_log.txt
+              fi
+              rm -f patch_log.txt
+            fi
+          done
+          
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -244,9 +269,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_USERSPACE_AUTOSLEEP
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_IDLE_INJECT
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_DEFAULT_ALL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_RCU_NOCB_CPU_CB_BOOST
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_RCU_LAZY_DEFAULT_OFF
+          
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
           # -----------------------------------------------------          
