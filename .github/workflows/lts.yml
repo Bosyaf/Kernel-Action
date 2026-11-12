@@ -49,7 +49,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/lineage-22.2.git common
+          git clone --depth=1 https://github.com/Bosyaf/myaosp.git common
 
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
@@ -219,17 +219,16 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" \
             READELF="llvm-readelf" STRIP="llvm-strip" \
-            houji_defconfig
+            gki_defconfig
             
           CONFIG_FILE="out/.config"
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off kmemleak=off debug_guardpage_minorder=0"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off debug_guardpage_minorder=0"
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_CMDLINE_EXTEND
           
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -------------------------------------------------------
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
-          ./scripts/config --file $CONFIG_FILE --module CONFIG_SCHED_WALT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_250
@@ -241,8 +240,8 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_NO_HZ_FULL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_STEP_WISE
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_GOV_POWER_ALLOCATOR
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
+          ./scripts/config --file $CONFIG_FILE --disable CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_THERMAL_DEFAULT_GOV_POWER_ALLOCATOR
           
           # -----------------------------------------------------
           # 3. PERFORMANS: PREEMPTION & THIN LTO 
@@ -266,9 +265,9 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_COUNT
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPTION
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_PREEMPT_BUILD
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_USERSPACE_AUTOSLEEP
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_IDLE_INJECT
+          ###./scripts/config --file $CONFIG_FILE --enable CONFIG_PM_USERSPACE_AUTOSLEEP
+          ###./scripts/config --file $CONFIG_FILE --enable CONFIG_WQ_POWER_EFFICIENT_DEFAULT
+          ###./scripts/config --file $CONFIG_FILE --disable CONFIG_IDLE_INJECT
           
           # -----------------------------------------------------
           # 4. GİZLİLİK, AĞ & DEBUG KAPATMA
@@ -308,7 +307,7 @@ jobs:
           # ==========================================================
           
           # Localversion
-          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Luthien"
+          ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-Mustafa"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
           sed -i 's/check_defconfig//' build.config.gki || true
           
@@ -333,6 +332,8 @@ jobs:
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
             -falign-functions=32 \
             -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
             -fno-stack-protector \
             -fno-unwind-tables \
             -fno-asynchronous-unwind-tables \
@@ -346,6 +347,12 @@ jobs:
             -Wno-constant-logical-operand \
             -Wno-unused-variable \
             -Wno-address-of-packed-member" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,--no-warnings \
+            -Wl,-O2" \
             Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
