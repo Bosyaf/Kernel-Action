@@ -34,7 +34,7 @@ jobs:
             libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils \
             rsync unzip dwarves bc cpio wget xz-utils make gcc-aarch64-linux-gnu \
             pkg-config zstd
-          - name: 1. Paketler ve Yuki Clang Çekimi
+      - name: 1. Paketler ve Yuki Clang Çekimi
         run: |
           sudo apt update -qq
           sudo apt install -y --no-install-recommends \
