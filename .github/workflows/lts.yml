@@ -32,21 +32,16 @@ jobs:
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             pkgconf-pkg-config zstd patch diffutils findutils \
             tar gzip bzip2 perl hostname which procps-ng sudo kmod
-
           echo "🔥 Sistemdeki GLIBC Sürümü:"
           ldd --version | head -n 1
-
           echo "🔥 Yuki Clang 24.0.0 kullanılıyor"
           pip3 install --break-system-packages -q curl_cffi
-
           python3 - << 'EOF'
           import os, time
           from curl_cffi import requests
           from curl_cffi.const import CurlHttpVersion
-
           url = "https://kota.klozz.dev/downloads/Yuki-Clang-24.0.0-0ea123d-20261113.tar.zst"
           out = "clang.tar.zst"
-
           for attempt in range(1, 15):
               pos = os.path.getsize(out) if os.path.exists(out) else 0
               headers = {"Range": f"bytes={pos}-"} if pos > 0 else {}
@@ -75,26 +70,21 @@ jobs:
           else:
               raise SystemExit("HATA: Clang indirilemedi!")
           EOF
-
           echo "Arşiv Çıkarılıyor..."
           mkdir -p /opt/clang-yuki
           tar --zstd -xf clang.tar.zst -C /opt/clang-yuki
           rm -f clang.tar.zst
-
           CLANG_BIN=$(find /opt/clang-yuki -type d -name "bin" | head -n 1)
           echo "$CLANG_BIN" >> "$GITHUB_PATH"
           echo "YUKI_BIN=$CLANG_BIN" >> "$GITHUB_ENV"
           echo "✅ Yuki Clang indirildi ve PATH'e eklendi: $CLANG_BIN"
-
           "$CLANG_BIN/clang" --version
-
       - name: 2. Kaynakları Çek
         run: |
           git config --global --add safe.directory '*'
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Kernel kaynağını "common" klasörüne çeker
           git clone --depth=1 https://github.com/Bosyaf/lineage-22.2.git common
-
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
           cd common
@@ -113,7 +103,6 @@ jobs:
           else
             echo "⚠️ [2/5] Patch dosyası bulunamadı, atlanıyor..."
           fi
-
       - name: 4. SUSFS4KSU Kurulumu ve Fixler
         run: |
           cd common
@@ -151,7 +140,6 @@ jobs:
           find . -name "*.rej" -delete 2>/dev/null || true
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"
-
       - name: 5. Standart Yamalar (hjpatches)
         run: |
           cd common
@@ -175,7 +163,6 @@ jobs:
               rm -f patch_log.txt
             fi
           done
-
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -214,7 +201,6 @@ jobs:
             fi
           done
           echo "✅ Cerrahi script döngüsü tamamlandı."
-
       - name: 7. Full Kernel Config & Derleme Hazırlığı
         run: |
           cd common
@@ -358,7 +344,6 @@ jobs:
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" \
             READELF="llvm-readelf" STRIP="llvm-strip" \
             olddefconfig
-
       - name: 8. Kernel Derleme (Yuki Clang 24)
         run: |
           cd common
@@ -394,27 +379,11 @@ jobs:
             -Wl,--icf=safe \
             -Wl,--no-warnings \
             -Wl,-O2" \
-            Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
-
       - name: 9. AnyKernel3 Paketleme
         run: |
           cd ./AnyKernel3
-          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
-          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
-          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
-          cp ../common/out/arch/arm64/boot/Image .
-          zip -r "../CG-Galadriel.zip" ./*
-          echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
-
-      - name: 10. Release Yükle
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.BOOTHASH }}
-          name: "CG+ Galadriel (Yuki Clang 24)"
-          files: "*.zip"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
