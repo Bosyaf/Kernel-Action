@@ -36,34 +36,50 @@ jobs:
             pkg-config zstd
 
           echo "🔥 Yuki Clang 24.0.0 kullanılıyor"
-          CLANG_URL="https://kota.klozz.dev/downloads/Yuki-Clang-24.0.0-0ea123d-20261113.tar.zst"
-          echo "Yuki Clang indiriliyor: $CLANG_URL"
+          pip3 install --break-system-packages -q curl_cffi
 
-          # 1. Deneme: Tarayıcı başlıkları (User-Agent + Referer) ile curl
-          if ! curl -fLSs -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
-               -e "https://kota.klozz.dev/downloads/" \
-               "$CLANG_URL" -o clang.tar.zst; then
-            echo "Düz curl 403 yedi, Chrome TLS taklidi (curl_cffi) deneniyor..."
-            pip3 install --break-system-packages -q curl_cffi
-            python3 -c "
+          python3 - << 'EOF'
+          import os, time
           from curl_cffi import requests
-          url = '$CLANG_URL'
-          r = requests.get(url, impersonate='chrome124', stream=True, timeout=300)
-          if r.status_code != 200:
-              raise SystemExit(f'HATA: Sunucu {r.status_code} döndürdü (GitHub IP engeli olabilir)!')
-          with open('clang.tar.zst', 'wb') as f:
-              for chunk in r.iter_content(chunk_size=1024*1024):
-                  if chunk:
-                      f.write(chunk)
-          "
-          fi
+          from curl_cffi.const import CurlHttpVersion
+
+          url = "https://kota.klozz.dev/downloads/Yuki-Clang-24.0.0-0ea123d-20261113.tar.zst"
+          out = "clang.tar.zst"
+
+          for attempt in range(1, 15):
+              pos = os.path.getsize(out) if os.path.exists(out) else 0
+              headers = {"Range": f"bytes={pos}-"} if pos > 0 else {}
+              print(f"İndirme denemesi {attempt} (Başlangıç: {pos // (1024*1024)} MB)...")
+              try:
+                  r = requests.get(
+                      url,
+                      impersonate="chrome124",
+                      http_version=CurlHttpVersion.V1_1,
+                      headers=headers,
+                      stream=True,
+                      timeout=120,
+                  )
+                  if r.status_code not in (200, 206):
+                      raise RuntimeError(f"HTTP {r.status_code}")
+                  mode = "ab" if r.status_code == 206 else "wb"
+                  with open(out, mode) as f:
+                      for chunk in r.iter_content(chunk_size=1024 * 1024):
+                          if chunk:
+                              f.write(chunk)
+                  print("✅ İndirme başarıyla tamamlandı!")
+                  break
+              except Exception as e:
+                  print(f"Bağlantı kesildi ({e}), 3 sn sonra kaldığı yerden devam ediyor...")
+                  time.sleep(3)
+          else:
+              raise SystemExit("HATA: Clang indirilemedi!")
+          EOF
 
           echo "Arşiv Çıkarılıyor..."
           mkdir -p "$GITHUB_WORKSPACE/clang-yuki"
           tar --zstd -xf clang.tar.zst -C "$GITHUB_WORKSPACE/clang-yuki"
           rm -f clang.tar.zst
 
-          # bin klasörü alt klasörde olsa bile otomatik bulup PATH'e ekle
           CLANG_BIN=$(find "$GITHUB_WORKSPACE/clang-yuki" -type d -name "bin" | head -n 1)
           echo "$CLANG_BIN" >> "$GITHUB_PATH"
           echo "✅ Yuki Clang indirildi ve PATH'e eklendi: $CLANG_BIN"
