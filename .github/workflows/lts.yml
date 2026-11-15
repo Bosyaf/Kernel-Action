@@ -23,18 +23,8 @@ jobs:
         uses: actions/checkout@v4
 
       
-      - name: Yuki Clang 24.0.0 Cache
-        id: yuki-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/yuki-clang-24
-          key: yuki-clang-24-0ea123d-20261113
-
       - name: 1. Paketler ve Yuki Clang Çekimi (Fedora Rawhide)
-        shell: bash
         run: |
-          set -euo pipefail
-
           dnf install -y --setopt=install_weak_deps=False \
             python3 python3-pip git curl elfutils-libelf-devel \
             gcc gcc-c++ make glibc-devel binutils flex bison \
@@ -43,129 +33,54 @@ jobs:
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             pkgconf-pkg-config zstd patch diffutils findutils \
             tar gzip bzip2 perl hostname which procps-ng sudo kmod
-
           echo "🔥 Sistemdeki GLIBC Sürümü:"
           ldd --version | head -n 1
-
-          YUKI_ROOT="$HOME/.cache/yuki-clang-24"
-          URL="https://kota.klozz.dev/downloads/Yuki-Clang-24.0.0-0ea123d-20261113.tar.zst"
-
-          mkdir -p "$YUKI_ROOT"
-
-          if [ "${{ steps.yuki-cache.outputs.cache-hit }}" = "true" ] && \
-             find "$YUKI_ROOT" -name clang -executable -print -quit | grep -q .; then
-            echo "✅ Yuki Clang 24.0.0 önbellekten alındı."
-          else
-            echo "⬇️ Yuki Clang 24.0.0 indiriliyor..."
-
-            pip3 install --break-system-packages -q curl_cffi
-
-            python3 - << 'PY'
-          import os
-          import time
+          echo "🔥 Yuki Clang 24.0.0 kullanılıyor"
+          pip3 install --break-system-packages -q curl_cffi
+          python3 - << 'EOF'
+          import os, time
           from curl_cffi import requests
           from curl_cffi.const import CurlHttpVersion
-
           url = "https://kota.klozz.dev/downloads/Yuki-Clang-24.0.0-0ea123d-20261113.tar.zst"
           out = "clang.tar.zst"
-
           for attempt in range(1, 15):
               pos = os.path.getsize(out) if os.path.exists(out) else 0
-              headers = {"Range": f"bytes={pos}-"} if pos else {}
-
+              headers = {"Range": f"bytes={pos}-"} if pos > 0 else {}
               print(f"İndirme denemesi {attempt} (Başlangıç: {pos // (1024*1024)} MB)...")
-
               try:
-                  with requests.get(
+                  r = requests.get(
                       url,
                       impersonate="chrome124",
                       http_version=CurlHttpVersion.V1_1,
                       headers=headers,
                       stream=True,
                       timeout=120,
-                  ) as r:
-                      if r.status_code not in (200, 206):
-                          raise RuntimeError(f"HTTP {r.status_code}")
-
-                      if pos and r.status_code == 206:
-                          content_range = r.headers.get("Content-Range", "")
-                          if not content_range.startswith(f"bytes {pos}-"):
-                              raise RuntimeError(f"Geçersiz Content-Range: {content_range}")
-                          mode = "ab"
-                      else:
-                          mode = "wb"
-
-                      with open(out, mode) as f:
-                          for chunk in r.iter_content(chunk_size=1024 * 1024):
-                              if chunk:
-                                  f.write(chunk)
-
-                  print("✅ İndirme tamamlandı!")
+                  )
+                  if r.status_code not in (200, 206):
+                      raise RuntimeError(f"HTTP {r.status_code}")
+                  mode = "ab" if r.status_code == 206 else "wb"
+                  with open(out, mode) as f:
+                      for chunk in r.iter_content(chunk_size=1024 * 1024):
+                          if chunk:
+                              f.write(chunk)
+                  print("✅ İndirme başarıyla tamamlandı!")
                   break
-
               except Exception as e:
-                  print(f"Bağlantı kesildi: {e}")
-                  if attempt == 14:
-                      raise
+                  print(f"Bağlantı kesildi ({e}), 3 sn sonra kaldığı yerden devam ediyor...")
                   time.sleep(3)
           else:
-              raise SystemExit("Clang indirilemedi!")
-          PY
-
-            echo "🔍 Arşiv kontrol ediliyor..."
-            zstd -t clang.tar.zst
-
-            echo "📦 Arşiv çıkarılıyor..."
-            tar --zstd -xf clang.tar.zst -C "$YUKI_ROOT"
-            rm -f clang.tar.zst
-          fi
-
-          echo "🔍 Gerçek Clang dizini bulunuyor..."
-
-          CLANG_EXEC=""
-
-          while IFS= read -r candidate; do
-            case "$candidate" in
-              */riscv64-linux-gnu/bin/clang|*/aarch64-linux-gnu/bin/clang)
-                continue
-                ;;
-            esac
-
-            candidate_dir="$(dirname "$candidate")"
-
-            if [ -x "$candidate_dir/clang++" ] && \
-               [ -x "$candidate_dir/ld.lld" ]; then
-              CLANG_EXEC="$candidate"
-              break
-            fi
-          done < <(find "$YUKI_ROOT" -name clang -executable -print)
-
-          if [ -z "$CLANG_EXEC" ]; then
-            echo "❌ Uygun Clang dizini bulunamadı!"
-            echo "Bulunan clang dosyaları:"
-            find "$YUKI_ROOT" -name clang -print
-            echo "Dizin yapısı:"
-            find "$YUKI_ROOT" -maxdepth 4 -type d
-            exit 1
-          fi
-
-          CLANG_BIN="$(dirname "$CLANG_EXEC")"
-
+              raise SystemExit("HATA: Clang indirilemedi!")
+          EOF
+          echo "Arşiv Çıkarılıyor..."
+          mkdir -p /opt/clang-yuki
+          tar --zstd -xf clang.tar.zst -C /opt/clang-yuki
+          rm -f clang.tar.zst
+          CLANG_BIN="/opt/clang-yuki/bin"
           echo "$CLANG_BIN" >> "$GITHUB_PATH"
           echo "YUKI_BIN=$CLANG_BIN" >> "$GITHUB_ENV"
+          echo "✅ Yuki Clang indirildi ve PATH'e eklendi: $CLANG_BIN"
 
-          echo "✅ Yuki Clang dizini: $CLANG_BIN"
-          echo "🔥 Clang sürümü:"
-          "$CLANG_EXEC" --version
-
-          echo "🔍 LLVM araçları:"
-          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip; do
-            if [ -x "$CLANG_BIN/$tool" ]; then
-              echo "✅ $tool"
-            else
-              echo "⚠️ $tool bulunamadı"
-            fi
-          done
+          "$CLANG_BIN/clang" --version
 
       - name: 2. Kaynakları Çek
         run: |
