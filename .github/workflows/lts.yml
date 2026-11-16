@@ -42,70 +42,97 @@ jobs:
       - name: 2. Checkout
         uses: actions/checkout@v4
 
-      - name: 3. Yuki Clang 24 parçalarını indir, birleştir ve aç
+      - name: 3. Yuki Clang 24 indir, doğrula ve aç
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
           TAG="yuki-clang-24.0.0-0ea123d-20261113"
           ARCHIVE="Yuki-Clang-24.0.0-0ea123d-20261113.tar.zst"
+          BASE_URL="https://github.com/Bosyaf/cg/releases/download/${TAG}"
+          DOWNLOAD_DIR="$RUNNER_TEMP/yuki-clang"
+          INSTALL_DIR="/opt/clang-yuki"
+
           PART0="${ARCHIVE}.part-00"
           PART1="${ARCHIVE}.part-01"
           CHECKSUM="${ARCHIVE}.sha256"
-          BASE_URL="https://github.com/Bosyaf/cg/releases/download/${TAG}"
-          DOWNLOAD_DIR="$RUNNER_TEMP/yuki-clang"
 
           mkdir -p "$DOWNLOAD_DIR"
           cd "$DOWNLOAD_DIR"
 
-          echo "Yuki Clang Release dosyaları indiriliyor..."
-          for asset in "$PART0" "$PART1" "$CHECKSUM"; do
+          download_asset() {
+            local asset="$1"
+            local output="$2"
+
             echo "İndiriliyor: $asset"
-            curl --fail --location --silent --show-error --http1.1 \
-              --retry 10 --retry-all-errors --retry-delay 5 \
-              --connect-timeout 30 --continue-at - \
-              --output "$asset" \
-              "$BASE_URL/$asset"
-          done
+            curl --fail --location --show-error --http1.1 \
+              --retry 12 --retry-all-errors --retry-delay 5 \
+              --connect-timeout 30 --max-time 0 \
+              --continue-at - \
+              --output "$output" \
+              "${BASE_URL}/${asset}"
 
-          test -s "$PART0"
-          test -s "$PART1"
-          test -s "$CHECKSUM"
+            test -s "$output" || {
+              echo "HATA: $asset indirilemedi veya boş."
+              exit 1
+            }
+          }
 
-          echo "İki parça tek arşiv hâline getiriliyor..."
+          # GitHub Release asset adları büyük/küçük harfe duyarlıdır.
+          download_asset "$PART0" "$PART0"
+          download_asset "$PART1" "$PART1"
+          download_asset "$CHECKSUM" "$CHECKSUM"
+
+          echo "İndirilen dosyalar:"
+          ls -lh "$PART0" "$PART1" "$CHECKSUM"
+
+          echo "Parçalar birleştiriliyor..."
           cat "$PART0" "$PART1" > "$ARCHIVE"
+          test -s "$ARCHIVE"
 
-          echo "SHA256 doğrulaması yapılıyor..."
-          sha256sum --check "$CHECKSUM"
+          echo "SHA256 doğrulanıyor..."
+          EXPECTED_SHA="$(awk 'NR==1 {print $1}' "$CHECKSUM")"
+          if [[ ! "$EXPECTED_SHA" =~ ^[a-fA-F0-9]{64}$ ]]; then
+            echo "HATA: SHA256 dosyası geçersiz:"
+            cat "$CHECKSUM"
+            exit 1
+          fi
+          echo "${EXPECTED_SHA}  ${ARCHIVE}" | sha256sum --check -
 
-          echo "Zstandard arşivi kontrol ediliyor..."
+          echo "Zstandard arşivi test ediliyor..."
           zstd -t "$ARCHIVE"
 
-          # Parçalar doğrulandı; disk alanı açmak için artık silinebilir.
-          rm -f "$PART0" "$PART1" "$CHECKSUM"
+          echo "Arşiv açılıyor..."
+          rm -rf "$INSTALL_DIR"
+          mkdir -p "$INSTALL_DIR"
+          tar --use-compress-program=zstd -xf "$ARCHIVE" -C "$INSTALL_DIR"
 
-          echo "Arşiv /opt/clang-yuki içine açılıyor..."
-          mkdir -p /opt/clang-yuki
-          tar --zstd -xf "$ARCHIVE" -C /opt/clang-yuki
-          rm -f "$ARCHIVE"
-
-          YUKI_BIN="/opt/clang-yuki/bin"
-
-          if [ ! -x "$YUKI_BIN/clang" ]; then
-            echo "❌ $YUKI_BIN/clang bulunamadı veya çalıştırılabilir değil!"
-            find /opt/clang-yuki -maxdepth 4 -name clang -type f
+          echo "Arşiv içindeki derleyici aranıyor..."
+          CLANG_PATH="$(find "$INSTALL_DIR" -type f -name clang -perm /111 -print -quit)"
+          if [[ -z "$CLANG_PATH" ]]; then
+            echo "HATA: Arşiv açıldı ama çalıştırılabilir clang bulunamadı."
+            find "$INSTALL_DIR" -maxdepth 5 -type f | head -n 100
             exit 1
           fi
 
-          if [ ! -x "$YUKI_BIN/ld.lld" ]; then
-            echo "❌ $YUKI_BIN/ld.lld bulunamadı!"
-            exit 1
-          fi
+          YUKI_BIN="$(dirname "$CLANG_PATH")"
+          for tool in clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
+            if [[ ! -x "$YUKI_BIN/$tool" ]]; then
+              echo "HATA: Gerekli araç bulunamadı: $YUKI_BIN/$tool"
+              find "$INSTALL_DIR" -type f \( -name "$tool" -o -name clang \) -print
+              exit 1
+            fi
+          done
 
           echo "$YUKI_BIN" >> "$GITHUB_PATH"
           echo "YUKI_BIN=$YUKI_BIN" >> "$GITHUB_ENV"
 
-          echo "✅ Kullanılacak derleyici:"
+          echo "Clang yolu: $YUKI_BIN"
           "$YUKI_BIN/clang" --version
+          "$YUKI_BIN/ld.lld" --version
+
+          rm -f "$PART0" "$PART1" "$CHECKSUM" "$ARCHIVE"
+          echo "Yuki Clang 24 başarıyla indirildi, doğrulandı ve açıldı."
+
 
       - name: 4. Kaynakları çek
         run: |
