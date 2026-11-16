@@ -37,7 +37,7 @@ jobs:
           rm -rf /var/cache/dnf
 
           echo "🔍 Fedora GLIBC sürümü:"
-          ldd --version | head -n 1
+          ldd --version | sed -n '1p'
 
       - name: 2. Checkout
         uses: actions/checkout@v4
