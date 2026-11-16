@@ -118,7 +118,7 @@ jobs:
           for tool in clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
             if [[ ! -x "$YUKI_BIN/$tool" ]]; then
               echo "HATA: Gerekli araç bulunamadı: $YUKI_BIN/$tool"
-              find "$INSTALL_DIR" -type f \( -name "$tool" -o -name clang \) -print
+              find "$INSTALL_DIR" -maxdepth 5 -type f -print | sed -n '1,100p'
               exit 1
             fi
           done
