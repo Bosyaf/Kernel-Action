@@ -82,34 +82,68 @@ jobs:
           make O=out olddefconfig
 
       - name: Kernel Derle (Yuki Clang 24)
-        env:
-          PATH: /opt/clang-yuki/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          ARCH: arm64
-          LLVM: 1
-          LLVM_IAS: 1
-          CC: /opt/clang-yuki/bin/clang
-          LD: /opt/clang-yuki/bin/ld.lld
-          AR: /opt/clang-yuki/bin/llvm-ar
-          NM: /opt/clang-yuki/bin/llvm-nm
-          OBJCOPY: /opt/clang-yuki/bin/llvm-objcopy
-          OBJDUMP: /opt/clang-yuki/bin/llvm-objdump
-          READELF: /opt/clang-yuki/bin/llvm-readelf
-          STRIP: /opt/clang-yuki/bin/llvm-strip
-          HOSTCC: /opt/clang-yuki/bin/clang
-          HOSTCXX: /opt/clang-yuki/bin/clang++
         run: |
           cd common
-          make -j$(nproc --all) O=out Image.gz
-
-      - name: AnyKernel3 Paketle
+          export PATH="/opt/clang-yuki/bin:$PATH"
+          BUILD_START=$(date +%s)
+          
+          make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC="/opt/clang-yuki/bin/clang" \
+            LD="/opt/clang-yuki/bin/ld.lld" \
+            HOSTCC="/opt/clang-yuki/bin/clang" \
+            HOSTCXX="/opt/clang-yuki/bin/clang++" \
+            HOSTLD="/opt/clang-yuki/bin/ld.lld" \
+            AR="/opt/clang-yuki/bin/llvm-ar" \
+            NM="/opt/clang-yuki/bin/llvm-nm" \
+            OBJCOPY="/opt/clang-yuki/bin/llvm-objcopy" \
+            OBJDUMP="/opt/clang-yuki/bin/llvm-objdump" \
+            READELF="/opt/clang-yuki/bin/llvm-readelf" \
+            STRIP="/opt/clang-yuki/bin/llvm-strip" \
+            KCFLAGS="-O2 \
+            -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
+            -falign-functions=32 \
+            -fomit-frame-pointer \
+            -ffunction-sections \
+            -fdata-sections \
+            -fno-stack-protector \
+            -fno-unwind-tables \
+            -fno-asynchronous-unwind-tables \
+            -fno-math-errno \
+            -fno-semantic-interposition \
+            -Wno-unsequenced \
+            -Wno-frame-larger-than \
+            -Wno-unused-command-line-argument \
+            -Wno-error \
+            -Wno-format \
+            -Wno-format-extra-args \
+            -Wno-constant-logical-operand \
+            -Wno-unused-variable \
+            -Wno-address-of-packed-member" \
+            KLDFLAGS="-Wl,--gc-sections \
+            -Wl,--as-needed \
+            -Wl,--strip-debug \
+            -Wl,--icf=safe \
+            -Wl,--no-warnings \
+            -Wl,-O2" \
+            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
+           IMAGE_TIME=$(($(date +%s) - BUILD_START))
+          echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
+          echo "BOOTHASH=Nimrodel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
+      - name: 9. AnyKernel3 Paketleme
         run: |
-          git clone --depth=1 https://github.com/Bosyaf/AnyKernel3.git ak3
-          cp common/out/arch/arm64/boot/Image.gz ak3/
-          cd ak3
-          zip -r9 ../Xiaomi14-YukiClang-Kernel.zip * -x .git README.md
-
-      - name: Zipli Kernel Artefaktını Yükle
-        uses: actions/upload-artifact@v4
+          cd ./AnyKernel3
+          sed -i 's/kernel.string=.*/kernel.string=CG+ Galadriel Kernel/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' anykernel.sh
+          sed -i 's/is_slot_device=0/is_slot_device=auto/' anykernel.sh
+          sed -i '/is_slot_device=auto/a device.name1=houji\ndevice.name2=shennong\ndevice.name3=aurora\ndevice.name4=xiaomi14' anykernel.sh
+          cp ../common/out/arch/arm64/boot/Image .
+          zip -r "../CG-Galadriel.zip" ./*
+          echo "📦 Paket boyutu: $(du -h ../CG-Galadriel.zip | cut -f1)"
+      - name: 10. Release Yükle
+        uses: softprops/action-gh-release@v2
         with:
-          name: Xiaomi14-YukiClang-Kernel
-          path: Xiaomi14-YukiClang-Kernel.zip
+          tag_name: ${{ env.BOOTHASH }}
+          name: "CG+ Galadriel (ZyC Clang 22)"
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
