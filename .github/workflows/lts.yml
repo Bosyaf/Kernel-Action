@@ -108,7 +108,6 @@ jobs:
       - name: 5. Standart Yamalar (hjpatches)
         run: |
           cd common
-          make O=out custom_defconfig
           PATCH_DIR="../hjpatches"
           echo "🚀 Standart Yamalar Uygulanıyor..."
           
@@ -117,7 +116,7 @@ jobs:
             if [ -f "$patch_file" ]; then
               filename=$(basename "$patch_file")
               set +e 
-              patch -p1 --fuzz=1 < "$patch_file" > patch_log.txt 2>&1
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
               PATCH_STATUS=$?
               set -e 
               
