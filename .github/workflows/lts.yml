@@ -75,29 +75,6 @@ jobs:
           echo "📦 SUSFS dosyaları kopyalanıyor..."
           cp -R susfs4ksu/kernel_patches/fs/* ./fs/
           cp -R susfs4ksu/kernel_patches/include/* ./include/
-          
-          echo "🔧 SUSFS header bağımlılıkları düzeltiliyor..."
-
-          HEADER="include/linux/susfs_def.h"
-
-          if [ -f "$HEADER" ]; then
-            if ! grep -q '#include <linux/cred.h>' "$HEADER"; then
-              sed -i '1a #include <linux/cred.h>' "$HEADER"
-            fi
-            echo "✅ susfs_def.h: cred.h bağlantısı kontrol edildi!"
-          else
-            echo "❌ susfs_def.h bulunamadı!"
-            exit 1
-          fi
-
-          echo "🔧 base.c SUSFS header bağlantısı kontrol ediliyor..."
-
-          if ! grep -q '#include <linux/susfs_def.h>' fs/proc/base.c; then
-            sed -i '/#include <linux\/uaccess.h>/a #include <linux/susfs_def.h>' fs/proc/base.c
-          fi
-
-          echo "✅ SUSFS header bağlantıları tamamlandı!"
-
           echo "✅ [3/5] SUSFS dosyaları kopyalandı!"
           echo "📦 [3.1/5] Ana SUSFS patch uygulanıyor..."
           SUSFS_PATCH=$(ls susfs4ksu/kernel_patches/50_add_susfs*.patch 2>/dev/null | head -1)
