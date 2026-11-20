@@ -48,7 +48,7 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/special.git common
+          git clone --depth=1 https://github.com/Bosyaf/ext.git common
       - name: 3. KernelSU-Next & Multi-Manager Desteği
         run: |
           cd common
@@ -105,31 +105,6 @@ jobs:
           rm -rf susfs4ksu
           echo "🎉 Tüm adımlar tamamlandı!"     
           
-      - name: 5. Standart Yamalar (hjpatches)
-        run: |
-          cd common
-          PATCH_DIR="../hjpatches"
-          echo "🚀 Standart Yamalar Uygulanıyor..."
-          
-          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
-          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
-            if [ -f "$patch_file" ]; then
-              filename=$(basename "$patch_file")
-              set +e 
-              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
-              PATCH_STATUS=$?
-              set -e 
-              
-              if [ $PATCH_STATUS -eq 0 ]; then
-                echo "  ✅ $filename"
-              else
-                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
-                cat patch_log.txt
-              fi
-              rm -f patch_log.txt
-            fi
-          done
-             
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -215,7 +190,7 @@ jobs:
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" \
             READELF="llvm-readelf" STRIP="llvm-strip" \
-            custom_defconfig
+            shennong_defconfig
             
           CONFIG_FILE="out/.config"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off debug_guardpage_minorder=0"
@@ -224,7 +199,7 @@ jobs:
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -------------------------------------------------------
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+          ##./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
