@@ -48,8 +48,32 @@ jobs:
         run: |
           git clone https://github.com/Bosyaf/AnyKernel3.git --depth 1 AnyKernel3
           # GKI Kernel kaynağını "common" klasörüne çeker
-          git clone --depth=1 https://github.com/Bosyaf/kernel_common_android14-6.1.git common
-            
+          git clone --depth=1 https://github.com/Bosyaf/msm_android14-6.1.git common
+      - name: 4. Standart Yamalar (hjpatches)
+        run: |
+          cd common
+          PATCH_DIR="../hjpatches"
+          echo "🚀 Standart Yamalar Uygulanıyor..."
+          
+          # Hata fırlatmaması için ufak güvenlik denetimi eklendi
+          for patch_file in $(ls "$PATCH_DIR"/*.patch 2>/dev/null | sort); do
+            if [ -f "$patch_file" ]; then
+              filename=$(basename "$patch_file")
+              set +e 
+              patch -p1 --fuzz=0 < "$patch_file" > patch_log.txt 2>&1
+              PATCH_STATUS=$?
+              set -e 
+              
+              if [ $PATCH_STATUS -eq 0 ]; then
+                echo "  ✅ $filename"
+              else
+                echo "  ❌ $filename UYGULANAMADI! Hata logu:"
+                cat patch_log.txt
+              fi
+              rm -f patch_log.txt
+            fi
+          done
+          
       - name: 6. Cerrahi Scriptler (hjshpy)
         run: |
           cd common
@@ -144,7 +168,7 @@ jobs:
           # -----------------------------------------------------
           # 2. ZAMANLAYICI & GÜÇ (HZ 300, BORE, THERMAL)
           # -------------------------------------------------------
-          ##./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_SCHED_BORE
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_CLUSTER
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_SCHED_SMT
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_HZ_100
@@ -222,7 +246,7 @@ jobs:
             READELF="llvm-readelf" STRIP="llvm-strip" \
             KCFLAGS="-O2 \
             -march=armv9.2-a+crypto+crc+dotprod+rcpc+lse+sha3 \
-            -falign-functions=32 \
+            -falign-functions=16 \
             -fomit-frame-pointer \
             -ffunction-sections \
             -fdata-sections \
@@ -245,7 +269,7 @@ jobs:
             -Wl,--icf=safe \
             -Wl,--no-warnings \
             -Wl,-O2" \
-            Image modules || { echo "❌ Image derleme HATASI!"; exit 1; }
+            Image || { echo "❌ Image derleme HATASI!"; exit 1; }
           IMAGE_TIME=$(($(date +%s) - BUILD_START))
           echo "✅ Image derleme süresi: $((IMAGE_TIME/60)) dakika $((IMAGE_TIME%60)) saniye"
           echo "BOOTHASH=Galadriel-$(date +%s%N | cut -c1-10)" >> $GITHUB_ENV
