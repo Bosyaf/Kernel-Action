@@ -1,0 +1,29 @@
+diff --git a/kernel/futex/waitwake.c b/kernel/futex/waitwake.c
+index 0d02bbcaa..b426d0210 100644
+--- a/kernel/futex/waitwake.c
++++ b/kernel/futex/waitwake.c
+@@ -4,6 +4,10 @@
+ #include <linux/sched/signal.h>
+ #include <linux/freezer.h>
+ 
++#ifdef CONFIG_SCHED_BORE
++#include <linux/sched/bore.h>
++#endif
++
+ #include "futex.h"
+ #include <trace/hooks/futex.h>
+ 
+@@ -358,7 +362,13 @@ void futex_wait_queue(struct futex_hash_bucket *hb, struct futex_q *q,
+ 		 */
+ 		if (!timeout || timeout->task) {
+ 			trace_android_vh_futex_sleep_start(current);
++#ifdef CONFIG_SCHED_BORE
++			current->bore_ms.futex_waiting = true;
++#endif
+ 			schedule();
++#ifdef CONFIG_SCHED_BORE
++			current->bore_ms.futex_waiting = false;
++#endif
+ 		}
+ 	}
+ 	__set_current_state(TASK_RUNNING);

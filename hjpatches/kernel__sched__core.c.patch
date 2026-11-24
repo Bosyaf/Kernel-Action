@@ -1,0 +1,38 @@
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 730dbc6b5..95ab146eb 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -95,6 +95,10 @@
+ #include "../../io_uring/io-wq.h"
+ #include "../smpboot.h"
+ 
++#ifdef CONFIG_SCHED_BORE
++#include <linux/sched/bore.h>
++#endif
++
+ #include <trace/hooks/sched.h>
+ #include <trace/hooks/dtask.h>
+ #include <trace/hooks/cgroup.h>
+@@ -1295,7 +1299,11 @@ int tg_nop(struct task_group *tg, void *data)
+ 
+ static void set_load_weight(struct task_struct *p, bool update_load)
+ {
++#ifdef CONFIG_SCHED_BORE
++	int prio = effective_prio_bore(p);
++#else
+ 	int prio = p->static_prio - MAX_RT_PRIO;
++#endif
+ 	struct load_weight *load = &p->se.load;
+ 
+ 	/*
+@@ -9970,6 +9978,10 @@ void __init sched_init(void)
+ 	BUG_ON(&dl_sched_class != &stop_sched_class + 1);
+ #endif
+ 
++#ifdef CONFIG_SCHED_BORE
++	sched_init_bore();
++#endif
++
+ 	wait_bit_init();
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED

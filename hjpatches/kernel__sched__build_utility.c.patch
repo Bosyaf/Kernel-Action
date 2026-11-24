@@ -1,0 +1,15 @@
+diff --git a/kernel/sched/build_utility.c b/kernel/sched/build_utility.c
+index 99bdd96f4..f2a86474b 100644
+--- a/kernel/sched/build_utility.c
++++ b/kernel/sched/build_utility.c
+@@ -55,6 +55,10 @@
+ #include "stats.h"
+ #include "autogroup.h"
+ 
++#ifdef CONFIG_SCHED_BORE
++#include <linux/sched/bore.h>
++#endif
++
+ #include "clock.c"
+ 
+ #ifdef CONFIG_CGROUP_CPUACCT
