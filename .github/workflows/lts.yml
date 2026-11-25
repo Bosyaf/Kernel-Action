@@ -183,38 +183,13 @@ jobs:
           chmod -R +x scripts/
           mkdir -p out
           [ -x ./scripts/config ] || chmod +x ./scripts/config || true
-          
-          # ThinLTO'nun olddefconfig tarafından sıfırlanmasını engeller
-          find . -name "Kconfig*" -exec sed -i 's/default LTO_NONE/default LTO_CLANG_THIN/g' {} + || true
-          
-          # Ağ Ayarları Mühürlemesi (TCP BBR3 & FQ)
-          # -----------------------------------------------------
-          DEFCONFIG="arch/arm64/configs/gki_defconfig"
-          sed -i '/CONFIG_DEFAULT_TCP_CONG/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_NET_SCH/d' $DEFCONFIG
-          sed -i '/CONFIG_NET_SCH_DEFAULT/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_FQ/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_PFIFO_FAST/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_CUBIC/d' $DEFCONFIG
-          sed -i '/CONFIG_DEFAULT_BBR/d' $DEFCONFIG
-          
-          cat << 'EOF' | sed 's/^[[:space:]]*//' >> $DEFCONFIG
-          CONFIG_TCP_CONG_ADVANCED=y
-          CONFIG_TCP_CONG_BBR3=y
-          CONFIG_DEFAULT_BBR3=y
-          CONFIG_DEFAULT_TCP_CONG="bbr3"
-          CONFIG_NET_SCH_FQ=y
-          CONFIG_NET_SCH_DEFAULT=y
-          CONFIG_DEFAULT_FQ=y
-          CONFIG_DEFAULT_NET_SCH="fq"
-          EOF
           # ============================================================
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="clang" LD="ld.lld" HOSTCC="clang" HOSTCXX="clang++" HOSTLD="ld.lld" \
             AR="llvm-ar" NM="llvm-nm" OBJCOPY="llvm-objcopy" OBJDUMP="llvm-objdump" \
             READELF="llvm-readelf" STRIP="llvm-strip" \
-            houji_defconfig
+            gki_defconfig
             
           CONFIG_FILE="out/.config"
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_CMDLINE "console=ttynull stack_depot_disable=on kvm-arm.mode=protected bootconfig noirqdebug nosoftlockup nmi_watchdog=0 quiet kasan.page_alloc.sample=0 kasan.stacktrace=off kasan=off slub_debug=- page_owner=off debug_guardpage_minorder=0"
@@ -270,14 +245,7 @@ jobs:
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_TARGET_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_IP6_NF_MATCH_HL
           ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_POSIX_ACL
-          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_NUMA_BALANCING
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_REDUCED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_COMPRESSED
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_SPLIT
-          ##./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF4
-          ./scripts/config --file $CONFIG_FILE --disable CONFIG_DEBUG_INFO_DWARF5
-          
+          ./scripts/config --file $CONFIG_FILE --enable CONFIG_TMPFS_XATTR     
           # Localversion
           ./scripts/config --file $CONFIG_FILE --set-str CONFIG_LOCALVERSION "-mi"
           ./scripts/config --file $CONFIG_FILE --disable CONFIG_LOCALVERSION_AUTO
